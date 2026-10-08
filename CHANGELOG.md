@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-08
+
 ### Added
 - The LabHUD name in the middle of the top bar, in portrait (where that space was empty).
 - `panel = "list:<path>"`: a tap opens a list made for the panel (flat rows, or `{title, rows}`
@@ -51,5 +53,6 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Mithrandler/labhud/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Mithrandler/labhud/releases/tag/v0.1.1
