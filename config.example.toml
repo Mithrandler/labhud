@@ -35,7 +35,8 @@ title = "GENERAL"
       { key = "proxmox.pve.mem_used_of", label = "RAM", format = "used_of" },
     ]
     panel = "host:pve"              # detail panel opened on tap (optional); host:<node> uses
-                                    # the Proxmox node name exactly, case included
+                                    # the Proxmox node name exactly, case included;
+                                    # list:<path> shows any list (docs/live-agent.md)
     # sensors = "temp.pve"          # optional: an object with gpu<N>_util/_mem/_temp, shown as
                                     # a GPU section in the host panel (agents/labhud-agent.py serves one)
 

@@ -875,6 +875,14 @@ function fill_panel() {
       [i.name, i.failed ? `${i.grabs} grabs · ${i.failed} failed` : `${i.grabs} grabs`, !!i.failed]));
   } else if (p === "media:torrents") {
     section(body, "downloading", (get("qbt.torrents") || []).map((t) => [t.name, `${Math.round(t.progress)}% · ${bytes(t.remaining)} left`]));
+  } else if (p.startsWith("list:")) {
+    // A list meant for the panel only, longer than the card's: flat rows, or sections of rows.
+    const data = get(p.slice("list:".length)) || [];
+    if (data.some((s) => s && Array.isArray(s.rows))) {
+      for (const s of data) section(body, String(s.title ?? ""), (s.rows || []).map(detail_row));
+    } else {
+      section(body, "details", data.map(detail_row));
+    }
   }
 
   // ---- fallback: the card has no dedicated panel above, but it still has numbers or a list ----
@@ -885,8 +893,7 @@ function fill_panel() {
       section(body, "numbers", c.metrics.map(([path, label, fmt]) => [label, format(get(path), fmt)]));
     }
     if (c.list) {
-      section(body, "details", (get(c.list) || []).map((d) =>
-        [String(d.name ?? d.text ?? ""), String(d.value ?? d.label ?? ""), d.bad === true]));
+      section(body, "details", (get(c.list) || []).map(detail_row));
     }
   }
 
@@ -907,6 +914,11 @@ function render_actions(c) {
     b.addEventListener("click", () => ask_confirmation(c, a));
     bar.appendChild(b);
   }
+}
+
+/** One `{name, value, bad}` item (or `{text, label}`) as a panel row. */
+function detail_row(d) {
+  return [String(d.name ?? d.text ?? ""), String(d.value ?? d.label ?? ""), d.bad === true];
 }
 
 function short_time(ts) {

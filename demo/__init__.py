@@ -179,6 +179,19 @@ def live():
             "countries": [{"name": "NL", "value": "120"}, {"name": "US", "value": "84"}, {"name": "CN", "value": "51"}],
             "tripwire": [{"name": "/etc/ssh/sshd_config", "value": "12d"}],
             "logins": [{"name": "ssh", "value": "2 / hour"}, {"name": "nextcloud", "value": "0 / hour"}],
+            "ports": [{"name": "unexpected open", "value": "none"},
+                      {"name": "forwarded open", "value": "2 of 3"},
+                      {"name": "last scan", "value": "9h ago"}],
+            "ports_detail": [
+                {"title": "how it works", "rows": [
+                    {"name": "scanned from", "value": "outside, nightly"},
+                    {"name": "expected open", "value": "the router's port forwards"},
+                    {"name": "alarm", "value": "any other open port"}]},
+                {"title": "forwarded TCP ports", "rows": [
+                    {"name": "443 reverse proxy", "value": "open"},
+                    {"name": "25565 minecraft", "value": "open"},
+                    {"name": "27015 game server", "value": "closed · server off"}]},
+            ],
             "log": [{"name": x["text"], "value": f"{max(1, (int(time.time()) - x['ts']) // 3600)}h"} for x in log],
         },
     }

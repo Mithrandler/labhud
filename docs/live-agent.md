@@ -51,6 +51,18 @@ numbers. Outside `live`, a card shows the error of the whole source.
 | `panel = "network:devices"` | `live.devices.list` | `[{name, mac, ip}]` |
 | a games page (`games = "<path>"` on a `[[page]]`) | any path | see below |
 
+### A panel from your own list (`panel = "list:<path>"`)
+
+Works with any source, not only `live`. Without it, a tap shows the card's own metrics and list
+again, whole. With it, the panel shows the list at `<path>` instead, so the card can stay short
+while the panel explains. Two shapes are accepted:
+
+- flat rows, shown under "details": `[{name, value, bad}]`
+- sections: `[{title, rows: [{name, value, bad}]}]`
+
+`bad: true` colours a row red. For example, a card that lists `live.display.ports` can open
+`list:live.display.ports_detail`, with sections like "how it works" and "forwarded ports".
+
 ### Game servers
 
 A page with `games = "live.games.servers"` has no fixed cards. It shows one tile per server, up

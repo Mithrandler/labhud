@@ -8,6 +8,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 - The LabHUD name in the middle of the top bar, in portrait (where that space was empty).
+- `panel = "list:<path>"`: a tap opens a list made for the panel (flat rows, or `{title, rows}`
+  sections) instead of repeating the card. See `docs/live-agent.md`.
 
 ### Fixed
 - Sizes always use a decimal point (`1.5T`); the server side wrote `1,5T` while the page wrote `1.5T`.

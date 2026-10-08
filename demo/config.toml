@@ -214,6 +214,18 @@ title = "SECURITY"
     panel = "security:logins"
 
   [[page.group]]
+  id = "exposure"
+  title = "Exposure"
+
+    # The card stays short; the panel (list:) explains how the check works and lists every port.
+    [[page.group.card]]
+    id = "ports"
+    name = "EXPOSED PORTS"
+    list = "live.display.ports"
+    limit = 3
+    panel = "list:live.display.ports_detail"
+
+  [[page.group]]
   id = "log"
   title = "Log"
 
