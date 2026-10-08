@@ -73,6 +73,9 @@ function render(d) {
     ["displays", d.displays + " of " + d.max_displays], ["actions", d.actions ? "on" : "off"],
   ];
   if (d.demo) facts.unshift(["mode", "DEMO"]);
+  const n = d.notify || {};
+  facts.push(["notifications", !n.on ? "off" : n.problem ? n.problem
+    : n.format + ", " + n.sent + " sent" + (n.last_error ? " · last error: " + n.last_error + " (" + ago(d.now, n.last_error_at) + ")" : "")]);
   facts.forEach(([k, v], i) => {
     if (i) general.append(" · ");
     general.append(k + " ");

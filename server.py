@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import config
 import events
+import notify
 import sources
 
 PORT = int(os.environ.get("LABHUD_PORT", "8095"))
@@ -48,6 +49,7 @@ if DEMO:
     import demo
     os.environ.setdefault("LABHUD_CONFIG", demo.CONFIG)
     ACTION_URL = ""
+    notify.URL = ""  # made-up events are not news
 
 STATUS_EVERY = 30  # the ping/TCP checks, handled here: they need the topology
 CONFIG_PATH = config.config_path()
@@ -94,11 +96,17 @@ EVENTS = events.Log(demo.events() if DEMO else ())
 
 
 def _log(found):
-    """Adds [(text, bad)] to the history and sends it to the displays."""
+    """Adds [(text, bad, ref?)] to the history, sends it to the displays and, if set up, to the
+    notification webhook (see notify.py)."""
     if not found:
         return
-    for text, bad in found:
+    for text, bad, *ref in found:
         EVENTS.add(text, bad)
+        still_true = None
+        if ref and ref[0][0] == "status":
+            card = ref[0][1]
+            still_true = lambda card=card: _data.get("status", {}).get(card) is False  # noqa: E731
+        notify.submit(TOPOLOGY["title"], text, bad, still_true)
     result = dict(EVENTS.snapshot(), _t=int(time.time()))
     with _lock:
         _data["events"] = result
@@ -318,7 +326,10 @@ def health():
     return {
         "version": VERSION, "demo": DEMO, "now": now, "started": STARTED,
         "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": bool(ACTION_URL),
-        "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "problems": [n for n, h in result.items() if h.get("alarm")],
+        "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS,
+        "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
+        if notify.enabled() else {"on": False},
+        "problems": [n for n, h in result.items() if h.get("alarm")],
         "sources": result,
     }
 
@@ -441,6 +452,9 @@ if __name__ == "__main__":
     # (Origin + source IP allowlist, see docs/actions.md) are the only thing between a tap and the action.
     print(f"actions: on, sent to {ACTION_URL} (the agent must check Origin and the source IP)" if ACTION_URL
           else "actions: off (set LABHUD_ACTION_URL to enable)", flush=True)
+    print(f"notifications: {notify.problem() or 'on, ' + notify.FORMAT}" if notify.enabled()
+          else "notifications: off (set LABHUD_NOTIFY_URL to enable)", flush=True)
     threading.Thread(target=loop, daemon=True, name="collect").start()
     threading.Thread(target=watch_config, daemon=True, name="config").start()
+    notify.start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

@@ -26,6 +26,12 @@ passwords blanked out, addresses not); they sit behind the same host check as th
 The container runs as an unprivileged user (uid 10001), on a read-only filesystem, with every
 capability dropped except `NET_RAW` for ping (see `compose.example.yaml`).
 
+## Notifications
+
+Off unless `LABHUD_NOTIFY_URL` is set. Each message carries a line from the history: card and
+guest names, a source's error, an alert's text. If the webhook is a public service (ntfy.sh,
+Discord), that text leaves your network: use a topic nobody can guess, or your own server.
+
 ## Actions
 
 Off unless `LABHUD_ACTION_URL` is set. labhud never runs an action: it only shows buttons, and

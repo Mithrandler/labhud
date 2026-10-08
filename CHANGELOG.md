@@ -23,6 +23,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 - `events.recent`: a history of what changed (hosts up and down, guests started and stopped,
   sources that stopped answering and came back, new alerts, config reloads), newest first, for
   any `list` card. Kept in memory, last 50. The demo has a RECENT card with it.
+- Notifications: with `LABHUD_NOTIFY_URL` set, the history's bad news is sent to a webhook in
+  ntfy, Gotify, Discord or plain JSON shape (`LABHUD_NOTIFY_FORMAT`). A host down is sent only
+  if it is still down `LABHUD_NOTIFY_DELAY` seconds later (default 120); `LABHUD_NOTIFY_ALL=1`
+  adds the good news. `/status` shows how many went out and the last error.
 - List rows may carry a time (`t`, Unix seconds) instead of a value: shown as the time today,
   as the date before.
 

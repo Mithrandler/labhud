@@ -115,7 +115,7 @@ def basic(user, password):
 # Any error text ends up in `unavailable`, so on the screen. No key and no password may pass
 # through there, not even from a library exception.
 _SECRETS = re.compile(r"(?i)(passwd|password|api[_-]?key|token|secret|_sid|\bkey)=[^&\s\"']+")
-_SECRET_VARS = ("_KEY", "_SECRET", "_PASS", "_USER", "_TOKEN_ID")
+_SECRET_VARS = ("_KEY", "_SECRET", "_PASS", "_USER", "_TOKEN_ID", "_AUTH")
 
 
 def scrub(text):

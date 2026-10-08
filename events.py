@@ -36,7 +36,7 @@ class Log:
 
 
 def changes(name, old, new, topology):
-    """[(text, bad)] for what differs between two results of the source `name`. A first result
+    """[(text, bad, ref?)] for what differs between two results of the source `name`. A first result
     (old is None), a failed one or one off on schedule says nothing: only real transitions count."""
     if not isinstance(old, dict) or not isinstance(new, dict):
         return []
@@ -60,6 +60,7 @@ def _card_names(topology):
 def _hosts(old, new, topology):
     cards = _card_names(topology)
     out = []
+    # ref ("status", card id): a host down is notified only if it is still down a while later
     for cid, now in new.items():
         was = old.get(cid)
         if cid.startswith("_") or was is None or was == now or "scheduled" in (was, now):
@@ -70,7 +71,10 @@ def _hosts(old, new, topology):
             out.append((f"{label} up", False))
         elif now is False:
             # a host that is off by design (on_demand) going off is not bad news
-            out.append((f"{label} {'off' if card.get('on_demand') else 'down'}", not card.get("on_demand")))
+            if card.get("on_demand"):
+                out.append((f"{label} off", False))
+            else:
+                out.append((f"{label} down", True, ("status", cid)))
     return out
 
 

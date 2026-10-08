@@ -18,7 +18,7 @@ class Changes(unittest.TestCase):
         self.assertEqual(events.changes("status", None, {"nas": True}, TOPOLOGY), [])
 
     def test_host_down_and_up(self):
-        self.assertEqual(events.changes("status", {"nas": True}, {"nas": False}, TOPOLOGY), [("NAS down", True)])
+        self.assertEqual(events.changes("status", {"nas": True}, {"nas": False}, TOPOLOGY), [("NAS down", True, ("status", "nas"))])
         self.assertEqual(events.changes("status", {"nas": False}, {"nas": True}, TOPOLOGY), [("NAS up", False)])
 
     def test_on_demand_host_off_is_not_bad(self):
