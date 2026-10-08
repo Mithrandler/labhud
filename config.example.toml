@@ -164,6 +164,14 @@ confirm = "Wake the backup server now?"
 #   title = "GAMES"
 #   games = "live.games.servers"   # dotted path to a list of servers in the collected data
 
+# Night (optional): between these hours of the display's own clock the screen dims to `dim`
+# percent (0 = black). A touch lights it up for a minute; a new problem lights it up while the
+# page with that problem is shown.
+# [night]
+# from = 23
+# to = 7
+# dim = 25
+
 # The weather in the top bar (Open-Meteo, no key). Leave this table out to hide it.
 [weather]
 latitude = 52.52

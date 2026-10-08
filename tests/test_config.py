@@ -121,6 +121,12 @@ page = "main"
         for hidden in ("weather", "quiet_hours", "skip_sources"):
             self.assertNotIn(hidden, p)
 
+    def test_night(self):
+        t = load_text(MINIMAL + '\n[night]\nfrom = 23\nto = 7\n')
+        self.assertEqual(t["night"], {"from": 23, "to": 7, "dim": 30})
+        self.assertEqual(config.public(t)["night"], t["night"])
+        self.assertIsNone(load_text(MINIMAL)["night"])
+
     def test_env_path(self):
         with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
             f.write(MINIMAL)
@@ -145,6 +151,12 @@ class InvalidFiles(unittest.TestCase):
     def assertProblem(self, text, expected):
         problems = self.problems(text)
         self.assertIn(expected, problems, "\n".join(problems))
+
+    def test_bad_night(self):
+        self.assertProblem(MINIMAL + '\n[night]\nfrom = 23\nto = 23\ndim = 120\n',
+                           "night: 'from' and 'to' are the same hour")
+        self.assertProblem(MINIMAL + '\n[night]\nfrom = 23\nto = 7\ndim = 120\n',
+                           "night: dim must be from 0 to 100, got 120")
 
     def test_missing_file(self):
         with self.assertRaises(config.ConfigError) as cm:

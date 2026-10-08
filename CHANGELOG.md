@@ -15,6 +15,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 - `config.toml` is read again a few seconds after it changes, without a restart. A good file is
   applied and every display reloads; a broken one is kept out, its problems are logged and shown
   in a banner on the displays and on `/status`, and the last good version keeps running.
+- A card that turns red while the screen is on (host down, or a number past its critical mark)
+  takes the screen: the rotation goes to its page and stays there for 3 minutes, and the card
+  pulses with a red ring. What is already red when the page loads does not move it.
+- `[night]` in the config: between two hours of the display's clock the screen dims to `dim`
+  percent. A touch lights it up for a minute, a new problem for as long as it holds its page.
 
 ### Changed
 - A page whose groups need fewer columns than the screen has now spreads them over the whole

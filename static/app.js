@@ -208,6 +208,7 @@ function update() {
     render_weather();
     mark_menu_alerts();
     if (panelCard) fill_panel();   // an open panel refreshes with the new data
+    watch_problems();
   });
 }
 
@@ -233,7 +234,65 @@ function go(i) {
   document.body.classList.add("p-" + CFG.pages[page].id);
   for (const b of $("#menu").children) cls(b, "active", Number(b.dataset.page) === page);
   mount();
+  apply_focus();
   history.replaceState(null, "", "#" + CFG.pages[page].id);
+}
+
+// ---------------------------------------------------------------------------------------------
+// A new problem takes the screen; the night dims it
+// ---------------------------------------------------------------------------------------------
+
+const FOCUS = 180000;    // how long a new problem holds its page (and keeps a dimmed screen lit)
+const WARMUP = Date.now() + 60000;   // the first minute only learns what is already wrong
+let PAGE_OF_CARD = {};   // card id -> page index
+let knownBad = new Set();
+let focusCard = null, focusUntil = 0, wakeUntil = 0;
+
+/** Red on the screen: the card's host is down, or one of its numbers is past the critical mark. */
+function card_bad(c) {
+  if (card_status(c) === false) return true;
+  return (c.metrics || []).some(([path, , fmt]) => severity(path, fmt, get(path)) === "crit");
+}
+
+/** Only a card that turns red while the screen watches moves the page: what was already red at
+    start (a VM stopped on purpose, say) would otherwise hold one page forever. */
+function watch_problems() {
+  const bad = new Set(Object.values(CARD_BY_ID).filter(card_bad).map((c) => c.id));
+  const fresh = Date.now() < WARMUP ? null
+    : [...bad].find((id) => !knownBad.has(id) && PAGE_OF_CARD[id] !== undefined);
+  knownBad = bad;
+  if (fresh) focus_on(fresh);
+  else if (focusCard && Date.now() >= focusUntil) { focusCard = null; apply_focus(); render_night(); }
+}
+
+function focus_on(id) {
+  focusCard = id;
+  focusUntil = Date.now() + FOCUS;
+  pausedUntil = Math.max(pausedUntil, focusUntil);
+  // someone reading a panel keeps it; the card still gets its ring when they close it
+  if ($("#panel").hidden && PAGE_OF_CARD[id] !== page) go(PAGE_OF_CARD[id]);
+  apply_focus();
+  render_night();
+}
+
+function apply_focus() {
+  for (const n of document.querySelectorAll("#content .focus")) n.classList.remove("focus");
+  if (!focusCard) return;
+  const n = document.querySelector(`#content [data-id="${CSS.escape(focusCard)}"]`);
+  if (n) n.classList.add("focus");
+}
+
+function night_now() {
+  const n = CFG.night;
+  if (!n) return false;
+  if (location.search.includes("night")) return true;   // check screenshots: ?static&night
+  const h = new Date().getHours();
+  return n.from < n.to ? h >= n.from && h < n.to : h >= n.from || h < n.to;
+}
+
+function render_night() {
+  const now = Date.now();
+  cls(document.body, "night", night_now() && now >= wakeUntil && now >= focusUntil);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -837,7 +896,11 @@ function render_weather() {
 // Touch: rotation, swipe, opening the panel
 // ---------------------------------------------------------------------------------------------
 
-function touched() { pausedUntil = Date.now() + PAUSE; }
+function touched() {
+  pausedUntil = Math.max(pausedUntil, Date.now() + PAUSE);
+  wakeUntil = Date.now() + PAUSE;   // a touch lights a dimmed screen up for the same minute
+  if (CFG) render_night();
+}
 
 /** A short tap on any card opens its panel. Actions are in the panel, not here: the long press
     was invisible — there was no way to know it existed. */
@@ -1165,6 +1228,10 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   document.title = CFG.title || "LABHUD";
   put($("#weather .city"), CFG.city || "");
   for (const items of Object.values(CFG.cards)) for (const c of items) CARD_BY_ID[c.id] = c;
+  CFG.pages.forEach((p, i) => {
+    for (const g of p.groups) for (const c of CFG.cards[g.id] || []) PAGE_OF_CARD[c.id] = i;
+  });
+  if (CFG.night) document.documentElement.style.setProperty("--shade", String(1 - CFG.night.dim / 100));
   from_address();
   render_menu();
   build_strip();
@@ -1174,6 +1241,11 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
 
   render_clock();
   tick(render_clock, 10000);
+  render_night();
+  tick(render_night, 10000);
+  // check screenshots: ?static&focus=<card id> shows a card as a new problem
+  const asked = new URLSearchParams(location.search).get("focus");
+  if (asked && location.search.includes("static")) setTimeout(() => focus_on(asked), 300);
   check_health();
   if (!location.search.includes("static")) tick(check_health, 60000);
   $("#health").addEventListener("click", open_health_panel);

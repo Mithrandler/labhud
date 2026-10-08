@@ -43,7 +43,8 @@ QUIET_KEYS = {"from", "to", "sources"}
 WEATHER_KEYS = {"latitude", "longitude", "timezone", "city"}
 ACTION_KEYS = {"label", "confirm"}
 ALERTS_KEYS = {"path", "page"}
-TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts"}
+NIGHT_KEYS = {"from", "to", "dim"}
+TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night"}
 DEFAULT_TITLE = "LABHUD"
 
 
@@ -213,6 +214,7 @@ def load(path=None):
     weather      {latitude, longitude, timezone?, city?} or None
     actions      {action name: {label?, confirm?}}
     alerts       {path, page?} or None
+    night        {from, to, dim} or None: the screen dims in that window (the display's local time)
     """
     path = path or config_path()
     try:
@@ -371,16 +373,34 @@ def load(path=None):
                     ck.err("alerts", f"page '{pg}' does not exist")
                 alerts["page"] = pg
 
+    # Night: the screen dims between two hours of the display's own clock; a touch or a new
+    # problem lights it up again for a while.
+    night = None
+    if "night" in raw:
+        nt = raw["night"]
+        if not isinstance(nt, dict):
+            ck.err("top level", "night must be written as a [night] table")
+        else:
+            ck.unknown("night", nt, NIGHT_KEYS)
+            night = {"from": _hour(ck, "night", nt, "from"), "to": _hour(ck, "night", nt, "to"), "dim": 30}
+            if night["from"] is not None and night["from"] == night["to"]:
+                ck.err("night", "'from' and 'to' are the same hour")
+            dim = ck.opt("night", nt, "dim", int, "a brightness from 0 to 100 (percent)")
+            if dim is not None:
+                if not 0 <= dim <= 100:
+                    ck.err("night", f"dim must be from 0 to 100, got {dim}")
+                night["dim"] = dim
+
     if ck.problems:
         raise ConfigError(path, ck.problems)
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
-            "weather": weather}
+            "weather": weather, "night": night}
 
 
 def public(topology):
     """What the browser gets from /api/config: the layout, without the server-side schedules
     and without the weather coordinates (only the city name is shown)."""
-    out = {k: topology[k] for k in ("title", "pages", "cards", "strip", "actions", "alerts")}
+    out = {k: topology[k] for k in ("title", "pages", "cards", "strip", "actions", "alerts", "night")}
     out["city"] = (topology.get("weather") or {}).get("city", "")
     return out
 

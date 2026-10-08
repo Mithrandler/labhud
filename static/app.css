@@ -319,6 +319,14 @@ body.with-alert { --alert: 22px; }
 #confirm button.danger { border-color: var(--red); color: var(--red); }
 
 /* the link to the aggregator: a discreet dot, red only while the stream is broken */
+/* [night]: everything dims under one sheet, so no colour or contrast rule has to change. */
+#night-shade { position: fixed; inset: 0; z-index: 100; pointer-events: none; background: #000; opacity: 0; transition: opacity 2s; }
+body.night #night-shade { opacity: var(--shade, .7); }
+
+/* A card that has just turned red: the page came to it, and it pulses for a few minutes. */
+.card.focus { box-shadow: 0 0 0 2px var(--red); animation: focus-ring 1.4s ease-in-out infinite; }
+@keyframes focus-ring { 0%, 100% { box-shadow: 0 0 0 2px var(--red); } 50% { box-shadow: 0 0 0 2px transparent; } }
+
 #config-errors {
   position: fixed; left: 0; right: 0; bottom: var(--strip); z-index: 44;
   padding: 5px 10px; background: #3a0d1c; border-top: 1px solid var(--red);
