@@ -55,7 +55,9 @@ jobs:
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::tag $GITHUB_REF_NAME is not vX.Y.Z"; exit 1; }
             grep -q "^## \[$version\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no entry for $version"; exit 1; }
             tags="$image:$version,$image:${version%.*},$image:latest"
-            if [[ -n "$EXTRA_IMAGE" ]]; then
+            # no registry configured (a fork, or GitHub without the variable): build, do not push
+            [[ -n "$REGISTRY" ]] || tags="labhud:$version"
+            if [[ -n "$REGISTRY" && -n "$EXTRA_IMAGE" ]]; then
               extra="${EXTRA_IMAGE,,}"
               tags="$tags,$extra:$version,$extra:${version%.*},$extra:latest"
             fi

@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Fixed
+- CI: a version tag in a repository without the `REGISTRY` variable built an invalid image name
+  (`/owner/labhud:X.Y.Z`) and failed; it now builds the image without pushing it.
+
 ## [0.1.2] - 2026-10-08
 
 ### Added
