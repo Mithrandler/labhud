@@ -36,6 +36,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 - The Proxmox VE and PBS tokens are checked at start and after a reload: any privilege beyond
   reading is logged as a warning and shown on `/status`. docs/security.md lists the least each
   source needs.
+- Signed actions: with `LABHUD_ACTION_SECRET`, the display posts actions to labhud, which checks
+  they come from its own page and are offered in the config, then forwards them with an
+  HMAC-SHA256 signature (time, nonce, name). `labhud-agent.py` checks it with
+  `LABHUD_AGENT_SECRET`: at most 30 seconds old, never reused, from labhud's IP. Without a
+  secret, actions still go straight from the browser to the agent, as before.
 - List rows may carry a time (`t`, Unix seconds) instead of a value: shown as the time today,
   as the date before.
 

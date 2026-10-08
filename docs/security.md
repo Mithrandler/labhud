@@ -53,14 +53,12 @@ Discord), that text leaves your network: use a topic nobody can guess, or your o
 
 ## Actions
 
-Off unless `LABHUD_ACTION_URL` is set. labhud never runs an action: it only shows buttons, and
-the browser sends a POST to an agent you control. With no login, anyone who opens the page can
-press them, so the agent must check:
-
-- the `Origin` header (exactly the address the display uses), and
-- the source IP (only the display),
-
-and run only the commands listed in its own file. `agents/labhud-agent.py` does all three; see
+Off unless `LABHUD_ACTION_URL` is set. With `LABHUD_ACTION_SECRET` (recommended), the display
+posts to labhud, which checks the request comes from its own page and the action is offered in
+`config.toml`, then forwards it with an HMAC signature that the agent checks (fresh, never
+reused, from labhud's IP only). Without it, the browser posts straight to the agent, which must
+check the `Origin` header and the display's IP. Either way the agent runs only commands listed
+in its own file. With no login, anyone who opens the page can press the buttons. See
 [actions.md](actions.md).
 
 ## Reporting a problem

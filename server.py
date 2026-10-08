@@ -13,7 +13,10 @@
 # host down. The browser talks to that agent directly; this server only tells it where it is.
 
 import collections
+import hashlib
+import hmac
 import json
+import re
 import os
 import queue
 import threading
@@ -34,8 +37,14 @@ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 # and read the whole snapshot — which holds internal IPs, devices and security data.
 ALLOWED_HOSTS = {h.strip().lower() for h in os.environ.get(
     "LABHUD_HOSTS", f"127.0.0.1:{PORT},localhost:{PORT}").split(",") if h.strip()}
-# Where the browser sends actions (POST <url><action name>). Empty: action buttons are not shown.
+# Where actions go (POST <url><action name>). Empty: action buttons are not shown.
 ACTION_URL = os.environ.get("LABHUD_ACTION_URL", "")
+# Signed actions: with a secret, the browser posts to labhud (/action/<name>) and labhud forwards
+# the action to the agent with an HMAC of it, which the agent checks. Without one, the browser
+# posts to the agent directly (the agent then checks Origin and the display's IP). See docs/actions.md.
+ACTION_SECRET = os.environ.get("LABHUD_ACTION_SECRET", "").encode()
+ACTION_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+GAME_ACTION_RE = re.compile(r"game-(start|stop|restart)-[a-z0-9-]+")
 # A client opening stream after stream would hold one thread each. The wall needs one.
 MAX_SUBSCRIBERS = 8
 # How long a configured source may keep failing before the top bar shows a mark: one failed poll
@@ -50,6 +59,7 @@ if DEMO:
     import demo
     os.environ.setdefault("LABHUD_CONFIG", demo.CONFIG)
     ACTION_URL = ""
+    ACTION_SECRET = b""
     notify.URL = ""  # made-up events are not news
 
 STATUS_EVERY = 30  # the ping/TCP checks, handled here: they need the topology
@@ -144,6 +154,43 @@ def sample_history():
 def history():
     with _lock:
         return {"step": HISTORY_STEP, "series": {p: list(s) for p, s in _history.items()}}
+
+
+def _action_allowed(name):
+    """Only the actions the config offers: a card's `actions`, or a game server's buttons."""
+    if not ACTION_NAME_RE.fullmatch(name):
+        return False
+    if GAME_ACTION_RE.fullmatch(name):
+        return any(p.get("games") for p in TOPOLOGY["pages"])
+    return any(name in c.get("actions", ()) for cards in TOPOLOGY["cards"].values() for c in cards)
+
+
+def sign(name, now=None):
+    """The headers that prove an action comes from this labhud: the time, a random nonce (two
+    presses in the same second are two actions) and an HMAC-SHA256 of "<time>.<nonce>.<name>"
+    with the shared secret. The agent refuses an old time or a signature it has seen."""
+    ts, nonce = str(int(now or time.time())), os.urandom(12).hex()
+    sig = hmac.new(ACTION_SECRET, f"{ts}.{nonce}.{name}".encode(), hashlib.sha256).hexdigest()
+    return {"X-Labhud-Time": ts, "X-Labhud-Nonce": nonce, "X-Labhud-Signature": sig}
+
+
+def forward_action(name):
+    """(status, answer) from the agent."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(ACTION_URL + name, data=b"", method="POST", headers=sign(name))
+    try:
+        with urllib.request.urlopen(req, timeout=45) as r:
+            code, body = r.status, r.read()
+    except urllib.error.HTTPError as e:
+        code, body = e.code, e.read()
+    except OSError as e:
+        return 502, {"ok": False, "error": f"the action agent does not answer ({sources.scrub(e)[:80]})"}
+    try:
+        answer = json.loads(body or b"{}")
+    except ValueError:
+        answer = {"ok": 200 <= code < 300}
+    return code, answer if isinstance(answer, dict) else {"ok": 200 <= code < 300}
 
 
 def _log(found):
@@ -393,7 +440,7 @@ def health():
         displays = len(_subscribers)
     return {
         "version": VERSION, "demo": DEMO, "now": now, "started": STARTED,
-        "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": bool(ACTION_URL),
+        "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": ("signed" if ACTION_SECRET else "direct") if ACTION_URL else False,
         "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "keys": KEY_CHECKS,
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
@@ -447,7 +494,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/stream":
             return self._stream()
         if path == "/api/config":
-            return self._json(dict(config.public(TOPOLOGY), action_url=ACTION_URL))
+            return self._json(dict(config.public(TOPOLOGY),
+                                   action_url="/action/" if ACTION_URL and ACTION_SECRET else ACTION_URL))
         if path == "/api/snapshot":  # useful for debugging and for the check screenshots
             return self._json(snapshot())
         if path == "/api/status":
@@ -457,6 +505,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/status":
             path = "/status.html"
         return self._static(path)
+
+    def do_POST(self):
+        """Signed actions (LABHUD_ACTION_SECRET): checks that the request comes from labhud's own
+        page, then forwards it to the agent with a signature. One answer for every refusal."""
+        m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
+        host = (self.headers.get("Host") or "").lower()
+        origin = (self.headers.get("Origin") or "").lower()
+        if not (m and ACTION_URL and ACTION_SECRET and self._host_ok() and _action_allowed(m.group(1))
+                and origin in (f"http://{host}", f"https://{host}")):
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        code, answer = forward_action(m.group(1))
+        print(f"action {m.group(1)} from {self.client_address[0]}: "
+              f"{'ok' if answer.get('ok') else answer.get('error')}", flush=True)
+        self._json(answer, code)
 
     def _static(self, path):
         if path == "/":
@@ -520,8 +582,9 @@ if __name__ == "__main__":
     print(f"answering to: {', '.join(sorted(ALLOWED_HOSTS))} (LABHUD_HOSTS)", flush=True)
     # labhud has no login: whoever opens the page sees the buttons. The agent's own checks
     # (Origin + source IP allowlist, see docs/actions.md) are the only thing between a tap and the action.
-    print(f"actions: on, sent to {ACTION_URL} (the agent must check Origin and the source IP)" if ACTION_URL
-          else "actions: off (set LABHUD_ACTION_URL to enable)", flush=True)
+    print(("actions: on, signed, forwarded by labhud to " + ACTION_URL if ACTION_URL and ACTION_SECRET
+           else f"actions: on, sent by the browser to {ACTION_URL} (the agent must check Origin and the source IP)"
+           if ACTION_URL else "actions: off (set LABHUD_ACTION_URL to enable)"), flush=True)
     print(f"notifications: {notify.problem() or 'on, ' + notify.FORMAT}" if notify.enabled()
           else "notifications: off (set LABHUD_NOTIFY_URL to enable)", flush=True)
     if DEMO:

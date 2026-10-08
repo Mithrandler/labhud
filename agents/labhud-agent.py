@@ -10,16 +10,22 @@ actions (a Proxmox host, for example).
 Point labhud at it with LABHUD_JSON_<NAME>_URL (sensors; then `sensors = "<name>"` on a host
 card) and LABHUD_ACTION_URL=http://<this host>:9189/action/ (actions).
 
-Actions are OFF unless all three are set:
+Actions are OFF unless LABHUD_AGENT_ACTIONS and LABHUD_AGENT_ALLOW are set, plus one of the two
+ways of proving where an action comes from:
 
     LABHUD_AGENT_ACTIONS   path to a TOML file:  [actions]  wol-nas = ["wakeonlan", "aa:bb:..."]
-    LABHUD_AGENT_ORIGIN    the display's origin exactly as the browser sends it,
-                           e.g. "http://192.0.2.5:8095"
-    LABHUD_AGENT_ALLOW     comma-separated IPs allowed to POST: the device the display runs
-                           on (a wall tablet), NOT the labhud server. The browser sends the action.
+    LABHUD_AGENT_SECRET    signed actions (recommended): the same secret as LABHUD_ACTION_SECRET
+                           on the labhud server, which forwards each action with an HMAC of it.
+                           Then LABHUD_AGENT_ALLOW is the labhud server's IP.
+    LABHUD_AGENT_ORIGIN    direct actions: the display's origin exactly as the browser sends it,
+                           e.g. "http://192.0.2.5:8095". Then LABHUD_AGENT_ALLOW is the device the
+                           display runs on (a wall tablet), NOT the labhud server.
+    LABHUD_AGENT_ALLOW     comma-separated IPs allowed to POST.
 
-Both checks are needed: Origin stops other web pages from posting through a visitor's browser,
-but anything that is not a browser can fake it; the IP allowlist is what stops the rest.
+With a secret, a signature older than 30 seconds or seen before is refused, so a copied request
+cannot be replayed. Without one, both checks are needed: Origin stops other web pages from
+posting through a visitor's browser, but anything that is not a browser can fake it; the IP
+allowlist is what stops the rest.
 Commands are argument lists, never passed through a shell; nothing from the request reaches
 them except the action's name, which only selects one. See docs/actions.md.
 
@@ -28,6 +34,8 @@ Other settings: LABHUD_AGENT_PORT (9189), LABHUD_AGENT_TIMEOUT (seconds per comm
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import glob
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -42,13 +50,15 @@ PORT = int(os.environ.get("LABHUD_AGENT_PORT", "9189"))
 TIMEOUT = int(os.environ.get("LABHUD_AGENT_TIMEOUT", "30"))
 ORIGIN = os.environ.get("LABHUD_AGENT_ORIGIN", "")
 ALLOW = {x.strip() for x in os.environ.get("LABHUD_AGENT_ALLOW", "").split(",") if x.strip()}
+SECRET = os.environ.get("LABHUD_AGENT_SECRET", "").encode()
+MAX_AGE = 30  # seconds a signature stays valid
 ACTIONS_FILE = os.environ.get("LABHUD_AGENT_ACTIONS", "")
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 CACHE_S = 5  # nvidia-smi takes ~100 ms; do not run it on every request
 
 
 def load_actions():
-    if not (ACTIONS_FILE and ORIGIN and ALLOW):
+    if not (ACTIONS_FILE and (SECRET or ORIGIN) and ALLOW):
         return {}
     with open(ACTIONS_FILE, "rb") as f:
         raw = tomllib.load(f).get("actions", {})
@@ -160,13 +170,42 @@ def run_action(name):
     return 200, {"ok": True, "action": name}
 
 
+_seen = {}  # signature -> when it was used, for MAX_AGE: each one works once
+_seen_lock = threading.Lock()
+
+
+def signed(name, headers, now=None):
+    """Whether the request carries labhud's signature of this action, fresh and not seen before."""
+    now = now or time.time()
+    ts, nonce = headers.get("X-Labhud-Time", ""), headers.get("X-Labhud-Nonce", "")
+    sig = headers.get("X-Labhud-Signature", "")
+    if not (ts.isdigit() and abs(now - int(ts)) <= MAX_AGE and 8 <= len(nonce) <= 64):
+        return False
+    expected = hmac.new(SECRET, f"{ts}.{nonce}.{name}".encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return False
+    with _seen_lock:
+        for old in [s for s, t in _seen.items() if now - t > MAX_AGE]:
+            del _seen[old]
+        if sig in _seen:
+            return False
+        _seen[sig] = now
+    return True
+
+
+def allowed(name, headers, ip):
+    if name not in ACTIONS or ip not in ALLOW:
+        return False
+    return signed(name, headers) if SECRET else headers.get("Origin") == ORIGIN
+
+
 class Handler(BaseHTTPRequestHandler):
     def _answer(self, code, data, cors=False):
         body = json.dumps(data).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        if cors:
+        if cors and ORIGIN and not SECRET:
             self.send_header("Access-Control-Allow-Origin", ORIGIN)
             self.send_header("Vary", "Origin")
         self.end_headers()
@@ -183,8 +222,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
         # One answer for every refusal: a caller that fails a check learns nothing about which one.
-        if (not m or m.group(1) not in ACTIONS or self.headers.get("Origin") != ORIGIN
-                or self.client_address[0] not in ALLOW):
+        if not m or not allowed(m.group(1), self.headers, self.client_address[0]):
             return self._answer(403, {"ok": False, "error": "forbidden"})
         name = m.group(1)
         code, data = run_action(name)
@@ -197,7 +235,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"labhud-agent on :{PORT}; actions: "
-          + (", ".join(sorted(ACTIONS)) + f" (origin {ORIGIN}, from {', '.join(sorted(ALLOW))})" if ACTIONS
-             else "off (needs LABHUD_AGENT_ACTIONS, LABHUD_AGENT_ORIGIN and LABHUD_AGENT_ALLOW)"),
+          + (", ".join(sorted(ACTIONS)) + (" (signed" if SECRET else f" (origin {ORIGIN}")
+             + f", from {', '.join(sorted(ALLOW))})" if ACTIONS
+             else "off (needs LABHUD_AGENT_ACTIONS, LABHUD_AGENT_ALLOW and LABHUD_AGENT_SECRET or _ORIGIN)"),
           flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

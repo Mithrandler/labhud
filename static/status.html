@@ -72,7 +72,7 @@ function render(d) {
   general.textContent = "";
   const facts = [
     ["version", d.version], ["running since", ago(d.now, d.started)],
-    ["displays", d.displays + " of " + d.max_displays], ["actions", d.actions ? "on" : "off"],
+    ["displays", d.displays + " of " + d.max_displays], ["actions", d.actions ? "on, " + d.actions : "off"],
   ];
   if (d.demo) facts.unshift(["mode", "DEMO"]);
   const n = d.notify || {};
