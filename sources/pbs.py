@@ -7,7 +7,14 @@
 
 import time
 
-from ._common import env, percent, request, source
+from ._common import beyond_reading, env, percent, request, rights, source
+
+
+@rights("pbs")
+def _rights():
+    header = {"Authorization": f"PBSAPIToken={env('PBS_TOKEN_ID')}:{env('PBS_TOKEN_SECRET')}"}
+    perms = request(f"{env('PBS_URL').rstrip('/')}/api2/json/access/permissions", header, timeout=8).get("data")
+    return [("pbs", beyond_reading(perms))]
 
 
 @source("pbs", every=60, env=("PBS_URL", "PBS_TOKEN_ID", "PBS_TOKEN_SECRET"))

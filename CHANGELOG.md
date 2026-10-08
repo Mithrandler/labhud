@@ -33,6 +33,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 - `?view=list`: a view for a phone in the hand. One scrolling list, red cards first, then every
   card as a row with its first numbers; a tap opens the panel. A card's new `url` key adds an
   OPEN button to the panel in this view (never on the wall).
+- The Proxmox VE and PBS tokens are checked at start and after a reload: any privilege beyond
+  reading is logged as a warning and shown on `/status`. docs/security.md lists the least each
+  source needs.
 - List rows may carry a time (`t`, Unix seconds) instead of a value: shown as the time today,
   as the date before.
 

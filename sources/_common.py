@@ -55,6 +55,28 @@ class Source:
 
 
 REGISTRY = {}
+# name -> a function that asks the service what the source's key may do: [(where, [privilege])]
+# for every privilege beyond reading. Only for services whose keys can be limited (Proxmox VE,
+# PBS); the others give their keys full rights anyway, see docs/security.md.
+RIGHTS = {}
+# Read-only privileges: what a monitoring key should be limited to. VM.Monitor (Proxmox 8) and
+# VM.GuestAgent.Audit (Proxmox 9) are what the guest agent's disk usage needs.
+READ_ONLY = re.compile(r"\.Audit$|^Sys\.Syslog$|^VM\.Monitor$")
+
+
+def rights(name):
+    """Registers the rights check of source `name`."""
+    def wrap(fn):
+        RIGHTS[name] = fn
+        return fn
+    return wrap
+
+
+def beyond_reading(permissions):
+    """The privileges in a Proxmox/PBS /access/permissions answer ({path: {priv: 0|1}}) that do
+    more than read, sorted."""
+    return sorted({p for privs in (permissions or {}).values() if isinstance(privs, dict)
+                   for p in privs if not READ_ONLY.search(p)})
 
 
 def source(name, every, env=(), any_of=(), section=None):

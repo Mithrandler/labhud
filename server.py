@@ -270,6 +270,22 @@ def snapshot():
         return dict(_data)
 
 
+# What each limitable key may do beyond reading (sources.check_rights), checked at start and after
+# a reload. A monitoring key that can also stop a VM is the most common avoidable risk.
+KEY_CHECKS = {}
+
+
+def check_keys():
+    global KEY_CHECKS
+    if DEMO:
+        return
+    KEY_CHECKS = sources.check_rights(ACTIVE)
+    for name, r in sorted(KEY_CHECKS.items()):
+        for where, privs in r.get("extra", []):
+            print(f"warning: the {name} key ({where}) can do more than read: {', '.join(privs)}."
+                  f" A read-only role is enough (docs/security.md).", flush=True)
+
+
 def _mark_inactive():
     """The snapshot's entries for sources that do not run: "not configured", or gone after a reload."""
     with _lock:
@@ -323,6 +339,7 @@ def watch_config():
         CONFIG_ERRORS = []
         print(f"config.toml reloaded; sources: {', '.join(sorted(ACTIVE)) or 'none'}", flush=True)
         _log([("config.toml reloaded", False)])
+        threading.Thread(target=check_keys, daemon=True).start()
         _send("config", {"reload": True})
 
 
@@ -377,7 +394,7 @@ def health():
     return {
         "version": VERSION, "demo": DEMO, "now": now, "started": STARTED,
         "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": bool(ACTION_URL),
-        "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS,
+        "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "keys": KEY_CHECKS,
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
@@ -512,5 +529,6 @@ if __name__ == "__main__":
     threading.Thread(target=loop, daemon=True, name="collect").start()
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     notify.start()
+    threading.Thread(target=check_keys, daemon=True, name="keys").start()
     threading.Thread(target=sample_history, daemon=True, name="history").start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

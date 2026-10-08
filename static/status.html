@@ -33,6 +33,8 @@
   .alarm { border-color: var(--red); }
   .host_down .state, .scheduled .state, .not_configured .state, .waiting .state { color: var(--muted); }
   #error { color: var(--red); margin-bottom: 10px; }
+  .risky { border-color: var(--warn); }
+  .src .why.key { color: var(--warn); }
   #config { color: #ffd9e2; background: #3a0d1c; border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; max-width: 900px; white-space: pre-line; }
 </style>
 </head>
@@ -117,6 +119,15 @@ function render(d) {
       if (h.failing_since) why += " · failing since " + ago(d.now, h.failing_since);
     }
     if (why) box.appendChild(span("why", why)).style.display = "block";
+    // the key's rights, for the sources whose keys can be limited (Proxmox VE, PBS)
+    const k = (d.keys || {})[name];
+    if (k && k.error) box.appendChild(span("why", "key rights not checked: " + k.error)).style.display = "block";
+    else if (k && k.extra.length) {
+      box.classList.add("risky");
+      for (const [where, privs] of k.extra) {
+        box.appendChild(span("why key", `key (${where}) can do more than read: ${privs.join(", ")}`)).style.display = "block";
+      }
+    } else if (k) box.appendChild(span("why", "key: read-only")).style.display = "block";
     list.appendChild(box);
   }
 }

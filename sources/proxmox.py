@@ -12,7 +12,18 @@ import re
 import time
 import urllib.parse
 
-from ._common import env, env_name, fmt_bytes, percent, request, source
+from ._common import beyond_reading, env, env_name, fmt_bytes, percent, request, rights, source
+
+
+@rights("proxmox")
+def _rights():
+    """What each node's token may do beyond reading (PVEAuditor gives nothing more)."""
+    out = []
+    for node, url, header in _nodes():
+        if header:
+            perms = request(f"{url}/api2/json/access/permissions", header, timeout=8).get("data")
+            out.append((node, beyond_reading(perms)))
+    return out
 
 
 def _nodes():

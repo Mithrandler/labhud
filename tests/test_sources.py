@@ -72,6 +72,19 @@ class Proxmox(SourceTest):
                  PROXMOX_ALPHA_TOKEN_ID="reader@pve!wall", PROXMOX_ALPHA_TOKEN_SECRET="not-a-real-secret")
         self.http = self.serve(proxmox, fixture("proxmox"))
 
+    def test_rights(self):
+        self.http.routes["/access/permissions"] = {"data": {
+            "/": {"Sys.Audit": 1, "Sys.Syslog": 1}, "/vms": {"VM.Audit": 1, "VM.PowerMgmt": 1, "VM.Monitor": 1}}}
+        self.assertEqual(proxmox._rights(), [("alpha", ["VM.PowerMgmt"])])  # beta has no token
+        self.http.routes["/access/permissions"] = {"data": {"/": {"Sys.Audit": 1, "Datastore.Audit": 1}}}
+        self.assertEqual(proxmox._rights(), [("alpha", [])])
+
+    def test_check_rights_reports_errors(self):
+        self.http.routes["/access/permissions"] = OSError("Host is unreachable")
+        self.assertEqual(sources.check_rights({"proxmox": None}), {"proxmox": {"error": "Host is unreachable"}})
+        self.http.routes["/access/permissions"] = {"data": {"/": {"Sys.Modify": 1}}}
+        self.assertEqual(sources.check_rights({"proxmox": None}), {"proxmox": {"extra": [("alpha", ["Sys.Modify"])]}})
+
     def test_node(self):
         out = proxmox.proxmox()
         a = out["alpha"]

@@ -26,6 +26,25 @@ passwords blanked out, addresses not); they sit behind the same host check as th
 The container runs as an unprivileged user (uid 10001), on a read-only filesystem, with every
 capability dropped except `NET_RAW` for ping (see `compose.example.yaml`).
 
+## Keys: the least each source needs
+
+labhud only reads. Give every source a key that can do nothing else, so a leaked `.env` cannot
+stop a VM or delete a backup.
+
+| source | what to give it | checked by labhud |
+|---|---|---|
+| Proxmox VE | an API token with privilege separation, role `PVEAuditor` on `/` | yes |
+| Proxmox Backup Server | an API token, role `Audit` on `/` | yes |
+| OPNsense | a user of its own with only `page-diagnostics-system-activity` and `page-status-trafficgraph` | no |
+| Synology DSM | a user of its own, not in `administrators` | no |
+| Sonarr, Radarr, Prowlarr, Bazarr, Jellyfin, Seerr | their API key: these keys have full rights, there is no read-only kind | no |
+| qBittorrent, Navidrome | a user of its own where the service allows it | no |
+
+For Proxmox VE and PBS, labhud asks the service at start (and after a config reload) what the
+token may do. Anything beyond reading (`VM.PowerMgmt`, `Sys.Modify`, `Datastore.Modify`...) is
+logged as a warning and shown on `/status`. The guest agent's disk usage needs `VM.Monitor`
+(Proxmox 8) or `VM.GuestAgent.Audit` (Proxmox 9), which count as reading.
+
 ## Notifications
 
 Off unless `LABHUD_NOTIFY_URL` is set. Each message carries a line from the history: card and

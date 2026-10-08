@@ -13,8 +13,22 @@ config.toml as "name.<key>". Modules whose name starts with "_" are helpers, not
 import importlib
 import pkgutil
 
-from ._common import REGISTRY, in_window, scrub  # noqa: F401  (re-exported for server.py)
+from ._common import REGISTRY, RIGHTS, in_window, scrub  # noqa: F401  (re-exported for server.py)
 from ._status import host_status  # noqa: F401
+
+
+def check_rights(active):
+    """{source: {"extra": [(where, [privilege])]} or {"error": text}} for the active sources whose
+    keys can be limited. An empty `extra` means read-only, as it should be."""
+    out = {}
+    for name, check in RIGHTS.items():
+        if name not in active:
+            continue
+        try:
+            out[name] = {"extra": [(where, privs) for where, privs in check() if privs]}
+        except Exception as e:  # the host may be off; the check runs again after a reload
+            out[name] = {"error": scrub(e)[:160] or type(e).__name__}
+    return out
 
 
 def load(topology):
