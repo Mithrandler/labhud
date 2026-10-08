@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-08
+
 ### Added
 - `/status`: a page with every source's state, last answer, poll time, next try and last error,
   plus the version, uptime, connected displays and whether actions are on. `/api/status` gives
@@ -118,7 +120,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/Mithrandler/labhud/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Mithrandler/labhud/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Mithrandler/labhud/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Mithrandler/labhud/releases/tag/v0.1.1
