@@ -26,6 +26,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   is grey, does not notify and does not take the screen.
 - Actions with a question: `choices = [{label, action}]` under `[action.<name>]`.
 - `LABHUD_DATA`: the history, the sparklines and maintenance kept across restarts (SQLite).
+- Sources: Healthchecks, Scrutiny, Uptime Kuma (docs/integrations.md).
+- MQTT: card states (retained) and history events, with Home Assistant discovery
+  (`LABHUD_MQTT_URL`).
 
 ### Changed
 - A source that misses a poll keeps its last good answer, marked `stale`, for

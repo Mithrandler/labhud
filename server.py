@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
 import config
 import events
+import mqtt
 import notify
 import sources
 import store
@@ -73,6 +74,7 @@ if DEMO:
     ACTION_URL = ""
     ACTION_SECRET = b""
     notify.URL = ""  # made-up events are not news
+    mqtt.URL = ""
 
 STATUS_EVERY = 30  # the ping/TCP checks, handled here: they need the topology
 CONFIG_PATH = config.config_path()
@@ -246,7 +248,40 @@ def publish_maintenance():
     for card in sorted(set(before) - set(now)):
         EVENTS.add(f"{CARD_NAMES.get(card, card)}: maintenance over")
     _publish({"maintenance": result})
+    mqtt.update(card_states())
     _log([])
+
+
+def card_states():
+    """{card id: up | down | maintenance | scheduled | on-demand} for every card with a status that
+    is known, worked out like the display does (card_status in app.js). For MQTT."""
+    maint = maintenance_now()
+    with _lock:
+        status = _data.get("status") or {}
+        px = _data.get("proxmox") or {}
+        out = {}
+        for cards in TOPOLOGY["cards"].values():
+            for c in cards:
+                chk = c.get("check")
+                if not chk:
+                    continue
+                if chk[0] == "proxmox":
+                    g = ((px.get(chk[1]) or {}).get("guests") or {}).get(str(chk[2]))
+                    v = bool(g.get("running")) if isinstance(g, dict) else None
+                else:
+                    v = status.get(c["id"])
+                if v == "scheduled":
+                    out[c["id"]] = "scheduled"
+                elif v is True:
+                    out[c["id"]] = "up"
+                elif v is False:
+                    out[c["id"]] = ("maintenance" if c["id"] in maint
+                                    else "on-demand" if c.get("on_demand") else "down")
+    return out
+
+
+def mqtt_cards():
+    return {c["id"]: c.get("name", c["id"]) for cards in TOPOLOGY["cards"].values() for c in cards if c.get("check")}
 
 
 def watch_maintenance():
@@ -295,10 +330,12 @@ def _log(found):
             card = ref[0][1]
             if card in maint:
                 EVENTS.add(text + " (maintenance)", False)
+                mqtt.event(text + " (maintenance)", False)
                 continue
             still_true = lambda card=card: (_data.get("status", {}).get(card) is False  # noqa: E731
                                             and card not in maintenance_now())
         EVENTS.add(text, bad)
+        mqtt.event(text, bad)
         notify.submit(TOPOLOGY["title"], text, bad, still_true)
     if not DEMO:
         store.save("events", EVENTS.snapshot()["recent"])
@@ -405,6 +442,8 @@ def loop():
             if signatures.get(name) != sig:
                 signatures[name] = sig
                 _publish({name: result})
+                if name in ("status", "proxmox"):
+                    mqtt.update(card_states())
         finally:
             with running_lock:
                 running.discard(name)
@@ -499,6 +538,7 @@ def watch_config():
         print(f"config.toml reloaded; sources: {', '.join(sorted(ACTIVE)) or 'none'}", flush=True)
         _log([("config.toml reloaded", False)])
         threading.Thread(target=check_keys, daemon=True).start()
+        mqtt.announce(mqtt_cards(), TOPOLOGY["title"])
         _send("config", {"reload": True})
 
 
@@ -556,6 +596,7 @@ def health():
         "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "keys": KEY_CHECKS,
         "tls": dict(sources.TLS_SEEN), "secret_files": envfiles.LOADED,
         "store": {"on": store.enabled(), "problem": store.PROBLEM} if store.DIR else {"on": False},
+        "mqtt": dict(mqtt.state, on=True, problem=mqtt.problem()) if mqtt.enabled() else {"on": False},
         "maintenance": maintenance_now(),
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
@@ -764,6 +805,10 @@ if __name__ == "__main__":
     threading.Thread(target=loop, daemon=True, name="collect").start()
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     notify.start()
+    if mqtt.enabled():
+        print(f"mqtt: {mqtt.problem() or 'on, ' + mqtt.PREFIX + '/…'}", flush=True)
+        mqtt.announce(mqtt_cards(), TOPOLOGY["title"])
+        mqtt.start()
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
     # Maintenance as kept at the last stop is not news: in the snapshot before the watcher starts.
     _data["maintenance"] = dict(maintenance_now(), _t=int(time.time()))

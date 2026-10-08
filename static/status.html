@@ -87,6 +87,8 @@ function render(d) {
       .map((m) => by[m].length + " " + m + (m === "unchecked" ? " (" + by[m].sort().join(", ") + ")" : "")).join(", ")]);
   }
   if ((d.secret_files || []).length) facts.push(["from files", d.secret_files.join(", ")]);
+  const mq = d.mqtt || {};
+  if (mq.on) facts.push(["mqtt", mq.problem || mq.sent + " sent" + (mq.last_error ? " · last error: " + mq.last_error + " (" + ago(d.now, mq.last_error_at) + ")" : "")]);
   const st = d.store || {};
   facts.push(["kept across restarts", st.on ? "yes" : st.problem ? "no: " + st.problem : "no (LABHUD_DATA not set)"]);
   const maint = Object.entries(d.maintenance || {});

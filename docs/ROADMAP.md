@@ -42,9 +42,9 @@ Security between machines:
 
 Integrations:
 
-12. **Healthchecks** (missed cron jobs) and **Scrutiny** (disk health) as sources.
-13. **Uptime Kuma** as a source, so monitors are not defined twice.
-14. **MQTT / Home Assistant.** State changes published on MQTT, for automations.
+12. ~~**Healthchecks**~~ Done: (missed cron jobs) and **Scrutiny** (disk health) as sources.
+13. ~~**Uptime Kuma**~~ Done: as a source, so monitors are not defined twice.
+14. ~~**MQTT / Home Assistant.**~~ Done: State changes published on MQTT, for automations.
 
 Features:
 

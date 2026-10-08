@@ -28,7 +28,7 @@ each of them, see [threat-model.md](threat-model.md).
                          │       └── POST from the display's browser (direct mode)    │
                          └────────────────────────────────────────────────────────────┘
                                                        │
-                                      outbound, optional: weather API, notification webhook
+                          outbound, optional: weather API, notification webhook, MQTT broker
 ```
 
 Everything flows **from labhud outward**, except the displays, which connect to labhud, and the
@@ -63,7 +63,10 @@ allowed host name sees everything the display sees.
 | `LABHUD_JSON_<NAME>_URL` | HTTP(S) GET | `LABHUD_JSON_<NAME>_AUTH`, if set | `LABHUD_JSON_<NAME>_EVERY`, default 10 s |
 | hosts with `ping` / `tcp` on their card | ICMP echo / TCP connect | none | 30 s |
 | weather (`[weather]`) | HTTPS | none | 15 min |
+| Healthchecks, Uptime Kuma | HTTP(S) | read-only API key | 60 s, 30 s |
+| Scrutiny | HTTP(S) | none (its API has no key) | 5 min |
 | `LABHUD_NOTIFY_URL` | HTTP(S) POST | `LABHUD_NOTIFY_AUTH` | on events only |
+| `LABHUD_MQTT_URL` | MQTT 3.1.1 (or over TLS) | user + password | on changes only |
 | `LABHUD_ACTION_URL` (signed mode) | HTTP POST | HMAC-SHA256 of time, nonce and action name | on a button press only |
 
 Certificates are checked per host: pinned (`LABHUD_PINS`), verified against CAs

@@ -48,6 +48,7 @@ In portrait the same page gets two columns, and the project name takes the free 
 - [docs/threat-model.md](docs/threat-model.md): what labhud protects, against whom, and the known gaps
 - [docs/live-agent.md](docs/live-agent.md): your own data (alerts, DNS, logins, game servers) as one JSON document
 - [docs/actions.md](docs/actions.md): buttons that wake hosts or start VMs (off by default)
+- [docs/integrations.md](docs/integrations.md): Healthchecks, Scrutiny, Uptime Kuma, MQTT and Home Assistant
 - [config.example.toml](config.example.toml): every config option, commented
 - [.env.example](.env.example): every source and the variables it reads
 - [CHANGELOG.md](CHANGELOG.md) · [docs/ROADMAP.md](docs/ROADMAP.md)
