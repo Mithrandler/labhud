@@ -8,9 +8,10 @@
 # Why SSE and not WebSocket: traffic goes one way, SSE reconnects by itself, works over plain
 # HTTP and needs no library. Standard library only, like the rest of the fleet.
 #
-# Actions do NOT go through here, on purpose. The agent that runs them (LABHUD_ACTION_URL) should
-# accept POST only from the display's own IP, so that no container next to this server can shut a
-# host down. The browser talks to that agent directly; this server only tells it where it is.
+# Actions are never run here. With LABHUD_ACTION_SECRET, this server checks that a press comes from
+# its own page and forwards it to the agent (LABHUD_ACTION_URL) with an HMAC signature the agent
+# checks, so nothing else, not even a container next to this server, can make one. Without a secret
+# the browser talks to the agent directly, and the agent must trust only the display's IP.
 
 import collections
 import hashlib
