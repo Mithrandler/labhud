@@ -1,5 +1,8 @@
 # Security model
 
+The connections are drawn in [architecture.md](architecture.md); who might attack them and what
+is left open, in [threat-model.md](threat-model.md).
+
 labhud is built for one screen on a trusted network. It has **no login**, by design: a wall
 display cannot type a password.
 

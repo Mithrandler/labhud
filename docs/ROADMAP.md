@@ -34,8 +34,11 @@ Security between machines:
    read or forge the data.
 10. **Secrets from files.** Every `LABHUD_*` secret can also be `LABHUD_*_FILE` (Docker secrets),
     so tokens stay out of `docker inspect` and the process environment.
-11. **Hardened container.** Non-root user, read-only root filesystem, no Linux capabilities;
-    checked in CI.
+11. **Hardened container.** Already there (uid 10001, read-only, only `NET_RAW`, see
+    `compose.example.yaml`); left: a CI check that the image still runs that way.
+11a. **Verified certificates.** HTTPS to the services is not verified today (self-signed
+    certificates). Per source: a CA file or a pinned certificate fingerprint, with "no check" as an
+    explicit, logged choice. First on the list in [threat-model.md](threat-model.md).
 
 Integrations:
 
@@ -45,8 +48,9 @@ Integrations:
 
 Features:
 
-15. **Per-source interval and back-off.** Each source polls on its own schedule; a failing one is
-    retried less and less often.
+15. **Back-off and configurable intervals.** Each source already has its own interval, fixed in
+    code; make it settable, retry a failing source less and less often, and keep its last known
+    state as "stale" for a while instead of dropping it at the first failed poll.
 16. **Actions with a question.** An action can ask for a choice before it runs (now / in 5 min /
     tonight), with the choices defined in `config.toml`.
 17. **Maintenance windows.** A host marked "in maintenance" until a given time is not red, does
@@ -55,9 +59,9 @@ Features:
 
 Documentation:
 
-19. **Architecture**, with a diagram: who talks to whom, on which port, in which direction, with
-    which key.
-20. **Threat model**: a stolen token, someone on the LAN, a lost phone. What labhud protects and
-    what it does not.
+19. ~~**Architecture**~~ Done: [architecture.md](architecture.md), every connection with its
+    direction, port and key.
+20. ~~**Threat model**~~ Done: [threat-model.md](threat-model.md), a stolen key, someone on
+    the LAN, someone at the display; what labhud stops and what is left.
 21. **Per-source recipes**: which token to create, the least rights it needs, the config block.
 22. **Documentation site** on GitHub Pages, built from `docs/`.

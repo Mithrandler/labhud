@@ -44,6 +44,8 @@ In portrait the same page gets two columns, and the project name takes the free 
 
 - [docs/install.md](docs/install.md): installing and updating; `/status` for what is not working
 - [docs/security.md](docs/security.md): what the page reveals and what to put in front of it
+- [docs/architecture.md](docs/architecture.md): every connection, its direction, port and key
+- [docs/threat-model.md](docs/threat-model.md): what labhud protects, against whom, and the known gaps
 - [docs/live-agent.md](docs/live-agent.md): your own data (alerts, DNS, logins, game servers) as one JSON document
 - [docs/actions.md](docs/actions.md): buttons that wake hosts or start VMs (off by default)
 - [config.example.toml](config.example.toml): every config option, commented
