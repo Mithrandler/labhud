@@ -41,6 +41,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   HMAC-SHA256 signature (time, nonce, name). `labhud-agent.py` checks it with
   `LABHUD_AGENT_SECRET`: at most 30 seconds old, never reused, from labhud's IP. Without a
   secret, actions still go straight from the browser to the agent, as before.
+- `init.py` (`labhud init`): asks for a Proxmox VE address and token, checks the token works and
+  can only read, finds the nodes and guests, and writes a first `config.toml` and `.env` (never
+  over existing files). In the image: `python3 /app/init.py /out`.
 - List rows may carry a time (`t`, Unix seconds) instead of a value: shown as the time today,
   as the date before.
 

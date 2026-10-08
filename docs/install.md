@@ -20,6 +20,22 @@ On another port or address, add the name to `LABHUD_HOSTS`, for example
 
 ## 2. Describe your screen
 
+**The quick way, if you have Proxmox VE:** let labhud write a first config for you. It asks for
+the Proxmox address and an API token (role `PVEAuditor`), checks that the token works and can
+only read, finds your nodes and guests, and writes `config.toml` and `.env` in the current folder
+(next to existing files as `.new`, never over them):
+
+```sh
+mkdir labhud && cd labhud
+docker run --rm -it -v "$PWD:/out" ghcr.io/mithrandler/labhud:latest python3 /app/init.py /out
+curl -fsSLO https://raw.githubusercontent.com/Mithrandler/labhud/main/compose.example.yaml
+mv compose.example.yaml compose.yaml
+```
+
+Then skip to step 4, and add the other sources later from `.env.example`.
+
+**By hand**, from the commented examples:
+
 ```sh
 mkdir labhud && cd labhud
 curl -fsSLO https://raw.githubusercontent.com/Mithrandler/labhud/main/config.example.toml
