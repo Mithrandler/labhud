@@ -66,6 +66,7 @@ Each line: what happens, what stops it today, and what is left.
 | Faking `Origin` in direct mode | only the display's IP | a device that can take the display's IP (same Wi-Fi, no DHCP reservation) can run actions. Use signed mode |
 | Injecting a command | the agent runs only commands written in its TOML file; the name only selects one | nothing |
 | Someone at the display presses SHUT DOWN | a confirmation dialog | nobody is identified. Keep destructive actions to what a guest may press |
+| Someone at the display puts a host in maintenance to hide an outage | off unless `[maintenance] buttons = true`; at most 7 days; logged and in the history | the host stays grey and silent until it ends |
 
 ### Availability
 

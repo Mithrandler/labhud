@@ -80,6 +80,24 @@ label = "UPDATE"
 confirm = "Update every host now? Some may reboot."
 ```
 
+## Asking instead of confirming
+
+An action can offer choices instead of YES/NO. Each choice is a separate action name that your
+agent knows, so the protocol does not change:
+
+```toml
+[[page.group.card]]
+id = "vm-node1-101"
+actions = ["vm-node1-101-reboot"]
+
+[action.vm-node1-101-reboot]
+confirm = "Reboot the VM when?"
+choices = [{ label = "NOW", action = "vm-node1-101-reboot" },
+           { label = "TONIGHT", action = "vm-node1-101-reboot-tonight" }]
+```
+
+labhud forwards (in signed mode) only the actions on a card and the choices written here.
+
 ## The contract, if you write your own agent
 
 - `POST /action/<name>`, empty body. Names are `[a-z0-9-]`.

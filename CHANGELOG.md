@@ -21,6 +21,11 @@ still change in a minor version; such changes are listed under **Changed** with 
   the agent, which pins labhud's certificate with `LABHUD_AGENT_PUSH_PIN`.
 - `LABHUD_AGENT_READ_KEY` + `LABHUD_JSON_<NAME>_AUTH`: the agent's sensors only to labhud.
 - The weather (a public API) always has its certificate checked.
+- Maintenance: `[[maintenance.window]]` in config.toml, and with `[maintenance] buttons = true` a
+  MAINTENANCE button in each card's panel (1 hour, 4 hours, 1 day, end). A card in maintenance
+  is grey, does not notify and does not take the screen.
+- Actions with a question: `choices = [{label, action}]` under `[action.<name>]`.
+- `LABHUD_DATA`: the history, the sparklines and maintenance kept across restarts (SQLite).
 
 ### Changed
 - A source that misses a poll keeps its last good answer, marked `stale`, for

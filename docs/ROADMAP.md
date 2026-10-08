@@ -51,11 +51,11 @@ Features:
 15. ~~**Back-off and configurable intervals.**~~ Done (back-off was already there). Each source already has its own interval, fixed in
     code; make it settable, retry a failing source less and less often, and keep its last known
     state as "stale" for a while instead of dropping it at the first failed poll.
-16. **Actions with a question.** An action can ask for a choice before it runs (now / in 5 min /
+16. ~~**Actions with a question.**~~ Done. An action can ask for a choice before it runs (now / in 5 min /
     tonight), with the choices defined in `config.toml`.
-17. **Maintenance windows.** A host marked "in maintenance" until a given time is not red, does
+17. ~~**Maintenance windows.**~~ Done. A host marked "in maintenance" until a given time is not red, does
     not notify and does not take the screen.
-18. **History on disk.** Events and sparklines survive a container restart (small SQLite file).
+18. ~~**History on disk.**~~ Done. Events and sparklines survive a container restart (small SQLite file).
 
 Documentation:
 

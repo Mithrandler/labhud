@@ -319,6 +319,8 @@ body.with-alert { --alert: 22px; }
 #confirm .box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; max-width: 320px; text-align: center; }
 #confirm p { font-size: 14px; margin-bottom: 16px; line-height: 1.4; }
 #confirm .buttons { display: flex; gap: 10px; justify-content: center; }
+#confirm .buttons.many { flex-wrap: wrap; }
+#confirm .buttons.many button { padding: 11px 14px; }
 #confirm button { appearance: none; border: 1px solid var(--border); background: var(--block); color: var(--text); font: 700 13px/1 var(--font); padding: 11px 24px; border-radius: 6px; }
 #confirm button.danger { border-color: var(--red); color: var(--red); }
 

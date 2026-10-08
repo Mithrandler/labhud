@@ -14,6 +14,7 @@ import ipaddress
 import os
 import re
 import sys
+import time
 import tomllib
 
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.toml")
@@ -41,10 +42,14 @@ METRIC_KEYS = {"key", "label", "format"}
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
 QUIET_KEYS = {"from", "to", "sources"}
 WEATHER_KEYS = {"latitude", "longitude", "timezone", "city"}
-ACTION_KEYS = {"label", "confirm"}
+ACTION_KEYS = {"label", "confirm", "choices"}
+CHOICE_KEYS = {"label", "action"}
+MAINTENANCE_KEYS = {"buttons", "window"}
+WINDOW_KEYS = {"cards", "from", "until", "reason"}
 ALERTS_KEYS = {"path", "page"}
 NIGHT_KEYS = {"from", "to", "dim"}
-TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "sparklines"}
+TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "sparklines",
+            "maintenance"}
 # The formats whose numbers get a sparkline (the last hours, behind the value)
 TREND_FORMATS = {"percent", "percent1", "celsius", "rate", "used_of"}
 DEFAULT_TITLE = "LABHUD"
@@ -204,6 +209,23 @@ def _hour(ck, where, table, key):
     return v
 
 
+ACTION_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+
+
+def _when(ck, where, table, key, optional=False):
+    """"2026-10-12 08:00" (labhud's local time, TZ) -> Unix seconds."""
+    v = table.get(key)
+    if v is None:
+        if not optional:
+            ck.err(where, f"missing '{key}' (a time like \"2026-10-12 08:00\")")
+        return None
+    try:
+        return int(time.mktime(time.strptime(str(v).strip(), "%Y-%m-%d %H:%M")))
+    except ValueError:
+        ck.err(where, f"{key} must be a time like \"2026-10-12 08:00\", got {v!r}")
+        return None
+
+
 def config_path():
     """Where the config file is: LABHUD_CONFIG, or config.toml next to this module."""
     return os.environ.get("LABHUD_CONFIG") or DEFAULT_PATH
@@ -219,7 +241,8 @@ def load(path=None):
     quiet_hours  {card id: (from, to)}
     skip_sources {source name: (from, to)}
     weather      {latitude, longitude, timezone?, city?} or None
-    actions      {action name: {label?, confirm?}}
+    actions      {action name: {label?, confirm?, choices?: [{label, action}]}}
+    maintenance  {buttons: bool, windows: [{cards, from, until, reason?}]} (times as Unix seconds)
     alerts       {path, page?} or None
     night        {from, to, dim} or None: the screen dims in that window (the display's local time)
     trends       [data path]: the numbers kept for sparklines (empty with sparklines = false)
@@ -367,6 +390,53 @@ def load(path=None):
         for key in ("label", "confirm"):
             if (v := ck.opt(aw, a, key, str, "a string")) is not None:
                 actions[name][key] = v
+        # A question before the action: each choice is an action of its own, sent as such. The
+        # agent's protocol does not change, and only the choices written here can be sent.
+        if "choices" in a:
+            ch = a["choices"]
+            if not (isinstance(ch, list) and ch and all(isinstance(x, dict) for x in ch)):
+                ck.err(aw, 'choices must be a list of { label = "...", action = "<action name>" }')
+                continue
+            actions[name]["choices"] = []
+            for j, x in enumerate(ch):
+                cw = f"{aw}.choices[{j}]"
+                ck.unknown(cw, x, CHOICE_KEYS)
+                label = ck.need(cw, x, "label", str, "a string")
+                target = ck.need(cw, x, "action", str, "an action name")
+                if target is not None and not ACTION_NAME.fullmatch(target):
+                    ck.err(cw, f"action '{target}' may only use a-z, 0-9 and '-'")
+                actions[name]["choices"].append({"label": label, "action": target})
+
+    # Maintenance: cards that are down on purpose for a while. Not red, no notification, and they
+    # do not take the screen. Windows here; with `buttons`, also from a card's panel on the display.
+    maintenance = {"buttons": False, "windows": []}
+    if "maintenance" in raw:
+        mt = raw["maintenance"]
+        if not isinstance(mt, dict):
+            ck.err("top level", "maintenance must be written as a [maintenance] table")
+            mt = {}
+        ck.unknown("maintenance", mt, MAINTENANCE_KEYS)
+        maintenance["buttons"] = bool(ck.opt("maintenance", mt, "buttons", bool, "true or false"))
+        wins = mt.get("window", [])
+        if not isinstance(wins, list) or not all(isinstance(x, dict) for x in wins):
+            ck.err("maintenance", "window must be written as [[maintenance.window]] tables")
+            wins = []
+        for j, x in enumerate(wins):
+            ww = f"maintenance.window[{j}]"
+            ck.unknown(ww, x, WINDOW_KEYS)
+            cards_in = x.get("cards")
+            if not (isinstance(cards_in, list) and cards_in and all(isinstance(c, str) for c in cards_in)):
+                ck.err(ww, "cards must be a list of card ids")
+                cards_in = []
+            for cid in cards_in:
+                if cid not in card_ids:
+                    hint = _closest(cid, card_ids)
+                    ck.err(ww, f"card '{cid}' does not exist" + (f" (did you mean '{hint}'?)" if hint else ""))
+            win = {"cards": cards_in, "from": _when(ck, ww, x, "from", optional=True) or 0,
+                   "until": _when(ck, ww, x, "until")}
+            if (r := ck.opt(ww, x, "reason", str, "a string")) is not None:
+                win["reason"] = r
+            maintenance["windows"].append(win)
 
     # The alert banner: a list of {id, text} at `path`; `page` gets a mark in the menu while any is open.
     alerts = None
@@ -400,9 +470,12 @@ def load(path=None):
                     ck.err("night", f"dim must be from 0 to 100, got {dim}")
                 night["dim"] = dim
 
+    for name, a in actions.items():
+        if a.get("choices") and not any(name in c.get("actions", ()) for cs in cards.values() for c in cs):
+            ck.err(f"action.{name}", "has choices but no card offers it (add it to a card's actions)")
     if ck.problems:
         raise ConfigError(path, ck.problems)
-    return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
+    return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
             "weather": weather, "night": night,
             "trends": [] if sparklines is False else sorted({
                 m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) if m[2] in TREND_FORMATS})}
@@ -412,6 +485,7 @@ def public(topology):
     """What the browser gets from /api/config: the layout, without the server-side schedules
     and without the weather coordinates (only the city name is shown)."""
     out = {k: topology[k] for k in ("title", "pages", "cards", "strip", "actions", "alerts", "night", "trends")}
+    out["maintenance_buttons"] = topology["maintenance"]["buttons"]
     out["city"] = (topology.get("weather") or {}).get("city", "")
     return out
 

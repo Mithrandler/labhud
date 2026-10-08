@@ -89,9 +89,9 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 
 python3 init.py fingerprint https://192.0.2.50:8095   # -> LABHUD_AGENT_PUSH_PIN on each agent
 ```
 
-A browser will warn about a self-signed certificate once; for the display itself a reverse proxy
-with a real certificate is often simpler. Remember to use `https://` in `LABHUD_HOSTS` users' URLs:
-the names stay `host:port`.
+A browser warns about a self-signed certificate; for the display itself, a reverse proxy with a
+real certificate is often simpler. `LABHUD_HOSTS` does not change: it lists `host:port` names,
+whatever the scheme.
 
 ## Agents
 

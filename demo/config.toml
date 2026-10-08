@@ -317,6 +317,10 @@ id = "games"
 title = "GAMES"
 games = "live.games.servers"
 
+# A MAINTENANCE button in every card's panel: down on purpose, not red, no notification.
+[maintenance]
+buttons = true
+
 [alerts]
 path = "live.alerts"
 page = "security"

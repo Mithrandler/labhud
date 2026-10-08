@@ -167,6 +167,26 @@ sources = ["synology"]
 label = "WAKE"
 confirm = "Wake the backup server now?"
 
+# An action can ask a question instead of yes/no: each choice is an action of its own, sent to
+# the agent as such (only these can be sent). The card lists the first one in its `actions`.
+#
+#   [action.vm-node1-101-reboot]
+#   confirm = "Reboot the VM when?"
+#   choices = [{ label = "NOW", action = "vm-node1-101-reboot" },
+#              { label = "TONIGHT", action = "vm-node1-101-reboot-tonight" }]
+
+# Maintenance: a card that is down on purpose. Not red, no notification, it does not take the
+# screen, and its history line says "(maintenance)". Times are labhud's local time (TZ).
+#
+#   [maintenance]
+#   buttons = true          # a MAINTENANCE button in each card's panel: 1 hour, 4 hours, 1 day
+#
+#   [[maintenance.window]]
+#   cards = ["vm-node1-101"]
+#   from = "2026-10-12 08:00"    # optional: from now
+#   until = "2026-10-12 12:00"
+#   reason = "disk swap"
+
 # A page can be a grid of game servers instead of fixed cards:
 #
 #   [[page]]

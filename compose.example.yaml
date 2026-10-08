@@ -21,7 +21,11 @@ services:
     #   - ./labhud:/app/conf:ro   plus   LABHUD_CONFIG: /app/conf/config.toml
     volumes:
       - ./config.toml:/app/config.toml:ro
-    # labhud writes nothing to disk and needs no privilege but NET_RAW (for ping).
+      # Optional: history and maintenance kept across restarts (with LABHUD_DATA=/data in .env).
+      # mkdir data && sudo chown 10001 data
+      # - ./data:/data
+    # labhud writes nothing to disk (except to LABHUD_DATA, if you mount it) and needs no
+    # privilege but NET_RAW (for ping).
     read_only: true
     cap_drop: ["ALL"]
     cap_add: ["NET_RAW"]

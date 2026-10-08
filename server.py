@@ -29,6 +29,7 @@ import config
 import events
 import notify
 import sources
+import store
 from sources import push
 
 PORT = int(os.environ.get("LABHUD_PORT", "8095"))
@@ -105,6 +106,9 @@ def _apply(topology):
                 paths = [m[0] for m in c.get("metrics", [])] + [c[k] for k in ("list", "torrents") if k in c]
                 for src in {p.split(".")[0] for p in paths} & set(active):
                     source_host.setdefault(src, c["id"])
+    global CARD_IDS, CARD_NAMES
+    CARD_NAMES = {c["id"]: c.get("name", c["id"]) for cards in topology["cards"].values() for c in cards}
+    CARD_IDS = set(CARD_NAMES)
     TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST = (
         topology, active, inactive, every, targets, source_host)
 
@@ -116,7 +120,11 @@ _lock = threading.Lock()
 # name -> how the last polls of that source went, for /status (never the data itself)
 _health = {}
 # What changed, newest first: the `events` source (see events.py). The demo starts with a made-up past.
-EVENTS = events.Log(demo.events() if DEMO else ())
+EVENTS = events.Log(demo.events() if DEMO else store.load("events", []))
+# Maintenance set from the display: {card id: until (Unix seconds)}. Windows from config.toml are
+# added to it in maintenance_now(); both are kept out of the red, the notifications and the focus.
+MAINT = {} if DEMO else {k: v for k, v in store.load("maintenance", {}).items() if v > time.time()}
+_maint_lock = threading.Lock()
 
 
 # Sparklines: one value a minute for every number in TOPOLOGY["trends"], the last 6 hours, in
@@ -150,6 +158,18 @@ def seed_demo_history():
         _history[path] = collections.deque((r[i] for r in rows), maxlen=HISTORY_POINTS)
 
 
+def restore_history():
+    """The sparklines kept at the last stop (LABHUD_DATA), with the minutes it was down left empty."""
+    saved = store.load("history")
+    if not saved:
+        return
+    gap = min(HISTORY_POINTS, max(0, int((time.time() - saved.get("t", 0)) // HISTORY_STEP)))
+    for path in TOPOLOGY["trends"]:
+        values = saved.get("series", {}).get(path)
+        if values:
+            _history[path] = collections.deque(values + [None] * gap, maxlen=HISTORY_POINTS)
+
+
 def sample_history():
     time.sleep(15)  # the first answers of the sources
     while True:
@@ -161,6 +181,9 @@ def sample_history():
                 series.append(_value(path))
             for path in set(_history) - set(TOPOLOGY["trends"]):  # gone after a reload
                 del _history[path]
+            kept = {p: list(s) for p, s in _history.items()}
+        if not DEMO:
+            store.save("history", {"t": int(time.time()), "series": kept})
         time.sleep(HISTORY_STEP)
 
 
@@ -175,7 +198,62 @@ def _action_allowed(name):
         return False
     if GAME_ACTION_RE.fullmatch(name):
         return any(p.get("games") for p in TOPOLOGY["pages"])
-    return any(name in c.get("actions", ()) for cards in TOPOLOGY["cards"].values() for c in cards)
+    offered = {a for cards in TOPOLOGY["cards"].values() for c in cards for a in c.get("actions", ())}
+    if name in offered:
+        return True
+    # a choice of an offered action's question ([action.<name>] choices)
+    return any(ch["action"] == name for a in offered
+               for ch in TOPOLOGY["actions"].get(a, {}).get("choices", ()))
+
+
+def maintenance_now(now=None):
+    """{card id: until} for every card in maintenance right now, from config.toml and the display."""
+    now = now or time.time()
+    out = {}
+    for w in TOPOLOGY["maintenance"]["windows"]:
+        if w["from"] <= now < w["until"]:
+            for card in w["cards"]:
+                out[card] = max(out.get(card, 0), w["until"])
+    with _maint_lock:
+        for card, until in MAINT.items():
+            if until > now and card in CARD_IDS:
+                out[card] = max(out.get(card, 0), int(until))
+    return out
+
+
+def set_maintenance(card, minutes):
+    """From the display: `minutes` from now, or 0 to end it (only what the display set)."""
+    with _maint_lock:
+        if minutes:
+            MAINT[card] = int(time.time()) + minutes * 60
+        else:
+            MAINT.pop(card, None)
+        kept = dict(MAINT)
+    store.save("maintenance", kept)
+    publish_maintenance()
+
+
+def publish_maintenance():
+    now = maintenance_now()
+    with _lock:
+        before = {k: v for k, v in (_data.get("maintenance") or {}).items() if k != "_t"}
+        if before == now and "maintenance" in _data:
+            return
+        _data["maintenance"] = dict(now, _t=int(time.time()))
+        result = _data["maintenance"]
+    for card in sorted(set(now) - set(before)):
+        EVENTS.add(f"{CARD_NAMES.get(card, card)}: maintenance until {time.strftime('%H:%M', time.localtime(now[card]))}")
+    for card in sorted(set(before) - set(now)):
+        EVENTS.add(f"{CARD_NAMES.get(card, card)}: maintenance over")
+    _publish({"maintenance": result})
+    _log([])
+
+
+def watch_maintenance():
+    """Windows start and end on their own: checked every 10 s."""
+    while True:
+        publish_maintenance()
+        time.sleep(10)
 
 
 def sign(name, now=None):
@@ -208,16 +286,22 @@ def forward_action(name):
 
 def _log(found):
     """Adds [(text, bad, ref?)] to the history, sends it to the displays and, if set up, to the
-    notification webhook (see notify.py)."""
-    if not found:
-        return
+    notification webhook (see notify.py). A host in maintenance going down is history, not news.
+    An empty list only sends the history as it is (after maintenance_now added to it)."""
+    maint = maintenance_now() if found else {}
     for text, bad, *ref in found:
-        EVENTS.add(text, bad)
         still_true = None
         if ref and ref[0][0] == "status":
             card = ref[0][1]
-            still_true = lambda card=card: _data.get("status", {}).get(card) is False  # noqa: E731
+            if card in maint:
+                EVENTS.add(text + " (maintenance)", False)
+                continue
+            still_true = lambda card=card: (_data.get("status", {}).get(card) is False  # noqa: E731
+                                            and card not in maintenance_now())
+        EVENTS.add(text, bad)
         notify.submit(TOPOLOGY["title"], text, bad, still_true)
+    if not DEMO:
+        store.save("events", EVENTS.snapshot()["recent"])
     result = dict(EVENTS.snapshot(), _t=int(time.time()))
     with _lock:
         _data["events"] = result
@@ -365,7 +449,7 @@ def _mark_inactive():
     """The snapshot's entries for sources that do not run: "not configured", or gone after a reload."""
     with _lock:
         for name in list(_data):
-            if name not in SOURCES and name not in INACTIVE and name != "events":
+            if name not in SOURCES and name not in INACTIVE and name not in ("events", "maintenance"):
                 del _data[name]
                 _health.pop(name, None)
         for name, needs in INACTIVE.items():
@@ -471,6 +555,8 @@ def health():
         "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": ("signed" if ACTION_SECRET else "direct") if ACTION_URL else False,
         "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "keys": KEY_CHECKS,
         "tls": dict(sources.TLS_SEEN), "secret_files": envfiles.LOADED,
+        "store": {"on": store.enabled(), "problem": store.PROBLEM} if store.DIR else {"on": False},
+        "maintenance": maintenance_now(),
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
@@ -541,6 +627,9 @@ class Handler(BaseHTTPRequestHandler):
         p = re.fullmatch(r"/api/push/([a-z0-9_]{1,64})", self.path)
         if p:
             return self._push(p.group(1))
+        mt = re.fullmatch(r"/api/maintenance/([A-Za-z0-9_.-]{1,64})", self.path)
+        if mt:
+            return self._maintenance(mt.group(1))
         m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
@@ -551,6 +640,27 @@ class Handler(BaseHTTPRequestHandler):
         print(f"action {m.group(1)} from {self.client_address[0]}: "
               f"{'ok' if answer.get('ok') else answer.get('error')}", flush=True)
         self._json(answer, code)
+
+    def _same_page(self):
+        """The request comes from labhud's own page, under a name in LABHUD_HOSTS."""
+        host = (self.headers.get("Host") or "").lower()
+        origin = (self.headers.get("Origin") or "").lower()
+        return self._host_ok() and origin in (f"http://{host}", f"https://{host}")
+
+    def _maintenance(self, card):
+        """A card's MAINTENANCE button: {"minutes": n} (0 ends it). Off unless
+        [maintenance] buttons = true; like actions, anyone at the display can press it."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            minutes = int(json.loads(self.rfile.read(length) if 0 < length <= 1024 else b"{}").get("minutes", -1))
+        except (ValueError, AttributeError):
+            minutes = -1
+        if not (TOPOLOGY["maintenance"]["buttons"] and card in CARD_IDS and self._same_page()
+                and 0 <= minutes <= 7 * 24 * 60):
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        set_maintenance(card, minutes)
+        print(f"maintenance {card}: {f'{minutes} min' if minutes else 'ended'} from {self.client_address[0]}", flush=True)
+        self._json({"ok": True, "until": maintenance_now().get(card)})
 
     def _push(self, name):
         """An agent's data (sources/push.py). Not behind LABHUD_HOSTS: the signature is the check,
@@ -652,7 +762,13 @@ if __name__ == "__main__":
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     notify.start()
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
+    if not DEMO:
+        restore_history()
+        if store.DIR:
+            print(f"kept across restarts in {store.DIR}" if store.enabled()
+                  else f"LABHUD_DATA: {store.PROBLEM}", flush=True)
     threading.Thread(target=sample_history, daemon=True, name="history").start()
+    threading.Thread(target=watch_maintenance, daemon=True, name="maintenance").start()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     if TLS_CERT:
         import ssl

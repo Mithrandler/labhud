@@ -87,6 +87,11 @@ function render(d) {
       .map((m) => by[m].length + " " + m + (m === "unchecked" ? " (" + by[m].sort().join(", ") + ")" : "")).join(", ")]);
   }
   if ((d.secret_files || []).length) facts.push(["from files", d.secret_files.join(", ")]);
+  const st = d.store || {};
+  facts.push(["kept across restarts", st.on ? "yes" : st.problem ? "no: " + st.problem : "no (LABHUD_DATA not set)"]);
+  const maint = Object.entries(d.maintenance || {});
+  if (maint.length) facts.push(["maintenance", maint.map(([card, until]) =>
+    card + " until " + new Date(until * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })).join(", ")]);
   facts.forEach(([k, v], i) => {
     if (i) general.append(" · ");
     general.append(k + " ");

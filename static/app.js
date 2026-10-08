@@ -253,6 +253,7 @@ let focusCard = null, focusUntil = 0, wakeUntil = 0;
 /** Red on the screen: the card's host is down, or one of its numbers is past the critical mark.
     null when nothing about the card is known (its source has not answered, or missed a poll). */
 function card_bad(c) {
+  if (maintenance_until(c)) return false;   // down on purpose: not a problem, whatever it shows
   const st = card_status(c);
   if (st === false) return true;
   const vals = (c.metrics || []).map(([path, , fmt]) => [path, fmt, get(path)]);
@@ -474,8 +475,32 @@ function layout() {
   layoutSign = layout_sign();
 }
 
-/** true/false/"scheduled"/"on-demand"/null for a card's status. */
+/** Until when (Unix seconds) the card is in maintenance, or 0. */
+function maintenance_until(c) {
+  const until = c ? get("maintenance." + c.id) : 0;
+  return typeof until === "number" && until * 1000 > Date.now() ? until : 0;
+}
+
+/** Off, but not news: on schedule, on demand, or in maintenance. Grey, never red. */
+function quiet_off(st) { return st === "scheduled" || st === "on-demand" || st === "maintenance"; }
+
+function off_label(c, st) {
+  if (st === "scheduled") return "off on schedule";
+  if (st === "maintenance") return "maintenance until " + clock(maintenance_until(c));
+  return "off · started on demand";
+}
+
+function clock(t) {
+  return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** true/false/"scheduled"/"on-demand"/"maintenance"/null for a card's status. */
 function card_status(c) {
+  const st = raw_status(c);
+  return st === false && maintenance_until(c) ? "maintenance" : st;
+}
+
+function raw_status(c) {
   if (!c || !c.check) return null;
   if (c.check[0] === "proxmox") {
     const g = get("proxmox." + c.check[1] + ".guests." + c.check[2]);
@@ -497,7 +522,7 @@ function add_dot(head, c) {
     const alive = card_status(c);
     cls(dot, "up", alive === true);
     cls(dot, "down", alive === false);
-    cls(dot, "scheduled", alive === "scheduled" || alive === "on-demand");
+    cls(dot, "scheduled", quiet_off(alive));
   });
 }
 
@@ -545,11 +570,11 @@ function make_card(c, merged = false) {
       // If the host is visibly down (or off on schedule), the source's error adds nothing:
       // it is the consequence, not a second problem. PBS, for example, is normally off.
       const st = card_status(c);
-      if (st === false || st === "scheduled" || st === "on-demand") {
+      if (st === false || quiet_off(st)) {
         err.hidden = st === false;
         if (st !== false) {
           cls(err, "scheduled", true);
-          put(err, st === "scheduled" ? "off on schedule" : "off · started on demand");
+          put(err, off_label(c, st));
         }
         return;
       }
@@ -875,7 +900,7 @@ function render_strip() {
     const alive = card_status(CARD_BY_ID[x.info.card]);
     cls(x.nm, "up", alive === true);
     cls(x.nm, "down", alive === false);
-    cls(x.nm, "scheduled", alive === "scheduled" || alive === "on-demand");
+    cls(x.nm, "scheduled", quiet_off(alive));
     let dn = null, up = null;
     if (x.info.wan) { dn = get("opnsense.wan_dn"); up = get("opnsense.wan_up"); }
     else if (x.info.ip && perIp[x.info.ip]) { dn = perIp[x.info.ip].dn; up = perIp[x.info.ip].up; }
@@ -1074,21 +1099,44 @@ function useful_actions(c) {
 }
 
 function ask_confirmation(c, action) {
-  const box = $("#confirm");
-  const buttons = $("#confirm .buttons");
   // A full text from the config, where the generic template (label + card name) is not enough.
   const own = (CFG.actions || {})[action];
   put($("#confirm-text"), (own && own.confirm) || `${action_label(action)} ${c.name}?`);
+  const choices = own && own.choices;
+  ask(choices ? choices.map((ch) => [ch.label, () => send_action(ch.action), /shutdown|stop/.test(ch.action)])
+    : [["YES", () => send_action(action), true]]);
+}
+
+/** The dialog's buttons: [[label, run, danger?]], plus NO/CANCEL first. The text is set by the caller. */
+function ask(options) {
+  const box = $("#confirm");
+  const buttons = $("#confirm .buttons");
   buttons.textContent = "";
-  const no = el("button", null, "NO");
+  const no = el("button", null, options.length > 1 ? "CANCEL" : "NO");
   no.type = "button";
   no.addEventListener("click", () => { box.hidden = true; });
-  const yes = el("button", "danger", "YES");
-  yes.type = "button";
-  yes.addEventListener("click", () => { box.hidden = true; send_action(action); });
-  buttons.appendChild(no); buttons.appendChild(yes);
+  buttons.appendChild(no);
+  for (const [label, run, danger] of options) {
+    const b = el("button", danger ? "danger" : "", label);
+    b.type = "button";
+    b.addEventListener("click", () => { box.hidden = true; run(); });
+    buttons.appendChild(b);
+  }
+  cls(buttons, "many", options.length > 1);
   box.hidden = false;
   touched();
+}
+
+/** [maintenance] buttons: the card is down on purpose for a while (not red, no notification). */
+function ask_maintenance(c) {
+  const until = maintenance_until(c);
+  put($("#confirm-text"), until ? `${c.name}: maintenance until ${clock(until)}.` : `Put ${c.name} in maintenance for:`);
+  const set = (minutes) => () => fetch("/api/maintenance/" + encodeURIComponent(c.id), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minutes }),
+  }).then((r) => r.json().catch(() => ({ ok: r.ok })))
+    .then((r) => show_message(r.ok ? (minutes ? "✓ maintenance until " + clock(r.until) : "✓ maintenance over") : "✕ " + (r.error || "failed")))
+    .catch(() => show_message("✕ could not reach labhud"));
+  ask([["1 HOUR", set(60)], ["4 HOURS", set(240)], ["1 DAY", set(1440)]].concat(until ? [["END", set(0)]] : []));
 }
 
 function send_action(name) {
@@ -1157,8 +1205,7 @@ function fill_panel() {
 
   const alive = card_status(c);
   if (alive !== null) {
-    const label = alive === true ? "running" : alive === false ? "DOWN"
-      : alive === "scheduled" ? "off on schedule" : "off · started on demand";
+    const label = alive === true ? "running" : alive === false ? "DOWN" : off_label(c, alive);
     section(body, "status", [["status", label, alive === false]]);
   }
   const afterStatus = body.children.length;
@@ -1304,7 +1351,8 @@ function render_actions(c) {
   const useful = useful_actions(c);
   // the service's own page: only in the list view, where leaving the page is what you want
   const link = LIST_VIEW && c.url;
-  if (!useful.length && !link) { bar.hidden = true; return; }
+  const maint = CFG.maintenance_buttons && c.check;
+  if (!useful.length && !link && !maint) { bar.hidden = true; return; }
   bar.hidden = false;
   if (link) {
     const a = el("a", "open", "OPEN ↗");
@@ -1315,6 +1363,12 @@ function render_actions(c) {
     const b = el("button", /shutdown|stop/.test(a) ? "danger" : "", action_label(a));
     b.type = "button";
     b.addEventListener("click", () => ask_confirmation(c, a));
+    bar.appendChild(b);
+  }
+  if (maint) {
+    const b = el("button", "maint", maintenance_until(c) ? "MAINTENANCE ✓" : "MAINTENANCE");
+    b.type = "button";
+    b.addEventListener("click", () => ask_maintenance(c));
     bar.appendChild(b);
   }
 }

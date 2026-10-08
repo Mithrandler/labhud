@@ -42,6 +42,7 @@ direct action mode, where the display's browser talks to the agent itself.
 | display | `GET /api/stream` | Server-Sent Events: one full snapshot, then only the changes (`delta`), a keep-alive comment after 20 s of silence | same |
 | display | `GET /api/config`, `/api/snapshot`, `/api/history`, `/api/status`, `/status` | layout, current data, sparklines, source health | same |
 | display | `POST /action/<name>` | only in signed mode: the press of a button | `Origin` must be labhud's own page, action must be on a card in `config.toml` |
+| display | `POST /api/maintenance/<card>` | a MAINTENANCE press: `{"minutes": n}`, 0 ends it | `[maintenance] buttons = true`, `Origin` must be labhud's own page, card must exist, at most 7 days |
 | agent | `POST /api/push/<name>` | a pushed source's JSON | HMAC-SHA256 with that source's own key, 30-second window; not behind `LABHUD_HOSTS` |
 
 With `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY`, all of it is HTTPS.
@@ -98,7 +99,10 @@ Certificates are checked per host: pinned (`LABHUD_PINS`), verified against CAs
   display shows an orange mark next to the clock.
 - `config.toml` is read again a few seconds after it changes; a broken file is refused and the
   display shows why, while the old config keeps running.
-- Nothing is written to disk: a restart starts with an empty history.
+- Nothing is written to disk unless `LABHUD_DATA` names a folder: then the history, the
+  sparklines and maintenance set from the display are kept in `labhud.db` (SQLite) there.
+- Maintenance (from `config.toml` windows or the display) is checked every 10 s and sent as
+  the `maintenance` entry of the snapshot; cards in it are grey, not red, and do not notify.
 - Keys are read from the environment and never sent to the browser. Error messages are scrubbed
   of keys and passwords before they reach `/status`.
 
