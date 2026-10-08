@@ -6,6 +6,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- A page whose groups need fewer columns than the screen has now spreads them over the whole
+  width (wider columns) instead of leaving the right side empty.
+- New demo screenshots with the current layout.
+
 ## [0.1.3] - 2026-10-08
 
 ### Changed

@@ -311,56 +311,68 @@ function layout() {
   const host = $("#content");
   if (!pageGroups.length) return;
   const cs = getComputedStyle(host);
-  const cols = parseInt(cs.getPropertyValue("--cols"), 10) || 5;
+  const maxCols = parseInt(cs.getPropertyValue("--cols"), 10) || 5;
   const gap = parseFloat(cs.columnGap) || 6;
   const W = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const H = host.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  const colW = (W - gap * (cols - 1)) / cols;
-  const width = (span) => span * colW + (span - 1) * gap;   // on screen, zoom included
 
-  const plan = (zoom) => {
-    host.textContent = "";
-    const probe = el("div", "stack");
-    probe.style.zoom = zoom;
-    probe.style.width = width(1) / zoom + "px";
-    host.appendChild(probe);
-    for (const g of pageGroups) { g.classList.remove("wide"); probe.appendChild(g); }
-    const items = pageGroups.map((g) => ({ g, h: g.getBoundingClientRect().height, span: 1 }));
-    const tall = items.filter((it) => it.h > H);
-    if (tall.length) {
-      probe.style.width = width(2) / zoom + "px";
-      for (const it of tall) { it.g.classList.add("wide"); it.span = 2; }
-      for (const it of tall) it.h = it.g.getBoundingClientRect().height;
-    }
-    const gapOn = gap * zoom;   // the gap inside a zoomed column shrinks with it
-    const pack = (target) => {
-      const stacks = [];
-      let cur = null;
-      for (const it of items) {
-        if (it.span === 2) { stacks.push({ items: [it], span: 2, h: it.h }); cur = null; continue; }
-        if (cur && cur.h + gapOn + it.h <= target) { cur.items.push(it); cur.h += gapOn + it.h; continue; }
-        cur = { items: [it], span: 1, h: it.h };
-        stacks.push(cur);
+  const solve = (cols) => {
+    const colW = (W - gap * (cols - 1)) / cols;
+    const width = (span) => span * colW + (span - 1) * gap;   // on screen, zoom included
+
+    const plan = (zoom) => {
+      host.textContent = "";
+      const probe = el("div", "stack");
+      probe.style.zoom = zoom;
+      probe.style.width = width(1) / zoom + "px";
+      host.appendChild(probe);
+      for (const g of pageGroups) { g.classList.remove("wide"); probe.appendChild(g); }
+      const items = pageGroups.map((g) => ({ g, h: g.getBoundingClientRect().height, span: 1 }));
+      const tall = items.filter((it) => it.h > H);
+      if (tall.length) {
+        probe.style.width = width(2) / zoom + "px";
+        for (const it of tall) { it.g.classList.add("wide"); it.span = 2; }
+        for (const it of tall) it.h = it.g.getBoundingClientRect().height;
       }
-      return stacks;
+      const gapOn = gap * zoom;   // the gap inside a zoomed column shrinks with it
+      const pack = (target) => {
+        const stacks = [];
+        let cur = null;
+        for (const it of items) {
+          if (it.span === 2) { stacks.push({ items: [it], span: 2, h: it.h }); cur = null; continue; }
+          if (cur && cur.h + gapOn + it.h <= target) { cur.items.push(it); cur.h += gapOn + it.h; continue; }
+          cur = { items: [it], span: 1, h: it.h };
+          stacks.push(cur);
+        }
+        return stacks;
+      };
+      const used = (stacks) => stacks.reduce((n, s) => n + s.span, 0);
+      const narrow = items.filter((it) => it.span === 1);
+      let target = Math.max(0, ...narrow.map((it) => it.h), narrow.reduce((n, it) => n + it.h, 0) / cols);
+      let stacks = pack(target);
+      while (used(stacks) > cols && target < H) { target = Math.min(H, target + 8); stacks = pack(target); }
+      const fits = used(stacks) <= cols && stacks.every((s) => s.h <= H + 1);
+      return { stacks, fits, zoom, used: used(stacks) };
     };
-    const used = (stacks) => stacks.reduce((n, s) => n + s.span, 0);
-    const narrow = items.filter((it) => it.span === 1);
-    let target = Math.max(0, ...narrow.map((it) => it.h), narrow.reduce((n, it) => n + it.h, 0) / cols);
-    let stacks = pack(target);
-    while (used(stacks) > cols && target < H) { target = Math.min(H, target + 8); stacks = pack(target); }
-    const fits = used(stacks) <= cols && stacks.every((s) => s.h <= H + 1);
-    return { stacks, fits, zoom, used: used(stacks) };
+
+    let best = null;
+    for (const zoom of [1, 0.92, 0.85, 0.78, 0.72, 0.66, 0.6]) {
+      best = plan(zoom);
+      if (best.fits) break;
+    }
+    return { ...best, cols, width };
   };
 
-  let best = null;
-  for (const zoom of [1, 0.92, 0.85, 0.78, 0.72, 0.66, 0.6]) {
-    best = plan(zoom);
-    if (best.fits) break;
+  // A page with few groups would fill only the left part of the screen: then it is laid out again
+  // with as many columns as it really uses, each one wider, so the page spans the whole width.
+  let best = solve(maxCols);
+  if (best.fits && best.zoom === 1 && best.used < maxCols) {
+    const wider = solve(best.used);
+    if (wider.fits) best = wider;
   }
 
   host.textContent = "";
-  const { stacks, zoom } = best;
+  const { stacks, zoom, cols, width } = best;
   const inCols = best.used <= cols;
   for (const s of stacks) {
     const col = el("div", "stack");
