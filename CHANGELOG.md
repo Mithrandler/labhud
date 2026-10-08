@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-08
+
 ### Changed
 - Every group is now a framed box with a large heading; card names inside are smaller.
 - A card named like its group (PVE in group PVE, LOG in group LOG) no longer repeats the name: its
@@ -70,6 +72,7 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/Mithrandler/labhud/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Mithrandler/labhud/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Mithrandler/labhud/releases/tag/v0.1.1
