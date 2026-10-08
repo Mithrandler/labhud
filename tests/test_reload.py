@@ -51,7 +51,7 @@ class Reload(DemoServer):
 
     # the smoke tests are not run a second time here
     test_page = test_config = test_unknown_host_and_path = test_stream = None
-    test_status = test_every_config_path_has_data = None
+    test_status = test_every_config_path_has_data = test_history = None
 
 
 if __name__ == "__main__":

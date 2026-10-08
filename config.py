@@ -44,7 +44,9 @@ WEATHER_KEYS = {"latitude", "longitude", "timezone", "city"}
 ACTION_KEYS = {"label", "confirm"}
 ALERTS_KEYS = {"path", "page"}
 NIGHT_KEYS = {"from", "to", "dim"}
-TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night"}
+TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "sparklines"}
+# The formats whose numbers get a sparkline (the last hours, behind the value)
+TREND_FORMATS = {"percent", "percent1", "celsius", "rate", "used_of"}
 DEFAULT_TITLE = "LABHUD"
 
 
@@ -215,6 +217,7 @@ def load(path=None):
     actions      {action name: {label?, confirm?}}
     alerts       {path, page?} or None
     night        {from, to, dim} or None: the screen dims in that window (the display's local time)
+    trends       [data path]: the numbers kept for sparklines (empty with sparklines = false)
     """
     path = path or config_path()
     try:
@@ -228,6 +231,7 @@ def load(path=None):
     ck = _Checker()
     ck.unknown("top level", raw, TOP_KEYS)
     title = ck.opt("top level", raw, "title", str, "a string")
+    sparklines = ck.opt("top level", raw, "sparklines", bool, "true or false")
 
     pages, cards = [], {}
     page_ids, group_ids, card_ids = set(), set(), set()
@@ -394,13 +398,15 @@ def load(path=None):
     if ck.problems:
         raise ConfigError(path, ck.problems)
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
-            "weather": weather, "night": night}
+            "weather": weather, "night": night,
+            "trends": [] if sparklines is False else sorted({
+                m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) if m[2] in TREND_FORMATS})}
 
 
 def public(topology):
     """What the browser gets from /api/config: the layout, without the server-side schedules
     and without the weather coordinates (only the city name is shown)."""
-    out = {k: topology[k] for k in ("title", "pages", "cards", "strip", "actions", "alerts", "night")}
+    out = {k: topology[k] for k in ("title", "pages", "cards", "strip", "actions", "alerts", "night", "trends")}
     out["city"] = (topology.get("weather") or {}).get("city", "")
     return out
 

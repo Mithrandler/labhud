@@ -173,6 +173,10 @@ confirm = "Wake the backup server now?"
 #   title = "GAMES"
 #   games = "live.games.servers"   # dotted path to a list of servers in the collected data
 
+# Sparklines: every number shown as a percentage, a temperature or a rate gets a faint line
+# of its last 6 hours behind it. On unless this is false.
+# sparklines = false
+
 # Night (optional): between these hours of the display's own clock the screen dims to `dim`
 # percent (0 = black). A touch lights it up for a minute; a new problem lights it up while the
 # page with that problem is shown.

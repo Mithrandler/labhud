@@ -145,6 +145,12 @@ class DemoServer(unittest.TestCase):
         # PBS fails because its host is off on purpose: not a problem of its own
         self.assertEqual(st["sources"]["pbs"]["state"], "host_down")
 
+    def test_history(self):
+        h = json.loads(self.get("/api/history")[2])
+        self.assertEqual(h["step"], 60)
+        self.assertIn("opnsense.cpu", h["series"])
+        self.assertEqual(len(h["series"]["opnsense.cpu"]), 360)  # the demo's made-up six hours
+
     def test_every_config_path_has_data(self):
         with open(os.path.join(ROOT, "demo", "config.toml"), "rb") as f:
             paths = data_paths(tomllib.load(f))

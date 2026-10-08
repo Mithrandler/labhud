@@ -12,6 +12,7 @@
 # accept POST only from the display's own IP, so that no container next to this server can shut a
 # host down. The browser talks to that agent directly; this server only tells it where it is.
 
+import collections
 import json
 import os
 import queue
@@ -93,6 +94,56 @@ _lock = threading.Lock()
 _health = {}
 # What changed, newest first: the `events` source (see events.py). The demo starts with a made-up past.
 EVENTS = events.Log(demo.events() if DEMO else ())
+
+
+# Sparklines: one value a minute for every number in TOPOLOGY["trends"], the last 6 hours, in
+# memory (a restart starts empty). Sent on request (/api/history), not over the stream: the
+# display asks once a minute, and the stream stays small.
+HISTORY_STEP = 60
+HISTORY_POINTS = 360
+_history = {}
+
+
+def _value(path, data=None):
+    """The number at a data path; [used, total] becomes a percentage."""
+    data = _data if data is None else data
+    for part in path.split("."):
+        if not isinstance(data, dict):
+            return None
+        data = data.get(part)
+    if isinstance(data, list) and len(data) == 2 and all(isinstance(x, (int, float)) for x in data):
+        return round(100 * data[0] / data[1], 1) if data[1] else None
+    if isinstance(data, bool) or not isinstance(data, (int, float)):
+        return None
+    return round(data, 1)
+
+
+def seed_demo_history():
+    """Six hours of made-up past, so the demo shows its sparklines at once. Before the collector
+    starts: demo.history() moves the demo's clock back while it runs."""
+    paths = TOPOLOGY["trends"]
+    rows = demo.history(HISTORY_POINTS, HISTORY_STEP, lambda d: [_value(p, d) for p in paths])
+    for i, path in enumerate(paths):
+        _history[path] = collections.deque((r[i] for r in rows), maxlen=HISTORY_POINTS)
+
+
+def sample_history():
+    time.sleep(15)  # the first answers of the sources
+    while True:
+        with _lock:
+            for path in TOPOLOGY["trends"]:
+                series = _history.get(path)
+                if series is None:
+                    series = _history[path] = collections.deque(maxlen=HISTORY_POINTS)
+                series.append(_value(path))
+            for path in set(_history) - set(TOPOLOGY["trends"]):  # gone after a reload
+                del _history[path]
+        time.sleep(HISTORY_STEP)
+
+
+def history():
+    with _lock:
+        return {"step": HISTORY_STEP, "series": {p: list(s) for p, s in _history.items()}}
 
 
 def _log(found):
@@ -384,6 +435,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(snapshot())
         if path == "/api/status":
             return self._json(health())
+        if path == "/api/history":
+            return self._json(history())
         if path == "/status":
             path = "/status.html"
         return self._static(path)
@@ -454,7 +507,10 @@ if __name__ == "__main__":
           else "actions: off (set LABHUD_ACTION_URL to enable)", flush=True)
     print(f"notifications: {notify.problem() or 'on, ' + notify.FORMAT}" if notify.enabled()
           else "notifications: off (set LABHUD_NOTIFY_URL to enable)", flush=True)
+    if DEMO:
+        seed_demo_history()
     threading.Thread(target=loop, daemon=True, name="collect").start()
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     notify.start()
+    threading.Thread(target=sample_history, daemon=True, name="history").start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

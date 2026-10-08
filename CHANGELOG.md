@@ -27,6 +27,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   ntfy, Gotify, Discord or plain JSON shape (`LABHUD_NOTIFY_FORMAT`). A host down is sent only
   if it is still down `LABHUD_NOTIFY_DELAY` seconds later (default 120); `LABHUD_NOTIFY_ALL=1`
   adds the good news. `/status` shows how many went out and the last error.
+- Sparklines: every number shown as a percentage, a temperature or a rate gets a faint shade of
+  its last 6 hours behind it (sampled once a minute, in memory, from `/api/history`).
+  `sparklines = false` turns them off. The demo starts with six made-up hours.
 - List rows may carry a time (`t`, Unix seconds) instead of a value: shown as the time today,
   as the date before.
 

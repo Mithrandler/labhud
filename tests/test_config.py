@@ -127,6 +127,13 @@ page = "main"
         self.assertEqual(config.public(t)["night"], t["night"])
         self.assertIsNone(load_text(MINIMAL)["night"])
 
+    def test_trends(self):
+        t = config.load(os.path.join(ROOT, "demo", "config.toml"))
+        self.assertIn("proxmox.pve.cpu", t["trends"])           # percent
+        self.assertIn("proxmox.pve.mem_used_of", t["trends"])   # used_of
+        self.assertNotIn("proxmox.pve.vms", t["trends"])        # a count has no trend
+        self.assertEqual(load_text('sparklines = false\n' + MINIMAL)["trends"], [])
+
     def test_env_path(self):
         with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
             f.write(MINIMAL)

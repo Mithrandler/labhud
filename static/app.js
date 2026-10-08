@@ -598,15 +598,71 @@ function make_metrics(specs) {
     const vl = el("span", "vl", "—");
     b.appendChild(vl);
     host.appendChild(b);
+    let drawn = -1;   // the HIST version this box last drew
     updaters.push(() => {
       const v = get(path);
       put(vl, format(v, fmt));
+      if (drawn !== histVersion && CFG.trends && CFG.trends.includes(path)) {
+        drawn = histVersion;
+        sparkline(b, HIST[path], fmt);
+      }
       const sev = severity(path, fmt, v);
       cls(b, "warn", sev === "warn");
       cls(b, "crit", sev === "crit");
     });
   }
   return host;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sparklines: the last hours of a number, as a faint line behind it (/api/history)
+// ---------------------------------------------------------------------------------------------
+
+let HIST = {};
+let histVersion = 0;
+
+function load_history() {
+  fetch("/api/history").then((r) => r.json()).then((h) => {
+    HIST = h.series || {};
+    histVersion++;
+    update();
+  }).catch(() => {});
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+
+/** Draws (or clears) the line in a metric box. The scale is the series' own range, but never
+    narrower than a few units, so a flat 21-22° does not look like a storm. */
+function sparkline(box, series, fmt) {
+  // averaged in buckets of a few minutes: one point a minute in 60 px is noise, not a trend
+  const BUCKETS = 60, raw = series || [], size = Math.max(1, Math.ceil(raw.length / BUCKETS));
+  const avg = [];
+  for (let i = 0; i < raw.length; i += size) {
+    const nums = raw.slice(i, i + size).filter((v) => typeof v === "number");
+    avg.push(nums.length ? nums.reduce((a, v) => a + v, 0) / nums.length : null);
+  }
+  series = avg;
+  const pts = series.map((v, i) => [i, v]).filter(([, v]) => typeof v === "number");
+  let svg = box.querySelector("svg.spark");
+  if (pts.length < 2) { if (svg) svg.remove(); return; }
+  if (!svg) {
+    svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("class", "spark");
+    svg.setAttribute("viewBox", "0 0 100 20");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.appendChild(document.createElementNS(SVG, "polygon"));
+    box.prepend(svg);
+  }
+  const values = pts.map(([, v]) => v);
+  let lo = Math.min(...values), hi = Math.max(...values);
+  const least = fmt === "rate" ? Math.max(hi * 0.2, 1) : 10;
+  if (hi - lo < least) { const mid = (hi + lo) / 2; lo = mid - least / 2; hi = mid + least / 2; }
+  const n = series.length - 1;
+  const x = (i) => (100 * i / n).toFixed(1);
+  // a filled area, closed along the bottom: under the digits it reads as a shade, not a stroke
+  svg.firstChild.setAttribute("points", pts.map(([i, v]) =>
+    `${x(i)},${(20 - 19 * (v - lo) / (hi - lo)).toFixed(1)}`).join(" ")
+    + ` ${x(pts[pts.length - 1][0])},20 ${x(pts[0][0])},20`);
 }
 
 function make_list(path, limit) {
@@ -1250,6 +1306,10 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   tick(render_clock, 10000);
   render_night();
   tick(render_night, 10000);
+  if (CFG.trends && CFG.trends.length) {
+    load_history();
+    if (!location.search.includes("static")) tick(load_history, 60000);
+  }
   // check screenshots: ?static&focus=<card id> shows a card as a new problem
   const asked = new URLSearchParams(location.search).get("focus");
   if (asked && location.search.includes("static")) setTimeout(() => focus_on(asked), 300);

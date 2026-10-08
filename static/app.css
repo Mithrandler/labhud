@@ -182,7 +182,11 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 
 /* the metric blocks, centred */
 .metrics { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; margin-top: 3px; }
-.metric { background: var(--block); border-radius: 4px; padding: 1px 3px; min-width: 36px; }
+.metric { position: relative; background: var(--block); border-radius: 4px; padding: 1px 3px; min-width: 36px; }
+/* The last hours behind the value: faint, in the lower half, never in the way of the number. */
+.metric svg.spark { position: absolute; left: 0; bottom: 0; width: 100%; height: 60%; border-radius: 0 0 4px 4px; pointer-events: none; }
+.metric svg.spark polygon { fill: var(--accent); opacity: .16; }
+.metric .lbl, .metric .vl { position: relative; }
 .metric .lbl { display: block; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
 .metric .vl { display: block; font-size: 15px; font-weight: 700; line-height: 1.15; }
 .metric.warn .vl { color: var(--warn); }

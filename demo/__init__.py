@@ -19,9 +19,13 @@ TB = 1024 ** 4
 DOWN = {"backup", "desktop"}  # cards whose host is off in the demo (both on_demand)
 
 
+# Seconds the made-up clock runs behind the real one: history() moves it back to compute the past.
+_shift = 0
+
+
 def _wave(base, amp, period, phase=0.0):
     """A slow, smooth change around `base`: the same value for everyone at the same moment."""
-    return base + amp * math.sin(2 * math.pi * (time.time() / period + phase))
+    return base + amp * math.sin(2 * math.pi * ((time.time() - _shift) / period + phase))
 
 
 def _ago(seconds):
@@ -251,6 +255,20 @@ def events():
             (130, "windows stopped", False), (310, "BACKUP off", False), (365, "BACKUP up", False),
             (540, "Disk on nas-backup above 85% in 12 days, at the current rate", True)]
     return [{"name": text, "t": _ago(minutes * 60), "bad": bad} for minutes, text, bad in rows]
+
+
+def history(points, step, value):
+    """The sparklines' past, as if the server had run for the last `points` minutes: every
+    source is computed again at those moments, then `value(data)` picks the numbers."""
+    global _shift
+    out = []
+    try:
+        for i in range(points, 0, -1):
+            _shift = i * step
+            out.append(value({name: fetch() for name, (fetch, _) in FETCHERS.items()}))
+    finally:
+        _shift = 0
+    return out
 
 
 def sources():
