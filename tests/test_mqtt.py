@@ -81,11 +81,11 @@ class Packets(unittest.TestCase):
         self.assertEqual(mqtt.publish_packet("a/b", b"up", retain=True), b"\x31\x07\x00\x03a/bup")
 
     def test_discovery(self):
-        msgs = mqtt.discovery({"vm-PVE-201": "debian"}, "LABHUD")
+        msgs = mqtt.discovery({"vm-node1-101": "docker"}, "LABHUD")
         topic, payload, retain = msgs[0]
-        self.assertEqual(topic, "homeassistant/binary_sensor/labhud/vm-PVE-201/config")
+        self.assertEqual(topic, "homeassistant/binary_sensor/labhud/vm-node1-101/config")
         cfg = json.loads(payload)
-        self.assertEqual((cfg["name"], cfg["state_topic"], cfg["device_class"]), ("debian", "labhud/card/vm-PVE-201", "problem"))
+        self.assertEqual((cfg["name"], cfg["state_topic"], cfg["device_class"]), ("docker", "labhud/card/vm-node1-101", "problem"))
         self.assertTrue(retain)
 
 
