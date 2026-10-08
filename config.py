@@ -196,6 +196,11 @@ def _hour(ck, where, table, key):
     return v
 
 
+def config_path():
+    """Where the config file is: LABHUD_CONFIG, or config.toml next to this module."""
+    return os.environ.get("LABHUD_CONFIG") or DEFAULT_PATH
+
+
 def load(path=None):
     """Read and validate the file; raises ConfigError. Returns:
 
@@ -209,7 +214,7 @@ def load(path=None):
     actions      {action name: {label?, confirm?}}
     alerts       {path, page?} or None
     """
-    path = path or os.environ.get("LABHUD_CONFIG") or DEFAULT_PATH
+    path = path or config_path()
     try:
         with open(path, "rb") as f:
             raw = tomllib.load(f)

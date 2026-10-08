@@ -12,6 +12,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   the same as JSON. No data and no setting values are shown.
 - A small orange mark next to the clock when a configured source has been failing for longer
   than `LABHUD_SOURCE_GRACE` seconds (default 300); a tap lists those sources and their errors.
+- `config.toml` is read again a few seconds after it changes, without a restart. A good file is
+  applied and every display reloads; a broken one is kept out, its problems are logged and shown
+  in a banner on the displays and on `/status`, and the last good version keeps running.
 
 ### Changed
 - A page whose groups need fewer columns than the screen has now spreads them over the whole

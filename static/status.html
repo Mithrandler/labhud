@@ -33,12 +33,14 @@
   .alarm { border-color: var(--red); }
   .host_down .state, .scheduled .state, .not_configured .state, .waiting .state { color: var(--muted); }
   #error { color: var(--red); margin-bottom: 10px; }
+  #config { color: #ffd9e2; background: #3a0d1c; border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; max-width: 900px; white-space: pre-line; }
 </style>
 </head>
 <body>
   <h1><a href="/">labhud</a> status</h1>
   <p id="general"></p>
   <p id="error" hidden></p>
+  <p id="config" hidden></p>
   <div id="sources"></div>
 <script>
 "use strict";
@@ -76,6 +78,13 @@ function render(d) {
     general.append(k + " ");
     general.appendChild(document.createElement("b")).textContent = v;
   });
+
+  const cfg = document.getElementById("config");
+  cfg.hidden = !(d.config_errors || []).length;
+  if (!cfg.hidden) {
+    cfg.textContent = "config.toml was edited but not applied (the last good version is running):\n· "
+      + d.config_errors.join("\n· ");
+  }
 
   const list = document.getElementById("sources");
   list.textContent = "";

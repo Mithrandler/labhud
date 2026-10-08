@@ -41,6 +41,11 @@ docker run --rm -v "$PWD/config.toml:/app/config.toml:ro" ghcr.io/mithrandler/la
 
 Every problem is listed at once, with its location.
 
+Once labhud runs, you do not need to restart it after an edit: it reads the file again a few
+seconds after you save it. A good file is applied and the display reloads; a broken one is kept
+out, its problems are shown in a banner on the display, and the last good version keeps running.
+(With Docker, see the note on editors in `compose.example.yaml`.)
+
 ## 3. Give it keys
 
 In `.env`, uncomment and fill in only the services you have. A source runs when its URL and key

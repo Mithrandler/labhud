@@ -48,31 +48,41 @@ if DEMO:
     os.environ.setdefault("LABHUD_CONFIG", demo.CONFIG)
     ACTION_URL = ""
 
-TOPOLOGY = config.load()
-
-# Only the sources whose settings are present run; the others are reported once as not configured.
-ACTIVE, INACTIVE = (demo.sources(), {}) if DEMO else sources.load(TOPOLOGY)
 STATUS_EVERY = 30  # the ping/TCP checks, handled here: they need the topology
-# name -> interval in seconds. The paces follow how fast the measured thing changes, not "as often as possible".
-SOURCES = {name: src.every for name, src in ACTIVE.items()}
-SOURCES["status"] = STATUS_EVERY
+CONFIG_PATH = config.config_path()
+# The problems in config.toml since it was last edited; the server keeps the last good version.
+CONFIG_ERRORS = []
 
-# The ping/TCP targets, taken once from the topology.
-# Only ping/tcp: the state of Proxmox guests comes from the `proxmox` source, it is not measured twice.
-# (Without this filter a ping to the node's name is tried and every VM shows down.)
-TARGETS = {}
-# Source -> the card whose status (ping) says whether its host is up: a card that has a ping/tcp
-# check and shows that source's data. When the host comes back (false -> true), the source is polled
-# again after 15 s and its backoff is reset. Without this, after a host starts in the morning its
-# source keeps "Host is unreachable" from its last try for up to 10 minutes.
-SOURCE_HOST = {}
-for _cards in TOPOLOGY["cards"].values():
-    for _c in _cards:
-        if _c.get("check") and _c["check"][0] in ("ping", "tcp"):
-            TARGETS[_c["id"]] = _c["check"]
-            _paths = [m[0] for m in _c.get("metrics", [])] + [_c[k] for k in ("list", "torrents") if k in _c]
-            for _src in {p.split(".")[0] for p in _paths} & set(ACTIVE):
-                SOURCE_HOST.setdefault(_src, _c["id"])
+
+def _apply(topology):
+    """Everything derived from config.toml, computed again when the file changes."""
+    global TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST
+    # Only the sources whose settings are present run; the others are reported as not configured.
+    active, inactive = (demo.sources(), {}) if DEMO else sources.load(topology)
+    # name -> interval in seconds. The paces follow how fast the measured thing changes, not "as often as possible".
+    every = {name: src.every for name, src in active.items()}
+    every["status"] = STATUS_EVERY
+    # The ping/TCP targets.
+    # Only ping/tcp: the state of Proxmox guests comes from the `proxmox` source, it is not measured twice.
+    # (Without this filter a ping to the node's name is tried and every VM shows down.)
+    targets = {}
+    # Source -> the card whose status (ping) says whether its host is up: a card that has a ping/tcp
+    # check and shows that source's data. When the host comes back (false -> true), the source is polled
+    # again after 15 s and its backoff is reset. Without this, after a host starts in the morning its
+    # source keeps "Host is unreachable" from its last try for up to 10 minutes.
+    source_host = {}
+    for cards in topology["cards"].values():
+        for c in cards:
+            if c.get("check") and c["check"][0] in ("ping", "tcp"):
+                targets[c["id"]] = c["check"]
+                paths = [m[0] for m in c.get("metrics", [])] + [c[k] for k in ("list", "torrents") if k in c]
+                for src in {p.split(".")[0] for p in paths} & set(active):
+                    source_host.setdefault(src, c["id"])
+    TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST = (
+        topology, active, inactive, every, targets, source_host)
+
+
+_apply(config.load(CONFIG_PATH))
 
 _data = {}
 _lock = threading.Lock()
@@ -136,7 +146,7 @@ def loop():
             # example, bans the IP after too many failed logins, so retrying sustains the very
             # fault it measures. The first retry at the normal interval, then doubled, up to
             # 10 minutes; on the first success it returns to its pace.
-            interval = SOURCES[name]
+            interval = SOURCES.get(name, 60)
             if "unavailable" in result:
                 failures[name] = min(failures.get(name, 0) + 1, 6)
                 next_run[name] = time.monotonic() + min(interval * (2 ** (failures[name] - 1)), 600)
@@ -166,8 +176,8 @@ def loop():
 
     while True:
         now = time.monotonic()
-        for name, interval in SOURCES.items():
-            if now < next_run[name]:
+        for name, interval in list(SOURCES.items()):
+            if now < next_run.setdefault(name, 0.0):
                 continue
             with running_lock:
                 if name in running:
@@ -182,6 +192,60 @@ def loop():
 def snapshot():
     with _lock:
         return dict(_data)
+
+
+def _mark_inactive():
+    """The snapshot's entries for sources that do not run: "not configured", or gone after a reload."""
+    with _lock:
+        for name in list(_data):
+            if name not in SOURCES and name not in INACTIVE:
+                del _data[name]
+                _health.pop(name, None)
+        for name, needs in INACTIVE.items():
+            _data[name] = {"not_configured": True, "needs": needs, "_t": int(time.time())}
+
+
+def _send(event, payload):
+    """One SSE event to every open stream (see _publish for the data itself)."""
+    message = f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
+    with _subscribers_lock:
+        for q in list(_subscribers):
+            try:
+                q.put_nowait(message)
+            except queue.Full:
+                _subscribers.remove(q)
+
+
+def watch_config():
+    """Reads config.toml again when it changes. A good file replaces the running one and every
+    display reloads; a broken one is kept out, and its problems go to the displays as a banner
+    until the file is fixed. No restart either way."""
+    global CONFIG_ERRORS
+    def stamp():
+        try:
+            st = os.stat(CONFIG_PATH)
+            return st.st_mtime_ns, st.st_size, st.st_ino
+        except OSError:
+            return None
+    seen = stamp()
+    while True:
+        time.sleep(3)
+        now = stamp()
+        if now == seen:
+            continue
+        seen = now
+        try:
+            topology = config.load(CONFIG_PATH)
+        except config.ConfigError as e:
+            CONFIG_ERRORS = e.problems
+            print(f"config.toml not applied, {len(e.problems)} problem(s):\n  " + "\n  ".join(e.problems), flush=True)
+            _send("config", {"errors": CONFIG_ERRORS})
+            continue
+        _apply(topology)
+        _mark_inactive()
+        CONFIG_ERRORS = []
+        print(f"config.toml reloaded; sources: {', '.join(sorted(ACTIVE)) or 'none'}", flush=True)
+        _send("config", {"reload": True})
 
 
 def _note_health(name, result, took, failures, next_at):
@@ -224,7 +288,7 @@ def health():
     return {
         "version": VERSION, "demo": DEMO, "now": now, "started": STARTED,
         "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": bool(ACTION_URL),
-        "grace": SOURCE_GRACE, "problems": [n for n, h in result.items() if h.get("alarm")],
+        "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "problems": [n for n, h in result.items() if h.get("alarm")],
         "sources": result,
     }
 
@@ -315,6 +379,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             full = json.dumps(snapshot(), ensure_ascii=False, separators=(",", ":"))
             self.wfile.write(f"event: full\ndata: {full}\n\n".encode())
+            if CONFIG_ERRORS:
+                self.wfile.write(f"event: config\ndata: {json.dumps({'errors': CONFIG_ERRORS})}\n\n".encode())
             self.wfile.flush()
             while True:
                 try:
@@ -335,8 +401,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    for _name, _needs in INACTIVE.items():
-        _data[_name] = {"not_configured": True, "needs": _needs, "_t": int(time.time())}
+    _mark_inactive()
     print(("DEMO MODE, made-up data; " if DEMO else "")
           + f"sources: {', '.join(sorted(ACTIVE)) or 'none'}; not configured: {', '.join(sorted(INACTIVE)) or 'none'}",
           flush=True)
@@ -346,4 +411,5 @@ if __name__ == "__main__":
     print(f"actions: on, sent to {ACTION_URL} (the agent must check Origin and the source IP)" if ACTION_URL
           else "actions: off (set LABHUD_ACTION_URL to enable)", flush=True)
     threading.Thread(target=loop, daemon=True, name="collect").start()
+    threading.Thread(target=watch_config, daemon=True, name="config").start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

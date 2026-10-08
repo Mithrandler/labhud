@@ -56,6 +56,8 @@ class DemoServer(unittest.TestCase):
         cls.host = f"127.0.0.1:{cls.port}"
         env = {k: v for k, v in os.environ.items() if not k.startswith("LABHUD_")}
         env.update(LABHUD_DEMO="1", LABHUD_PORT=str(cls.port), PYTHONDONTWRITEBYTECODE="1")
+        if os.environ.get("LABHUD_TEST_CONFIG"):  # test_reload: a copy it can edit
+            env["LABHUD_CONFIG"] = os.environ["LABHUD_TEST_CONFIG"]
         cls.proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py")], cwd=ROOT, env=env,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         deadline = time.monotonic() + 15

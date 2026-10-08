@@ -14,8 +14,11 @@ services:
       # Every "host:port" the display opens labhud under, exactly as typed in its browser.
       # Anything else gets 421 (protection against DNS rebinding, see docs/security.md).
       LABHUD_HOSTS: "192.0.2.50:8095,localhost:8095"
-    # config.toml is read once, at start: restart after editing it. It must be world-readable
-    # (644): the image runs as uid 10001.
+    # config.toml is read again a few seconds after you save it, no restart needed. It must be
+    # world-readable (644): the image runs as uid 10001. A single mounted file only follows
+    # edits made in place (nano, vim with `:set backupcopy=yes`); an editor that saves by
+    # replacing the file leaves the container on the old one. Mounting the folder avoids that:
+    #   - ./labhud:/app/conf:ro   plus   LABHUD_CONFIG: /app/conf/config.toml
     volumes:
       - ./config.toml:/app/config.toml:ro
     # labhud writes nothing to disk and needs no privilege but NET_RAW (for ping).

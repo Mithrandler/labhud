@@ -174,8 +174,25 @@ function start_stream() {
   const s = new EventSource("/api/stream");
   s.addEventListener("full", (e) => { D = JSON.parse(e.data); document.body.classList.remove("disconnected"); update(); });
   s.addEventListener("delta", (e) => { Object.assign(D, JSON.parse(e.data)); update(); });
+  // config.toml changed: a good file reloads the page (pages, cards and strip may all differ),
+  // a broken one shows its problems while the server keeps the last good one.
+  s.addEventListener("config", (e) => {
+    const c = JSON.parse(e.data);
+    if (c.reload) location.reload();
+    else show_config_errors(c.errors || []);
+  });
   s.onopen = () => document.body.classList.remove("disconnected");
   s.onerror = () => document.body.classList.add("disconnected");  // EventSource reconnects by itself
+}
+
+function show_config_errors(problems) {
+  const n = $("#config-errors");
+  n.hidden = !problems.length;
+  n.textContent = "";
+  if (!problems.length) return;
+  n.appendChild(el("b", null, `config.toml not applied, ${problems.length} problem(s); still showing the last good version:`));
+  const shown = problems.slice(0, 4).map((p) => "\n· " + p).join("");
+  n.appendChild(document.createTextNode(shown + (problems.length > 4 ? `\n· and ${problems.length - 4} more (see the log)` : "")));
 }
 
 /** A single entry point for any new data, deferred to the next frame. */
@@ -755,6 +772,7 @@ let HEALTH = null;
 function check_health() {
   fetch("/api/status").then((r) => r.json()).then((h) => {
     HEALTH = h;
+    show_config_errors(h.config_errors || []);
     const n = $("#health");
     n.hidden = !h.problems.length;
     put(n, String(h.problems.length));
