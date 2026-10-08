@@ -24,45 +24,38 @@
 7. ~~**Security notes.**~~ Done: [security.md](security.md). No built-in auth: host allowlist
    required, firewall in front, VPN or an authenticating reverse proxy for remote access.
 
-## Next (chosen 2026-10-08)
+## Security, integrations and docs (2026-10-08, all done, not yet in a release)
 
 Security between machines:
 
-8. ~~**Push agents.**~~ Done. The agent sends its data to labhud over HTTPS with a key of its own, and
-   listens on no port. Hosts no longer need an open port for the dashboard.
-9. ~~**TLS to agents**~~ Done (both ways, pinned), with the agent's certificate pinned in the config, so nobody on the LAN can
-   read or forge the data.
-10. ~~**Secrets from files.**~~ Done. Every `LABHUD_*` secret can also be `LABHUD_*_FILE` (Docker secrets),
-    so tokens stay out of `docker inspect` and the process environment.
-11. ~~**Hardened container.**~~ Done: CI starts the image read-only, with only `NET_RAW`, and fails if it runs as root. Already there (uid 10001, read-only, only `NET_RAW`, see
-    `compose.example.yaml`); left: a CI check that the image still runs that way.
-11a. ~~**Verified certificates.**~~ Done: `LABHUD_PINS`, `LABHUD_VERIFY`. HTTPS to the services is not verified today (self-signed
-    certificates). Per source: a CA file or a pinned certificate fingerprint, with "no check" as an
-    explicit, logged choice. First on the list in [threat-model.md](threat-model.md).
+8. ~~**Push agents.**~~ An agent POSTs its JSON to `/api/push/<name>`, signed with a key of its
+   own (HMAC-SHA256 and a timestamp), and listens on no port ([live-agent.md](live-agent.md)).
+9. ~~**TLS to agents.**~~ HTTPS for labhud (`LABHUD_TLS_CERT`) and the agent
+   (`LABHUD_AGENT_TLS_CERT`), each pinning the other's certificate; a read key for a polled agent.
+10. ~~**Secrets from files.**~~ Any `LABHUD_*` as `LABHUD_*_FILE` (Compose secrets, systemd).
+11. ~~**Hardened container.**~~ uid 10001, read-only, only `NET_RAW`; CI now starts the image
+    that way and fails if it runs as root.
+12. ~~**Verified certificates.**~~ `LABHUD_PINS` (the exact certificate, checked before the key
+    is sent) or `LABHUD_VERIFY`; unchecked hosts are named in the log and on `/status`.
 
-Integrations:
+Integrations ([integrations.md](integrations.md)):
 
-12. ~~**Healthchecks**~~ Done: (missed cron jobs) and **Scrutiny** (disk health) as sources.
-13. ~~**Uptime Kuma**~~ Done: as a source, so monitors are not defined twice.
-14. ~~**MQTT / Home Assistant.**~~ Done: State changes published on MQTT, for automations.
+13. ~~**Healthchecks**~~ and ~~**Scrutiny**~~ as sources.
+14. ~~**Uptime Kuma**~~ as a source.
+15. ~~**MQTT / Home Assistant.**~~ Card states and history events, with discovery.
 
 Features:
 
-15. ~~**Back-off and configurable intervals.**~~ Done (back-off was already there). Each source already has its own interval, fixed in
-    code; make it settable, retry a failing source less and less often, and keep its last known
-    state as "stale" for a while instead of dropping it at the first failed poll.
-16. ~~**Actions with a question.**~~ Done. An action can ask for a choice before it runs (now / in 5 min /
-    tonight), with the choices defined in `config.toml`.
-17. ~~**Maintenance windows.**~~ Done. A host marked "in maintenance" until a given time is not red, does
-    not notify and does not take the screen.
-18. ~~**History on disk.**~~ Done. Events and sparklines survive a container restart (small SQLite file).
+16. ~~**Intervals and stale state.**~~ `LABHUD_<SOURCE>_EVERY`; a missed poll keeps the last
+    answer, marked stale, for `LABHUD_SOURCE_STALE` seconds (back-off was already there).
+17. ~~**Actions with a question.**~~ `choices` under `[action.<name>]`.
+18. ~~**Maintenance.**~~ `[[maintenance.window]]` and a MAINTENANCE button: grey, silent, no focus.
+19. ~~**History on disk.**~~ `LABHUD_DATA`: events, sparklines and maintenance in SQLite.
 
 Documentation:
 
-19. ~~**Architecture**~~ Done: [architecture.md](architecture.md), every connection with its
-    direction, port and key.
-20. ~~**Threat model**~~ Done: [threat-model.md](threat-model.md), a stolen key, someone on
-    the LAN, someone at the display; what labhud stops and what is left.
-21. ~~**Per-source recipes**~~ Done: [sources.md](sources.md): which token to create, the least rights it needs, the config block.
-22. ~~**Documentation site**~~ Done: `mkdocs.yml` + `.github/workflows/docs.yml`, on GitHub Pages
-    once Pages is set to "GitHub Actions" in the repository settings.
+20. ~~**Architecture**~~ ([architecture.md](architecture.md)) and ~~**threat model**~~
+    ([threat-model.md](threat-model.md)).
+21. ~~**Per-source recipes**~~ ([sources.md](sources.md)).
+22. ~~**Documentation site**~~: MkDocs on GitHub Pages, live once Pages is set to
+    "GitHub Actions" in the repository settings.
