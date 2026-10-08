@@ -1,0 +1,27 @@
+# labhud with Docker Compose. Copy next to your config.toml and .env, then: docker compose up -d
+# See docs/install.md.
+services:
+  labhud:
+    image: ghcr.io/mithrandler/labhud:latest   # or :0.1 to stay on a minor version
+    container_name: labhud
+    restart: unless-stopped
+    ports:
+      - "8095:8095"
+    # Keys, tokens and passwords (see .env.example). Keep this file readable only by you.
+    env_file: .env
+    environment:
+      TZ: Etc/UTC
+      # Every "host:port" the display opens labhud under, exactly as typed in its browser.
+      # Anything else gets 421 (protection against DNS rebinding, see docs/security.md).
+      LABHUD_HOSTS: "192.0.2.50:8095,localhost:8095"
+    # config.toml is read once, at start: restart after editing it. It must be world-readable
+    # (644): the image runs as uid 10001.
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    # labhud writes nothing to disk and needs no privilege but NET_RAW (for ping).
+    read_only: true
+    cap_drop: ["ALL"]
+    cap_add: ["NET_RAW"]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128

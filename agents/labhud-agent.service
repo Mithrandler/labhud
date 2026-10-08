@@ -1,0 +1,21 @@
+# /etc/systemd/system/labhud-agent.service
+# Sensors only: leave the three LABHUD_AGENT_* action variables out.
+[Unit]
+Description=labhud agent (sensors and display actions)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/labhud-agent/labhud-agent.py
+User=labhud-agent
+Environment=LABHUD_AGENT_PORT=9189
+# Environment=LABHUD_AGENT_ACTIONS=/etc/labhud-agent/actions.toml
+# Environment=LABHUD_AGENT_ORIGIN=http://192.0.2.5:8095
+# Environment=LABHUD_AGENT_ALLOW=192.0.2.50
+Restart=on-failure
+# Sensors only? Add NoNewPrivileges=true, ProtectSystem=strict and ProtectHome=true. Leave them
+# out when actions use sudo: the sandbox would also apply to the commands sudo runs (qm cannot
+# write /etc/pve under ProtectSystem=strict).
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,172 @@
+# labhud configuration example. Copy to config.toml and edit; check it with:
+#
+#     python3 config.py config.toml
+#
+# The screen is pages -> groups -> cards. Order in this file is order on screen. Pages rotate
+# and can be opened directly as http://host:8095/#<page id>.
+#
+# Addresses below are from 192.0.2.0/24, a range reserved for documentation: replace them.
+
+title = "LABHUD"        # browser tab title (optional, this is the default)
+
+[[page]]
+id = "general"          # lowercase letters only
+title = "GENERAL"
+
+  [[page.group]]
+  id = "pve"            # unique across all pages
+  title = "Proxmox"
+
+    [[page.group.card]]
+    id = "host-pve"                 # unique across all pages
+    name = "PVE"
+    subtitle = "i5-12500 · 64 GB"   # optional small line under the name
+    ping = "192.0.2.10"             # status check, at most one of:
+                                    #   ping    = "host"
+                                    #   tcp     = "host:port"   (for hosts that drop ping)
+                                    #   proxmox = "node/vmid"   (state from the Proxmox API)
+    large = true                    # full-width card with metrics
+    metrics = [
+      # key: dotted path into the collected data; format: count, percent, percent1 (one
+      # decimal), bytes, used_of ([used, total] bytes), rate (bytes/s), celsius
+      { key = "proxmox.pve.vms", label = "VM", format = "count" },
+      { key = "proxmox.pve.lxc", label = "LXC", format = "count" },
+      { key = "proxmox.pve.cpu", label = "CPU", format = "percent" },
+      { key = "proxmox.pve.mem_used_of", label = "RAM", format = "used_of" },
+    ]
+    panel = "host:pve"              # detail panel opened on tap (optional); host:<node> uses
+                                    # the Proxmox node name exactly, case included
+    # sensors = "temp.pve"          # optional: an object with gpu<N>_util/_mem/_temp, shown as
+                                    # a GPU section in the host panel (agents/labhud-agent.py serves one)
+
+    # Small cards: one per guest, state from Proxmox.
+    [[page.group.card]]
+    id = "vm-pve-100"
+    name = "docker"
+    proxmox = "pve/100"
+    actions = ["vm-pve-100-start", "vm-pve-100-shutdown", "vm-pve-100-reboot"]
+
+    [[page.group.card]]
+    id = "vm-pve-101"
+    name = "homeassistant"
+    proxmox = "pve/101"
+
+  [[page.group]]
+  id = "storage"
+  title = "Storage"
+  keep_together = true  # never split this group across columns (optional)
+
+    [[page.group.card]]
+    id = "nas"
+    name = "NAS"
+    ping = "192.0.2.20"
+    large = true
+    metrics = [
+      { key = "synology.used_percent", label = "Used", format = "percent" },
+      { key = "synology.free", label = "Free", format = "bytes" },
+    ]
+
+    [[page.group.card]]
+    id = "backup"
+    name = "BACKUP"
+    ping = "192.0.2.21"
+    on_demand = true      # normally off: shown grey when down, not red
+    actions = ["wol-backup"]
+
+  [[page.group]]
+  id = "desk"
+  title = "Workstations"
+
+    [[page.group.card]]
+    id = "desktop"
+    name = "DESKTOP"
+    tcp = "192.0.2.30:3389"   # Windows drops ping; check a port it listens on instead
+    on_demand = true
+
+[[page]]
+id = "network"
+title = "NETWORK"
+
+  [[page.group]]
+  id = "router"
+  title = "Network"
+
+    [[page.group.card]]
+    id = "router"
+    name = "ROUTER"
+    ping = "192.0.2.1"
+    large = true
+    metrics = [
+      { key = "opnsense.cpu", label = "CPU", format = "percent" },
+      { key = "opnsense.wan_dn", label = "WAN ↓", format = "rate" },
+      { key = "opnsense.wan_up", label = "WAN ↑", format = "rate" },
+    ]
+
+    [[page.group.card]]
+    id = "switch"
+    name = "SWITCH"
+    ping = "192.0.2.2"
+
+  [[page.group]]
+  id = "lists"
+  title = "Activity"
+
+    [[page.group.card]]
+    id = "recent"
+    name = "RECENTLY ADDED"
+    list = "recent.added"   # dotted path to a list in the collected data
+    limit = 5                     # rows shown on the card (1-50)
+
+# Bottom strip: a row of status lights with a short code, each borrowing the state of a card.
+# `ip` is optional and adds per-host traffic where the router reports it.
+[[strip]]
+code = "RTR"
+name = "Router"
+card = "router"
+
+[[strip]]
+code = "PVE"
+name = "PVE"
+card = "host-pve"
+ip = "192.0.2.10"
+
+[[strip]]
+code = "NAS"
+name = "NAS"
+card = "nas"
+ip = "192.0.2.20"
+
+# Hosts that are off on purpose in a time window (hours, local time, may cross midnight):
+# shown as scheduled instead of down, and not polled in their window. `sources` lists the
+# data sources that depend on that host and should also pause.
+[quiet_hours.nas]
+from = 0
+to = 8
+sources = ["synology"]
+
+# The alert banner (optional): a list of {id, text} from your live agent, and the page that
+# gets a mark in the menu while one is open. See docs/live-agent.md.
+# [alerts]
+# path = "live.alerts"
+# page = "network"
+
+# Action buttons (optional, and off unless LABHUD_ACTION_URL is set: see docs/actions.md): a label and a confirmation text per action name. Without an
+# entry, the label comes from the name (wol-* START, shutdown-* SHUT DOWN,
+# vm-<node>-<vmid>-start/shutdown/reboot) and the question is "<label> <card name>?".
+[action.wol-backup]
+label = "WAKE"
+confirm = "Wake the backup server now?"
+
+# A page can be a grid of game servers instead of fixed cards:
+#
+#   [[page]]
+#   id = "games"
+#   title = "GAMES"
+#   games = "live.games.servers"   # dotted path to a list of servers in the collected data
+
+# The weather in the top bar (Open-Meteo, no key). Leave this table out to hide it.
+[weather]
+latitude = 52.52
+longitude = 13.41
+timezone = "Europe/Berlin"   # optional, defaults to the location's own
+city = "Berlin"              # optional, shown next to the temperature

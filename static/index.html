@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>LABHUD</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <!-- The top bar: weather on the left, the pages in the middle, the clock on the right.
+       There is no submenu: all groups of a page sit on the same screen. -->
+  <header id="topbar">
+    <div id="weather" class="empty"><span class="ic"></span><span class="t"></span><span class="city"></span></div>
+    <nav id="menu" aria-label="Pages"></nav>
+    <div id="clock"><span class="time"></span><span class="date"></span></div>
+  </header>
+
+  <!-- The alert banner: sits over the content, does not push the grid. -->
+  <div id="alerts" hidden></div>
+
+  <main id="content"></main>
+
+  <div id="strip"></div>
+
+  <!-- The detail panel. Opens on a short tap on any card; the actions
+       (WoL, start/stop) are at the bottom, as big buttons. -->
+  <div id="panel" hidden>
+    <div id="panel-bar"><span id="panel-title"></span><button id="panel-x" type="button">✕</button></div>
+    <div id="panel-body"></div>
+    <div id="panel-actions"></div>
+  </div>
+
+  <div id="confirm" hidden>
+    <div class="box"><p id="confirm-text"></p><div class="buttons"></div></div>
+  </div>
+
+  <div id="stream-state" title="link to the aggregator"></div>
+<script src="/app.js"></script>
+</body>
+</html>

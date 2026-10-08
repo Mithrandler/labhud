@@ -1,0 +1,323 @@
+/* The wall display — the theme. Kept 1:1 from homepage-wall: light neon on black.
+   The background is pure black, not grey: the screen is OLED and stays on non-stop.
+
+   Layout: one screen per page, no submenu. A page's groups sit in newspaper columns
+   (`column-count`), which balance themselves however many groups the page has — no manual
+   placement on cells is needed. Everything must fit WITHOUT scrolling, which is why a Proxmox
+   guest card is a single row.
+
+   The performance rule, already paid for once: no endless animation that does not depend on a
+   real event. What moves here: the status dot only when something is DOWN, and the link dot when
+   the stream is broken. Everything else is static — nothing moves against OLED burn-in either,
+   there is no drift. */
+
+@font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-ext-400-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Roboto"; font-weight: 500; font-display: swap; src: url("/fonts/roboto-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Roboto"; font-weight: 500; font-display: swap; src: url("/fonts/roboto-latin-ext-500-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-ext-700-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Roboto"; font-weight: 900; font-display: swap; src: url("/fonts/roboto-latin-900-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root {
+  --topbar: 40px;
+  --strip: 32px;
+  --alert: 0px;   /* height of the alert banner, 0 when there is none */
+  --bg: #000;
+  --card: #121214;
+  --block: #1c1c1f;
+  --line: #2a2a2e;
+  --border: #3a3d44;   /* card edges: lighter than the background, so they stand apart */
+  --text: #ffffff;
+  --sub: #b4b8bf;
+  --muted: #7d828a;
+  --accent: #8ab4f8;
+  --title: #7cc4ff;
+  --green: #34c759;
+  --warn: #ff9f0a;
+  --red: #ff453a;
+  --font: "Roboto", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+/* The `hidden` attribute only means `display: none` by default, so ANY `display` in our sheet
+   beats it — and rows, tiles and cards are all `flex`. Without this rule, the unused rows of a
+   list stay on screen as empty bars. Checked on a screenshot. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 12px;
+  -webkit-user-select: none; user-select: none;
+  overscroll-behavior: none;
+  /* Without this, the phone interprets a horizontal drag on its own (the browser's back/forward
+     swipe, usually) before it reaches the pointerup in app.js — the gesture is "stolen", the
+     page does not change. #panel-body asks for the vertical back, so the detail list can scroll. */
+  touch-action: none;
+}
+
+/* An explicit guarantee: with the screen off nothing moves. Browsers usually suspend the
+   animations of a hidden page, but "usually" is not enough for a screen that is on non-stop. */
+body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { animation-play-state: paused !important; }
+
+/* ======================= top bar ======================= */
+
+#topbar {
+  position: fixed; inset: 0 0 auto 0; height: var(--topbar); z-index: 30;
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+  gap: 8px; padding: 0 10px;
+  background: #000; border-bottom: 1px solid var(--line);
+}
+
+#weather { display: flex; align-items: center; gap: 5px; color: var(--sub); font-size: 11px; }
+#weather.empty { visibility: hidden; }
+#weather .ic { font-size: 16px; line-height: 1; }
+#weather .t { font-size: 15px; font-weight: 700; color: var(--text); }
+#weather .city { color: var(--muted); }
+
+#clock { text-align: right; line-height: 1.05; }
+#clock .time { display: block; font-size: 19px; font-weight: 700; letter-spacing: .5px; }
+#clock .date { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
+
+#menu { display: flex; justify-content: center; gap: 4px; }
+#menu button {
+  appearance: none; white-space: nowrap; border: 1px solid transparent; background: transparent;
+  color: var(--muted); font: 700 13px/1 var(--font); letter-spacing: .6px;
+  padding: 7px 10px; border-radius: 6px; cursor: pointer;
+}
+#menu button.active { color: #000; background: var(--title); }
+#menu button.has-alert { color: var(--red); }
+#menu button.active.has-alert { color: #000; background: var(--red); }
+
+/* ======================= content: newspaper columns ======================= */
+
+#content {
+  position: fixed; left: 0; right: 0; top: calc(var(--topbar) + var(--alert)); bottom: var(--strip);
+  column-count: 5; column-gap: 7px;
+  /* The bottom padding is 1px, not 5: the margin of the last group in each column adds to the
+     requested height, and it alone made the few-pixel difference that cut the last card. */
+  padding: 5px 7px 1px;
+  overflow: hidden;   /* nothing scrolls: everything must fit at a glance */
+}
+
+/* A group that is TOO TALL flows into the next column, it is not cut. Tuning each group by hand
+   is fragile: their height depends on the data (a list empty today has ten rows tomorrow), so any
+   threshold set by hand breaks by itself. Cards stay whole though. */
+.group { break-inside: auto; margin-bottom: 4px; }
+.card, .guests, .group > h2 { break-inside: avoid; }
+.group > h2 { break-after: avoid; }
+.group.proxmox { break-inside: avoid; }
+.group > h2 {
+  font: 700 11px/1.3 var(--font); color: var(--title); text-align: center;
+  text-transform: uppercase; letter-spacing: .7px; margin-bottom: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Card content is CENTRED, not stuck to the top left corner. */
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 6px; margin-bottom: 2px; min-width: 0; text-align: center;
+}
+.card.pressed { border-color: var(--title); background: #17171b; }
+
+.card .head { display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; }
+.card .name {
+  font-size: 15px; font-weight: 700; letter-spacing: .2px; color: var(--title);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.card .spec { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+
+/* Proxmox guests: small tiles, two per row. With a full row each, a host with eight
+   guests is taller than the column and would be cut. */
+.guests { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin-bottom: 3px; }
+.card.guest { padding: 3px 2px; margin: 0; }
+.card.guest .dot { width: 6px; height: 6px; }
+.card.guest .head { gap: 2px; }
+/* 11 px, not 12: at 12 px names like `homeassistant` do not fit the ~72 px tile and get
+   cut. The whole name beats half a point of font size. */
+.card.guest .name { font-size: 11px; font-weight: 500; color: var(--text); letter-spacing: 0; }
+.card.guest .val { font-size: 12px; font-weight: 700; color: var(--sub); line-height: 1.25; white-space: pre-line; }
+.card.guest .val.hot { color: var(--red); }
+.card.guest .disk { font-size: 10px; font-weight: 500; color: var(--sub); line-height: 1.2; }
+.card.guest .disk:empty { display: none; }
+
+/* The status dot. The pulse stays ONLY on what is down: otherwise there are dozens of layers
+   composited permanently, with no information in them. */
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.up { background: var(--green); }
+.dot.down { background: var(--red); animation: pulse 1.6s ease-in-out infinite; }
+/* Off on schedule: not an outage, so neither red nor pulsing. An empty ring, to show the state
+   is known and expected, not unknown. */
+.dot.scheduled { background: transparent; box-shadow: inset 0 0 0 2px var(--muted); animation: none; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* the metric blocks, centred */
+.metrics { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; margin-top: 3px; }
+.metric { background: var(--block); border-radius: 4px; padding: 1px 3px; min-width: 36px; }
+.metric .lbl { display: block; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+.metric .vl { display: block; font-size: 15px; font-weight: 700; line-height: 1.15; }
+.metric.warn .vl { color: var(--warn); }
+.metric.crit .vl { color: var(--red); }
+
+/* list rows: here the text stays on the left, with the value on the right — a centred list
+   cannot be read in columns */
+.list { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; text-align: left; }
+.row {
+  display: flex; align-items: baseline; gap: 6px; min-width: 0;
+  font-size: 12px; line-height: 1.25; padding: 1px 4px; border-radius: 3px; background: var(--block);
+}
+.row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }
+.row .v { color: var(--text); font-weight: 700; white-space: nowrap; }
+.row.bad .v { color: var(--red); }
+
+.torrent { display: flex; flex-direction: column; gap: 2px; padding: 3px 4px; background: var(--block); border-radius: 3px; text-align: left; }
+.torrent .t { font-size: 9px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.torrent .b { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.torrent .b > i { display: block; height: 100%; background: var(--accent); }
+.torrent .d { font-size: 8px; color: var(--muted); display: flex; justify-content: space-between; }
+
+.card .error { font-size: 9px; color: var(--warn); margin-top: 2px; }
+.card .error.scheduled { color: var(--muted); }
+
+/* ======================= the GAMES page ======================= */
+
+body.p-games #content {
+  column-count: initial;
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);   /* the rows fill the height, however many servers there are */
+  gap: 6px; align-content: stretch;
+}
+.tile {
+  background: var(--card); border: 1px solid var(--border); border-radius: 7px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 5px; min-width: 0;   /* no aspect-ratio: the grid gives the height */
+}
+.tile .g { font-size: 14px; font-weight: 700; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tile .s { font-size: 11px; color: var(--muted); }
+.tile.on { border-color: var(--green); }
+.tile.on .s { color: var(--green); }
+.tile.pressed { border-color: var(--title); }
+
+/* ======================= the traffic strip ======================= */
+
+#strip {
+  position: fixed; left: 0; right: 0; bottom: 0; height: var(--strip); z-index: 28;
+  display: flex; align-items: center; justify-content: space-around; gap: 4px;
+  padding: 0 8px; background: #000; border-top: 1px solid var(--line); overflow: hidden;
+}
+.node { display: flex; flex-direction: column; align-items: center; line-height: 1.1; min-width: 0; }
+/* The node's name tells the state by colour: GREEN on, RED off. Grey stays only for "do not know
+   yet" (the first read, after a restart). The text never animates — the pulse exists only on the
+   card dots, and only where there really is a fault. */
+.node .nm { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--muted); }
+.node .nm.up { color: var(--green); }
+.node .nm.down { color: var(--red); }
+/* Off on schedule or by design (a NAS at night, a backup server, a desktop): still off, so still red,
+   but dimmer — to tell them apart from a real outage. */
+.node .nm.scheduled { color: var(--red); opacity: .72; }
+.node .rt { font-size: 10px; color: var(--sub); white-space: nowrap; }
+.node .rt.flowing { color: var(--green); }
+
+/* ======================= the alert banner ======================= */
+
+@media (orientation: landscape) {
+  .card .spec { display: none; }
+  /* landscape: the columns are short, so a Proxmox host and its guests may flow into the next column */
+  .group.proxmox { break-inside: auto; }
+  /* landscape: Proxmox guests one per row ("docker  CPU 6% RAM 49%"), no disk (it shows in the panel) */
+  .guests { grid-template-columns: 1fr; gap: 1px; }
+  .card.guest { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 5px; }
+  .card.guest .val { white-space: nowrap; font-size: 10px; }
+  .card.guest .disk { display: none; }
+}
+
+#alerts {
+  position: fixed; left: 0; right: 0; top: var(--topbar); z-index: 27;
+  display: flex; align-items: center; gap: 8px; padding: 2px 10px;
+  background: #3a0d1c; border-bottom: 1px solid var(--red);
+  font-size: 11px; color: #ffd9e2;
+}
+/* When there is an alert, the content box SHRINKS by the banner's height — it does not get padding
+   inside. With padding, the columns would think they have the full height and the last card in
+   each would be cut silently. */
+body.with-alert { --alert: 22px; }
+#alerts .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#alerts button { appearance: none; border: 1px solid var(--red); background: transparent; color: var(--red);
+  font: 700 10px/1 var(--font); padding: 4px 8px; border-radius: 4px; }
+
+/* ======================= the detail panel ======================= */
+
+#panel { position: fixed; inset: 0; z-index: 40; background: #08080a; display: flex; flex-direction: column; }
+#panel-bar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px; flex: none;
+  border-bottom: 1px solid var(--line);
+}
+#panel-title { flex: 1; font-size: 15px; font-weight: 700; color: var(--title); }
+#panel-bar button { appearance: none; border: 0; background: transparent; color: var(--sub); font-size: 22px; line-height: 1; padding: 0 6px; }
+#panel-body { flex: 1; overflow-y: auto; padding: 8px 12px 12px; scrollbar-width: none; touch-action: pan-y; }
+#panel-body::-webkit-scrollbar { display: none; }
+#panel-body h3 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin: 8px 0 3px; }
+#panel-body h3:first-child { margin-top: 0; }
+#panel-body .row { font-size: 12px; padding: 4px 6px; }
+
+/* The actions: big buttons, at the bottom. One tap on the card gets you here — the long press
+   was invisible, there was no way to know it existed. */
+#panel-actions {
+  display: flex; gap: 10px; padding: 9px 12px; flex: none;
+  border-top: 1px solid var(--line); background: #0e0e11;
+}
+#panel-actions button {
+  appearance: none; flex: 1; padding: 13px 8px; border-radius: 7px;
+  background: var(--block); border: 1px solid var(--border); color: var(--text);
+  font: 700 13px/1 var(--font); letter-spacing: .5px;
+}
+#panel-actions button.danger { border-color: var(--red); color: var(--red); }
+
+/* ======================= action confirmation ======================= */
+
+#confirm { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.78); }
+#confirm .box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; max-width: 320px; text-align: center; }
+#confirm p { font-size: 14px; margin-bottom: 16px; line-height: 1.4; }
+#confirm .buttons { display: flex; gap: 10px; justify-content: center; }
+#confirm button { appearance: none; border: 1px solid var(--border); background: var(--block); color: var(--text); font: 700 13px/1 var(--font); padding: 11px 24px; border-radius: 6px; }
+#confirm button.danger { border-color: var(--red); color: var(--red); }
+
+/* the link to the aggregator: a discreet dot, red only while the stream is broken */
+#stream-state { position: fixed; right: 3px; bottom: calc(var(--strip) + 3px); width: 5px; height: 5px; border-radius: 50%; background: transparent; z-index: 45; }
+body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s ease-in-out infinite; }
+
+/* ======================= portrait =======================
+   Two columns in portrait are about as wide as the four in landscape, so the text scale and the
+   cards still hold: only how many groups fit in a column changes.
+   Everything about portrait lives HERE, in a single block. Landscape stays untouched. */
+
+@media (orientation: portrait) {
+  :root { --topbar: 74px; --strip: 52px; }
+
+  #topbar { grid-template-columns: auto 1fr; grid-template-rows: 40px 34px; row-gap: 0; }
+  #weather { grid-row: 1; grid-column: 1; }
+  #clock   { grid-row: 1; grid-column: 2; }
+  #menu    { grid-row: 2; grid-column: 1 / -1; justify-content: space-between; gap: 2px; }
+  /* 6 pages since 1 Oct 2026 (HEALTH): at 360 px they fit only with smaller padding and font */
+  #menu button { padding: 7px 3px; font-size: 10.5px; letter-spacing: .2px; }
+
+  #content { column-count: 2; }
+  /* In portrait the columns are wider (~170 px), so one more point fits everywhere. */
+  .card .name { font-size: 16px; }
+  .card.guest .name { font-size: 12px; }
+  .card.guest .val { font-size: 13px; }
+  .metric .vl { font-size: 16px; }
+  .row { font-size: 13px; }
+  body.p-games #content { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tile .g { font-size: 13px; }
+
+  /* The nine strip labels do not fit one row at 360 px: five on the first, four on the second.
+     The width must leave room for the gaps between them TOO: at a fixed 20%, the four gaps pushed
+     the fifth onto the next row and three rows came out, cut by the strip's height. */
+  #strip { flex-wrap: wrap; align-content: center; row-gap: 0; gap: 2px; }
+  .node { width: 19%; }
+  #strip .nm, #strip .rt { font-size: 9px; }
+}
+.panel-spec { font-size: 11px; color: var(--muted); margin-bottom: 6px; }

@@ -1,0 +1,17 @@
+# labhud-agent actions: name = the command, as a list of arguments (no shell, no wildcards).
+# The name is what a card lists in `actions = [...]` in config.toml. Names that follow the
+# patterns below get their button label for free; anything else can be labelled with
+# [action.<name>] in config.toml.
+#
+#   wol-*                        START
+#   shutdown-*                   SHUT DOWN
+#   vm-<node>-<vmid>-start       START      (and -shutdown, -reboot)
+#
+# The agent runs as its own user: commands that need root go through a narrow sudoers rule
+# (one exact command per line, NOPASSWD) or a systemd unit the user may start.
+
+[actions]
+wol-nas = ["wakeonlan", "00:11:22:33:44:55"]
+vm-pve-100-start = ["sudo", "/usr/sbin/qm", "start", "100"]
+vm-pve-100-shutdown = ["sudo", "/usr/sbin/qm", "shutdown", "100"]
+vm-pve-100-reboot = ["sudo", "/usr/sbin/qm", "reboot", "100"]

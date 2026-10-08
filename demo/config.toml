@@ -1,0 +1,344 @@
+# The demo topology: a made-up lab that exercises every part of the display. It is used when
+# LABHUD_DEMO=1 and LABHUD_CONFIG is not set; the data comes from demo/__init__.py, not from
+# the network. Addresses are from 192.0.2.0/24, reserved for documentation.
+
+title = "LABHUD DEMO"
+
+[[page]]
+id = "general"
+title = "GENERAL"
+
+  [[page.group]]
+  id = "pve"
+  title = "Proxmox"
+
+    [[page.group.card]]
+    id = "host-pve"
+    name = "PVE"
+    subtitle = "i5-12500 · 64 GB · RTX 3060"
+    ping = "192.0.2.10"
+    large = true
+    metrics = [
+      { key = "proxmox.pve.vms", label = "VM", format = "count" },
+      { key = "proxmox.pve.lxc", label = "LXC", format = "count" },
+      { key = "proxmox.pve.cpu", label = "CPU", format = "percent" },
+      { key = "proxmox.pve.mem_used_of", label = "RAM", format = "used_of" },
+      { key = "proxmox.pve.disk_used_of", label = "Disk", format = "used_of" },
+      { key = "temp.pve.cpu_temp", label = "CPU", format = "celsius" },
+      { key = "temp.pve.gpu0_temp", label = "GPU", format = "celsius" },
+    ]
+    panel = "host:pve"
+    sensors = "temp.pve"
+
+    [[page.group.card]]
+    id = "vm-pve-100"
+    name = "docker"
+    proxmox = "pve/100"
+
+    [[page.group.card]]
+    id = "vm-pve-101"
+    name = "homeassistant"
+    proxmox = "pve/101"
+
+    [[page.group.card]]
+    id = "vm-pve-102"
+    name = "nextcloud"
+    proxmox = "pve/102"
+
+    [[page.group.card]]
+    id = "vm-pve-103"
+    name = "jellyfin"
+    proxmox = "pve/103"
+
+    [[page.group.card]]
+    id = "vm-pve-104"
+    name = "pihole"
+    proxmox = "pve/104"
+
+    [[page.group.card]]
+    id = "vm-pve-105"
+    name = "gitea"
+    proxmox = "pve/105"
+
+    [[page.group.card]]
+    id = "vm-pve-106"
+    name = "windows"
+    proxmox = "pve/106"
+
+  [[page.group]]
+  id = "storage"
+  title = "Storage"
+  keep_together = true
+
+    [[page.group.card]]
+    id = "nas"
+    name = "NAS"
+    subtitle = "DS920+ · 4× 8 TB"
+    ping = "192.0.2.20"
+    large = true
+    metrics = [
+      { key = "synology.used_percent", label = "Used", format = "percent" },
+      { key = "synology.free", label = "Free", format = "bytes" },
+      { key = "synology.total", label = "Total", format = "bytes" },
+      { key = "synology.cpu", label = "CPU", format = "percent" },
+      { key = "synology.mem", label = "RAM", format = "percent" },
+    ]
+
+    [[page.group.card]]
+    id = "backup"
+    name = "BACKUP"
+    ping = "192.0.2.21"
+    large = true
+    on_demand = true
+    metrics = [
+      { key = "pbs.used_percent", label = "Used", format = "percent" },
+      { key = "pbs.failed", label = "Failed 24h", format = "count" },
+    ]
+
+  [[page.group]]
+  id = "desk"
+  title = "Workstations"
+
+    [[page.group.card]]
+    id = "desktop"
+    name = "DESKTOP"
+    subtitle = "Ryzen 7 · 32 GB"
+    tcp = "192.0.2.30:3389"
+    large = true
+    on_demand = true
+
+[[page]]
+id = "network"
+title = "NETWORK"
+
+  [[page.group]]
+  id = "net"
+  title = "Network"
+
+    [[page.group.card]]
+    id = "router"
+    name = "ROUTER"
+    subtitle = "OPNsense · 4 cores · 8 GB"
+    ping = "192.0.2.1"
+    large = true
+    metrics = [
+      { key = "opnsense.cpu", label = "CPU", format = "percent" },
+      { key = "opnsense.mem", label = "RAM", format = "percent" },
+      { key = "opnsense.wan_dn", label = "WAN ↓", format = "rate" },
+      { key = "opnsense.wan_up", label = "WAN ↑", format = "rate" },
+    ]
+    panel = "network:traffic"
+
+    [[page.group.card]]
+    id = "switch"
+    name = "SWITCH"
+    subtitle = "8× 2.5G"
+    ping = "192.0.2.2"
+
+    [[page.group.card]]
+    id = "ap"
+    name = "ACCESS POINT"
+    subtitle = "Wi-Fi 6"
+    ping = "192.0.2.3"
+
+  [[page.group]]
+  id = "dns"
+  title = "DNS"
+
+    [[page.group.card]]
+    id = "resolver"
+    name = "RESOLVER"
+    ping = "192.0.2.4"
+    large = true
+    metrics = [
+      { key = "live.dns.total", label = "Queries", format = "count" },
+      { key = "live.dns.blocked", label = "Blocked", format = "count" },
+      { key = "live.dns.percent", label = "Percent", format = "percent1" },
+    ]
+    panel = "dns:details"
+
+    [[page.group.card]]
+    id = "dns-top-blocked"
+    name = "TOP BLOCKED"
+    list = "live.display.dns_blocked"
+    limit = 4
+
+  [[page.group]]
+  id = "devices"
+  title = "Devices"
+
+    [[page.group.card]]
+    id = "devices"
+    name = "DEVICES"
+    large = true
+    metrics = [{ key = "live.devices.active", label = "Active", format = "count" }]
+    list = "live.display.new_devices"
+    limit = 5
+    panel = "network:devices"
+
+[[page]]
+id = "security"
+title = "SECURITY"
+
+  [[page.group]]
+  id = "threats"
+  title = "Threats"
+
+    [[page.group.card]]
+    id = "ids"
+    name = "IDS 24h"
+    large = true
+    metrics = [
+      { key = "live.suricata.day", label = "Alerts", format = "count" },
+      { key = "live.suricata.day_blocked", label = "Blocked", format = "count" },
+      { key = "live.logins.hour", label = "Failed login", format = "count" },
+    ]
+    panel = "security:suricata"
+
+  [[page.group]]
+  id = "attackers"
+  title = "Attackers"
+
+    [[page.group.card]]
+    id = "top-sources"
+    name = "TOP SOURCES"
+    list = "live.display.sources"
+    limit = 5
+    panel = "security:sources"
+
+    [[page.group.card]]
+    id = "logins"
+    name = "FAILED LOGINS"
+    list = "live.display.logins"
+    limit = 4
+    panel = "security:logins"
+
+  [[page.group]]
+  id = "log"
+  title = "Log"
+
+    [[page.group.card]]
+    id = "log"
+    name = "LOG"
+    list = "live.display.log"
+    limit = 8
+    panel = "security:log"
+
+[[page]]
+id = "media"
+title = "MEDIA"
+
+  [[page.group]]
+  id = "downloads"
+  title = "Downloads"
+
+    [[page.group.card]]
+    id = "torrents"
+    name = "QBITTORRENT"
+    large = true
+    metrics = [
+      { key = "qbt.active", label = "Active", format = "count" },
+      { key = "qbt.dl", label = "↓", format = "rate" },
+      { key = "qbt.ul", label = "↑", format = "rate" },
+    ]
+    torrents = "qbt.torrents"
+    panel = "media:torrents"
+
+    [[page.group.card]]
+    id = "recently-added"
+    name = "RECENTLY ADDED"
+    list = "recent.added"
+    limit = 5
+
+  [[page.group]]
+  id = "library"
+  title = "Library"
+
+    [[page.group.card]]
+    id = "sonarr"
+    name = "SONARR"
+    large = true
+    metrics = [
+      { key = "sonarr.series", label = "Series", format = "count" },
+      { key = "sonarr.wanted", label = "Missing", format = "count" },
+      { key = "sonarr.queued", label = "Queued", format = "count" },
+    ]
+    panel = "media:sonarr"
+
+    [[page.group.card]]
+    id = "radarr"
+    name = "RADARR"
+    large = true
+    metrics = [
+      { key = "radarr.movies", label = "Movies", format = "count" },
+      { key = "radarr.wanted", label = "Missing", format = "count" },
+      { key = "radarr.queued", label = "Queued", format = "count" },
+    ]
+    panel = "media:radarr"
+
+    [[page.group.card]]
+    id = "jellyfin"
+    name = "JELLYFIN"
+    large = true
+    metrics = [
+      { key = "jellyfin.MovieCount", label = "Movies", format = "count" },
+      { key = "jellyfin.SeriesCount", label = "Series", format = "count" },
+      { key = "jellyfin.streams", label = "Watching", format = "count" },
+    ]
+    list = "jellyfin.now"
+    limit = 3
+    panel = "media:jellyfin"
+
+[[page]]
+id = "games"
+title = "GAMES"
+games = "live.games.servers"
+
+[alerts]
+path = "live.alerts"
+page = "security"
+
+[[strip]]
+code = "RTR"
+name = "Router"
+card = "router"
+wan = true
+
+[[strip]]
+code = "SW"
+name = "Switch"
+card = "switch"
+
+[[strip]]
+code = "AP"
+name = "Access point"
+card = "ap"
+ip = "192.0.2.3"
+
+[[strip]]
+code = "PVE"
+name = "PVE"
+card = "host-pve"
+ip = "192.0.2.10"
+
+[[strip]]
+code = "NAS"
+name = "NAS"
+card = "nas"
+ip = "192.0.2.20"
+
+[[strip]]
+code = "BAK"
+name = "Backup"
+card = "backup"
+
+[[strip]]
+code = "PC"
+name = "Desktop"
+card = "desktop"
+ip = "192.0.2.30"
+
+[weather]
+latitude = 52.52
+longitude = 13.41
+city = "Berlin"

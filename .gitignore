@@ -1,0 +1,5 @@
+.env
+/config.toml
+!config.example.toml
+__pycache__/
+*.pyc

@@ -1,0 +1,29 @@
+{
+ "getNowPlaying.view": {
+  "subsonic-response": {
+   "status": "ok",
+   "nowPlaying": {
+    "entry": [
+     {
+      "username": "alice",
+      "artist": "Band",
+      "title": "Song"
+     },
+     {
+      "username": "alice",
+      "artist": "Band",
+      "title": "Other"
+     }
+    ]
+   }
+  }
+ },
+ "getScanStatus.view": {
+  "subsonic-response": {
+   "status": "ok",
+   "scanStatus": {
+    "count": 4321
+   }
+  }
+ }
+}

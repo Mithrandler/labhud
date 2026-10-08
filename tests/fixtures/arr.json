@@ -1,0 +1,132 @@
+{
+ "sonarr/api/v3/series": [
+  {
+   "title": "Show A"
+  },
+  {
+   "title": "Show B"
+  }
+ ],
+ "sonarr/api/v3/wanted/missing": {
+  "totalRecords": 3,
+  "records": [
+   {
+    "series": {
+     "title": "Show A"
+    },
+    "seasonNumber": 2,
+    "episodeNumber": 5
+   },
+   {
+    "seasonNumber": 1,
+    "episodeNumber": 1
+   }
+  ]
+ },
+ "sonarr/api/v3/queue?pageSize=1": {
+  "totalRecords": 1
+ },
+ "sonarr/api/v3/history": {
+  "records": [
+   {
+    "series": {
+     "title": "Show A"
+    },
+    "episode": {
+     "seasonNumber": 1,
+     "episodeNumber": 3
+    },
+    "date": "2026-01-03T10:00:00Z"
+   },
+   {
+    "series": {
+     "title": "Show A"
+    },
+    "episode": {
+     "seasonNumber": 1,
+     "episodeNumber": 2
+    },
+    "date": "2026-01-02T10:00:00Z"
+   }
+  ]
+ },
+ "sonarr/api/v3/queue?pageSize=5": {
+  "records": [
+   {
+    "series": {
+     "title": "Show B"
+    },
+    "episode": {
+     "seasonNumber": 3,
+     "episodeNumber": 1
+    },
+    "size": 1000,
+    "sizeleft": 250
+   }
+  ]
+ },
+ "radarr/api/v3/movie": [
+  {
+   "title": "Film 1"
+  },
+  {
+   "title": "Film 2"
+  },
+  {
+   "title": "Film 3"
+  }
+ ],
+ "radarr/api/v3/wanted/missing": {
+  "totalRecords": 1,
+  "records": [
+   {
+    "title": "Film 3"
+   }
+  ]
+ },
+ "radarr/api/v3/queue?pageSize=1": {
+  "totalRecords": 0
+ },
+ "radarr/api/v3/history": {
+  "records": [
+   {
+    "movie": {
+     "title": "Film 1"
+    },
+    "date": "2026-01-04T10:00:00Z"
+   }
+  ]
+ },
+ "radarr/api/v3/queue?pageSize=5": {
+  "records": [
+   {
+    "movie": {
+     "title": "Film 2"
+    },
+    "size": 0
+   }
+  ]
+ },
+ "prowlarr/api/v1/indexerstats": {
+  "indexers": [
+   {
+    "indexerName": "Indexer One",
+    "numberOfGrabs": 10,
+    "numberOfQueries": 100,
+    "numberOfFailedGrabs": 1,
+    "numberOfFailedQueries": 2
+   },
+   {
+    "indexerName": "Indexer Two",
+    "numberOfGrabs": 5,
+    "numberOfQueries": 50
+   }
+  ]
+ },
+ "bazarr/api/episodes/wanted": {
+  "total": 7
+ },
+ "bazarr/api/movies/wanted": {
+  "total": 2
+ }
+}

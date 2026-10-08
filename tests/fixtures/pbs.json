@@ -1,0 +1,28 @@
+{
+ "/status/datastore-usage": {
+  "data": [
+   {
+    "store": "main",
+    "used": 250,
+    "total": 1000
+   },
+   {
+    "store": "spare",
+    "used": 0,
+    "total": 0
+   }
+  ]
+ },
+ "/nodes/localhost/tasks": {
+  "data": [
+   {
+    "upid": "x",
+    "status": "error"
+   },
+   {
+    "upid": "y",
+    "status": "error"
+   }
+  ]
+ }
+}

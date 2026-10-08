@@ -1,0 +1,46 @@
+# Changelog
+
+All notable changes to labhud. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and versions follow [Semantic Versioning](https://semver.org/). Before 1.0.0 the config format may
+still change in a minor version; such changes are listed under **Changed** with what to edit.
+
+## [Unreleased]
+
+## [0.1.1] - 2026-10-08
+
+First public release.
+
+### Added
+- MIT license; the Roboto fonts' SIL Open Font License is in `static/fonts/OFL.txt`.
+- `docs/install.md`, `docs/security.md` and `compose.example.yaml`.
+- Image labels `org.opencontainers.image.licenses` and `.source`.
+- CI can publish the same tags to a second registry (`EXTRA_IMAGE`).
+
+### Changed
+- A request under a name missing from `LABHUD_HOSTS` gets a plain-text 421 that names the host
+  and the variable to set, instead of `{"error":"unknown host"}`; the accepted names are logged
+  at start.
+
+## 0.1.0 - 2026-10-08
+
+First tagged version, not published: the display as it runs in production, generalized.
+
+### Added
+- `config.toml` with validation that reports every problem at once, with its location
+  (`python3 config.py config.toml` checks a file).
+- Data sources as plugins (`sources/`), each enabled by its `LABHUD_*` variables: Proxmox VE
+  (plus backups), PBS, OPNsense, Synology, OpenMediaVault, qBittorrent, Sonarr, Radarr,
+  Prowlarr, Bazarr, Jellyfin, Navidrome, Seerr, Open-Meteo weather, and any JSON endpoint
+  (`LABHUD_JSON_<NAME>_URL`).
+- The frontend, with the tab title, action labels, host panel sensors, games page and
+  column grouping set from the config.
+- An optional live agent contract (`docs/live-agent.md`) and actions sent to an agent you
+  run (`docs/actions.md`, `agents/labhud-agent.py`); actions are off by default.
+- Demo mode (`LABHUD_DEMO=1`) on made-up data, with no network, keys or ping.
+- Multi-arch image (linux/amd64, linux/arm64), built by CI; the version is in the
+  `LABHUD_VERSION` environment variable and the image labels.
+- Tests: the config loader, every source parser on saved API answers, and a smoke test of the
+  server in demo mode.
+
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Mithrandler/labhud/releases/tag/v0.1.1

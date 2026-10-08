@@ -1,0 +1,18 @@
+{
+ "/api/v2/transfer/info": {
+  "dl_info_speed": 1048576,
+  "up_info_speed": 2048
+ },
+ "/api/v2/torrents/info": [
+  {
+   "name": "linux-distro.iso",
+   "progress": 0.5,
+   "size": 4000,
+   "eta": 60,
+   "dlspeed": 1000
+  },
+  {
+   "name": "another.iso"
+  }
+ ]
+}
