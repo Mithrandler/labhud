@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-08
+
 ### Added
 - Certificate pinning: `LABHUD_PINS=host[:port]=<sha256>,...`. The certificate is compared right
   after the handshake and the connection dropped, before the key is sent, if it is not that one.
@@ -158,7 +160,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/Mithrandler/labhud/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/Mithrandler/labhud/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Mithrandler/labhud/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Mithrandler/labhud/compare/v0.1.1...v0.1.2
