@@ -48,7 +48,7 @@ Integrations:
 
 Features:
 
-15. **Back-off and configurable intervals.** Each source already has its own interval, fixed in
+15. ~~**Back-off and configurable intervals.**~~ Done (back-off was already there). Each source already has its own interval, fixed in
     code; make it settable, retry a failing source less and less often, and keep its last known
     state as "stale" for a while instead of dropping it at the first failed poll.
 16. **Actions with a question.** An action can ask for a choice before it runs (now / in 5 min /

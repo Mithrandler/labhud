@@ -52,6 +52,10 @@ MAX_SUBSCRIBERS = 8
 # How long a configured source may keep failing before the top bar shows a mark: one failed poll
 # is often a restart or a slow answer, and the card already says so on its own.
 SOURCE_GRACE = int(os.environ.get("LABHUD_SOURCE_GRACE", "300"))
+# How long a failing source keeps showing its last good answer, marked "stale", before its cards
+# switch to the error. One missed poll (a slow answer, a restart) then changes nothing on screen,
+# and a VM that was down stays down instead of becoming "unknown" for one cycle. 0 turns it off.
+SOURCE_STALE = int(os.environ.get("LABHUD_SOURCE_STALE", "60"))
 VERSION = os.environ.get("LABHUD_VERSION", "dev")
 STARTED = int(time.time())
 
@@ -75,8 +79,10 @@ def _apply(topology):
     global TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST
     # Only the sources whose settings are present run; the others are reported as not configured.
     active, inactive = (demo.sources(), {}) if DEMO else sources.load(topology)
-    # name -> interval in seconds. The paces follow how fast the measured thing changes, not "as often as possible".
-    every = {name: src.every for name, src in active.items()}
+    # name -> interval in seconds. The paces follow how fast the measured thing changes, not "as
+    # often as possible"; LABHUD_<SOURCE>_EVERY changes one (never below 2 s).
+    every = {name: max(2, int(os.environ.get(f"LABHUD_{sources.env_name(name)}_EVERY") or src.every))
+             for name, src in active.items()}
     every["status"] = STATUS_EVERY
     # The ping/TCP targets.
     # Only ping/tcp: the state of Proxmox guests comes from the `proxmox` source, it is not measured twice.
@@ -234,6 +240,20 @@ def _collect(name):
     return name, result
 
 
+def _keep_stale(name, result):
+    """A failed poll within SOURCE_STALE of the last good one: the last good answer, with
+    `stale` = the error. Past that, or with nothing good yet, the failure itself."""
+    if "unavailable" not in result or not SOURCE_STALE:
+        return result
+    with _lock:
+        before = _data.get(name)
+        last_ok = _health.get(name, {}).get("last_ok")
+    if not isinstance(before, dict) or "unavailable" in before or before.get("scheduled") \
+            or not last_ok or time.time() - last_ok > SOURCE_STALE:
+        return result
+    return dict(before, stale=result["unavailable"])
+
+
 def _publish(delta):
     """Sends only the sources that changed. A slow subscriber is dropped, it does not block the loop."""
     if not delta:
@@ -277,6 +297,7 @@ def loop():
                 failures.pop(name, None)
             _log(_note_health(name, result, took, failures.get(name, 0),
                               time.time() + next_run[name] - time.monotonic()))
+            result = _keep_stale(name, result)
             if name == "status":
                 for source, card in SOURCE_HOST.items():
                     was, now = previous_status.get(card), result.get(card)
@@ -585,9 +606,10 @@ if __name__ == "__main__":
     print(f"answering to: {', '.join(sorted(ALLOWED_HOSTS))} (LABHUD_HOSTS)", flush=True)
     if envfiles.LOADED:
         print(f"read from files: {', '.join(envfiles.LOADED)}", flush=True)
-    print("certificates: " + ", ".join(filter(None, [
-        f"{len(sources.PINS)} pinned" if sources.PINS else "",
-        "the rest checked (LABHUD_VERIFY)" if sources._common._VERIFIED else "the rest NOT checked"])), flush=True)
+    if not DEMO:
+        rest = "checked (LABHUD_VERIFY)" if sources._common._VERIFIED else "NOT checked (see LABHUD_PINS)"
+        print(f"certificates: {len(sources.PINS)} pinned, the others {rest}" if sources.PINS
+              else f"certificates: {rest}", flush=True)
     # labhud has no login: whoever opens the page sees the buttons. The agent's own checks
     # (Origin + source IP allowlist, see docs/actions.md) are the only thing between a tap and the action.
     print(("actions: on, signed, forwarded by labhud to " + ACTION_URL if ACTION_URL and ACTION_SECRET

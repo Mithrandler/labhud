@@ -13,6 +13,12 @@ still change in a minor version; such changes are listed under **Changed** with 
   `python3 init.py fingerprint https://host:port` prints the line, and `init.py` offers to pin
   the Proxmox certificate it connects to. The log and `/status` name every unchecked host.
 - `LABHUD_*_FILE`: any setting read from a file (Compose secrets, systemd credentials).
+- `LABHUD_<SOURCE>_EVERY`: any source's poll interval.
+
+### Changed
+- A source that misses a poll keeps its last good answer, marked `stale`, for
+  `LABHUD_SOURCE_STALE` seconds (60) before its cards show the error. A stopped VM no longer
+  turns "unknown" for one cycle when Proxmox answers slowly.
 
 ### Fixed
 - A card already red (a VM stopped all along) no longer takes the screen as a new problem when
