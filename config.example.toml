@@ -55,7 +55,6 @@ title = "GENERAL"
   [[page.group]]
   id = "storage"
   title = "Storage"
-  keep_together = true  # never split this group across columns (optional)
 
     [[page.group.card]]
     id = "nas"

@@ -1,10 +1,10 @@
 /* The wall display — the theme. Kept 1:1 from homepage-wall: light neon on black.
    The background is pure black, not grey: the screen is OLED and stays on non-stop.
 
-   Layout: one screen per page, no submenu. A page's groups sit in newspaper columns
-   (`column-count`), which balance themselves however many groups the page has — no manual
-   placement on cells is needed. Everything must fit WITHOUT scrolling, which is why a Proxmox
-   guest card is a single row.
+   Layout: one screen per page, no submenu. A page's groups sit in balanced columns, placed by
+   layout() in app.js; a group is never split between two columns, so no manual placement on cells
+   is needed. Everything must fit WITHOUT scrolling, which is why a Proxmox guest card is a single
+   row in landscape.
 
    The performance rule, already paid for once: no endless animation that does not depend on a
    real event. What moves here: the status dot only when something is DOWN, and the link dot when
@@ -97,27 +97,35 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 
 /* ======================= content: newspaper columns ======================= */
 
+/* The columns are placed by layout() in app.js, not by CSS columns: CSS columns split a group
+   anywhere, title at the bottom of one column and its cards in the next. Here a group is never
+   split; `--cols` says how many columns the page has, `gap` how far apart they are. */
 #content {
+  --cols: 5;
   position: fixed; left: 0; right: 0; top: calc(var(--topbar) + var(--alert)); bottom: var(--strip);
-  column-count: 5; column-gap: 7px;
-  /* The bottom padding is 1px, not 5: the margin of the last group in each column adds to the
-     requested height, and it alone made the few-pixel difference that cut the last card. */
-  padding: 5px 7px 1px;
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 5px 7px 2px;
   overflow: hidden;   /* nothing scrolls: everything must fit at a glance */
 }
+.stack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 
-/* A group that is TOO TALL flows into the next column, it is not cut. Tuning each group by hand
-   is fragile: their height depends on the data (a list empty today has ten rows tomorrow), so any
-   threshold set by hand breaks by itself. Cards stay whole though. */
-.group { break-inside: auto; margin-bottom: 4px; }
-.card, .guests, .group > h2 { break-inside: avoid; }
-.group > h2 { break-after: avoid; }
-.group.proxmox { break-inside: avoid; }
+/* A group is a framed box with the big heading; its cards sit inside, with smaller names. */
+.group { border: 1px solid #2f3238; border-radius: 8px; padding: 2px 4px 4px; min-width: 0; container-type: inline-size; }
 .group > h2 {
-  font: 700 11px/1.3 var(--font); color: var(--title); text-align: center;
-  text-transform: uppercase; letter-spacing: .7px; margin-bottom: 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0;
+  font: 700 16px/1.25 var(--font); color: var(--title);
+  /* a long title ("PROXMOX STORAGE") shrinks to fit the frame; a short one keeps the full size.
+     --len is the title's length, set by app.js; ~0.68em is one bold capital plus the spacing. */
+  font-size: min(var(--h2, 16px), calc((100cqi - 14px) / (var(--len, 8) * 0.68)));
+  text-transform: uppercase; letter-spacing: .6px; padding: 1px 0 3px;
 }
+.group > h2 .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.group > h2 .dot { width: 8px; height: 8px; }
+.group.pressed { border-color: var(--title); }
+.body > .card:last-child, .body > .guests:last-child { margin-bottom: 0; }
+/* A group too tall for one column gets two, and its cards flow in two columns inside. */
+.group.wide .body { column-count: 2; column-gap: 4px; }
+.group.wide .card, .group.wide .guests { break-inside: avoid; }
 
 /* Card content is CENTRED, not stuck to the top left corner. */
 .card {
@@ -125,10 +133,12 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
   padding: 3px 6px; margin-bottom: 2px; min-width: 0; text-align: center;
 }
 .card.pressed { border-color: var(--title); background: #17171b; }
+/* the card IS its group (same name): the frame and heading are the group's, no second box */
+.card.merged { background: transparent; border-color: transparent; padding: 0 2px; }
 
 .card .head { display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; }
 .card .name {
-  font-size: 15px; font-weight: 700; letter-spacing: .2px; color: var(--title);
+  font-size: 12px; font-weight: 700; letter-spacing: .4px; color: var(--sub); text-transform: uppercase;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
 }
 .card .spec { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
@@ -141,7 +151,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 .card.guest .head { gap: 2px; }
 /* 11 px, not 12: at 12 px names like `homeassistant` do not fit the ~72 px tile and get
    cut. The whole name beats half a point of font size. */
-.card.guest .name { font-size: 11px; font-weight: 500; color: var(--text); letter-spacing: 0; }
+.card.guest .name { font-size: 11px; font-weight: 500; color: var(--text); letter-spacing: 0; text-transform: none; }
 .card.guest .val { font-size: 12px; font-weight: 700; color: var(--sub); line-height: 1.25; white-space: pre-line; }
 .card.guest .val.hot { color: var(--red); }
 .card.guest .disk { font-size: 10px; font-weight: 500; color: var(--sub); line-height: 1.2; }
@@ -191,7 +201,7 @@ body.p-games #content {
   column-count: initial;
   display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);   /* the rows fill the height, however many servers there are */
-  gap: 6px; align-content: stretch;
+  gap: 6px; align-content: stretch; align-items: stretch;   /* #content's flex-start would shrink the tiles */
 }
 .tile {
   background: var(--card); border: 1px solid var(--border); border-radius: 7px;
@@ -228,8 +238,6 @@ body.p-games #content {
 
 @media (orientation: landscape) {
   .card .spec { display: none; }
-  /* landscape: the columns are short, so a Proxmox host and its guests may flow into the next column */
-  .group.proxmox { break-inside: auto; }
   /* landscape: Proxmox guests one per row ("docker  CPU 6% RAM 49%"), no disk (it shows in the panel) */
   .guests { grid-template-columns: 1fr; gap: 1px; }
   .card.guest { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 5px; }
@@ -299,6 +307,8 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 
 @media (orientation: portrait) {
   :root { --topbar: 74px; --strip: 52px; }
+  #content { --cols: 2; }
+  .group > h2 { --h2: 18px; }
 
   #topbar { grid-template-columns: 1fr auto 1fr; grid-template-rows: 40px 34px; row-gap: 0; }
   #weather { grid-row: 1; grid-column: 1; }
@@ -308,9 +318,8 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
   /* 6 pages since 1 Oct 2026 (HEALTH): at 360 px they fit only with smaller padding and font */
   #menu button { padding: 7px 3px; font-size: 10.5px; letter-spacing: .2px; }
 
-  #content { column-count: 2; }
   /* In portrait the columns are wider (~170 px), so one more point fits everywhere. */
-  .card .name { font-size: 16px; }
+  .card .name { font-size: 13px; }
   .card.guest .name { font-size: 12px; }
   .card.guest .val { font-size: 13px; }
   .metric .vl { font-size: 16px; }

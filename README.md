@@ -36,6 +36,10 @@ Then open <http://localhost:8095>. No keys, no network access, nothing from your
 | ![Network](docs/screenshots/network.png) | ![Media](docs/screenshots/media.png) |
 | ![Security](docs/screenshots/security.png) | ![Games](docs/screenshots/games.png) |
 
+In portrait the same page gets two columns, and the project name takes the free middle of the top bar:
+
+<img src="docs/screenshots/portrait.png" width="240" alt="The general page in portrait, from the demo">
+
 ## Docs
 
 - [docs/install.md](docs/install.md): installing and updating

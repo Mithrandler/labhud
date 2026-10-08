@@ -68,7 +68,6 @@ title = "GENERAL"
   [[page.group]]
   id = "storage"
   title = "Storage"
-  keep_together = true
 
     [[page.group.card]]
     id = "nas"

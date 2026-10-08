@@ -200,7 +200,7 @@ def load(path=None):
     """Read and validate the file; raises ConfigError. Returns:
 
     title        the browser tab title
-    pages        [{id, title, games?, groups: [{id, title, keep_together?}]}]
+    pages        [{id, title, games?, groups: [{id, title}]}]
     cards        {group id: [card]}
     strip        {code: {name, card, ip?, wan?}}
     quiet_hours  {card id: (from, to)}
@@ -254,9 +254,9 @@ def load(path=None):
                     ck.err(gw, "duplicate group id (group ids are unique across all pages)")
                 group_ids.add(gid)
             group = {"id": gid, "title": ck.need(gw, g, "title", str, "a string")}
-            # keep_together: the group never splits across columns (Proxmox groups do this on their own)
-            if ck.opt(gw, g, "keep_together", bool, "true or false"):
-                group["keep_together"] = True
+            # keep_together: no effect since 0.1.3, when no group splits across columns any more;
+            # still accepted so older configs load unchanged
+            ck.opt(gw, g, "keep_together", bool, "true or false")
             page["groups"].append(group)
             group_cards = cards.setdefault(gid, [])
             for k, c in enumerate(ck.tables(gw, g, "card")):

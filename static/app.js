@@ -159,11 +159,13 @@ function start_stream() {
         const c = $("#content");
         const groups = [...c.querySelectorAll(".group")].map((g) =>
           g.querySelector("h2").textContent + ":" + Math.round(g.getBoundingClientRect().height));
-        // With newspaper columns the overflow spills SIDEWAYS (one more column), not down, so the
-        // height alone does not tell whether something was cut. Both are checked.
+        // A column taller than the content box is cut at the bottom; more columns than fit are
+        // narrowed instead (see layout), which shows as a sideways overflow only if that failed.
+        const bottom = c.getBoundingClientRect().bottom - parseFloat(getComputedStyle(c).paddingBottom);
+        const cut = [...c.querySelectorAll(".stack")].some((s) => s.getBoundingClientRect().bottom > bottom + 1);
         const width = c.scrollWidth > c.clientWidth + 1 ? " CUT-SIDEWAYS" : "";
         document.body.dataset.measure =
-          `h=${c.scrollHeight}/${c.clientHeight} w=${c.scrollWidth}/${c.clientWidth}${width}` +
+          `h=${c.scrollHeight}/${c.clientHeight} w=${c.scrollWidth}/${c.clientWidth}${width}${cut ? " CUT-BOTTOM" : ""}` +
           ` | ${groups.join(" ")}`;
       }, 400);
     });
@@ -221,36 +223,147 @@ function go(i) {
 // Mounting the current page: all its groups, in columns
 // ---------------------------------------------------------------------------------------------
 
+let pageGroups = [];       // the mounted page's group elements, in config order
+let layoutSign = "";       // what the last layout was computed for (see relayout_if_needed)
+let layoutWatch = null;    // a ResizeObserver: a group or the content box changed size
+
 function mount() {
   const host = $("#content");
   host.textContent = "";
   updaters = [];
+  pageGroups = [];
+  if (layoutWatch) layoutWatch.disconnect();
 
   if (CFG.pages[page].games) { mount_games(host, CFG.pages[page].games); update(); return; }
 
   for (const g of CFG.pages[page].groups) {
     const cards = CFG.cards[g.id] || [];
     if (!cards.length) continue;
+    // A group is a framed box: its title is the big heading, its cards sit inside with smaller
+    // names. A card named like its group (PVE in group PVE) would only repeat the title, so it
+    // loses its own heading and its status dot moves up into the group's.
     const group = el("section", "group");
-    // a Proxmox host and its guests stay together: if they do not fit under the other host, the
-    // whole group moves to the next column, not just the guests
-    if (cards.some(is_guest) || g.keep_together) group.classList.add("proxmox");
-    group.appendChild(el("h2", null, g.title));
+    const title = el("h2");
+    const same = cards.filter((c) => !is_guest(c) && norm(c.name) === norm(g.title));
+    const merged = same.length === 1 ? same[0] : null;
+    title.style.setProperty("--len", String(g.title.length + (merged && merged.check ? 2 : 0)));
+    if (merged && merged.check) add_dot(title, merged);
+    title.appendChild(el("span", "t", g.title));
+    group.appendChild(title);
+    const body = el("div", "body");
+    group.appendChild(body);
     // Proxmox guests sit two per row, like tiles: with one full row each, a host with eight
     // guests is taller than the column and would be cut.
     let box = null;
     for (const c of cards) {
       if (is_guest(c)) {
-        if (!box) { box = el("div", "guests"); group.appendChild(box); }
+        if (!box) { box = el("div", "guests"); body.appendChild(box); }
         box.appendChild(make_card(c));
       } else {
         box = null;
-        group.appendChild(make_card(c));
+        body.appendChild(make_card(c, c === merged));
       }
     }
-    host.appendChild(group);
+    // the whole frame answers a tap when it IS the card, heading included
+    if (merged && cards.length === 1 && has_details(merged)) bind_touch(group, merged);
+    pageGroups.push(group);
   }
   update();
+  layout();
+  // a timer, not requestAnimationFrame: headless screenshots (and a phone with the screen off)
+  // give no frames; and not inside the callback itself, where moving groups trips the
+  // "ResizeObserver loop" warning
+  layoutWatch = new ResizeObserver(() => setTimeout(relayout_if_needed, 0));
+  layoutWatch.observe(host);
+  for (const g of pageGroups) layoutWatch.observe(g);
+}
+
+function norm(text) { return String(text || "").trim().toLowerCase(); }
+
+/** What a layout depends on: the content box and every group's height. */
+function layout_sign() {
+  const host = $("#content");
+  return `${host.clientWidth}x${host.clientHeight}|` + pageGroups.map((g) => g.offsetHeight).join(",");
+}
+
+/** Lists grow when data arrives, the alert banner shrinks the box, the phone rotates: lay out
+    again, but only if something really changed — moving the groups into place fires the
+    observer too, with the same sizes, and that must not loop. */
+function relayout_if_needed() {
+  if (pageGroups.length && layout_sign() !== layoutSign) layout();
+}
+
+/** Places the groups in columns, a group never split between two. Each column is filled in config
+    order up to a target height; the lowest target that fits the page in the available columns
+    wins, so the columns come out balanced, like newspaper columns but with whole groups. A group
+    taller than the screen gets two columns' width, its cards flowing in two columns inside the
+    frame. A page that still does not fit is zoomed out a step at a time (down to 60%), so it keeps
+    its columns whole instead of being cut. Heights are measured on screen (getBoundingClientRect),
+    so they already include the zoom. */
+function layout() {
+  const host = $("#content");
+  if (!pageGroups.length) return;
+  const cs = getComputedStyle(host);
+  const cols = parseInt(cs.getPropertyValue("--cols"), 10) || 5;
+  const gap = parseFloat(cs.columnGap) || 6;
+  const W = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const H = host.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const colW = (W - gap * (cols - 1)) / cols;
+  const width = (span) => span * colW + (span - 1) * gap;   // on screen, zoom included
+
+  const plan = (zoom) => {
+    host.textContent = "";
+    const probe = el("div", "stack");
+    probe.style.zoom = zoom;
+    probe.style.width = width(1) / zoom + "px";
+    host.appendChild(probe);
+    for (const g of pageGroups) { g.classList.remove("wide"); probe.appendChild(g); }
+    const items = pageGroups.map((g) => ({ g, h: g.getBoundingClientRect().height, span: 1 }));
+    const tall = items.filter((it) => it.h > H);
+    if (tall.length) {
+      probe.style.width = width(2) / zoom + "px";
+      for (const it of tall) { it.g.classList.add("wide"); it.span = 2; }
+      for (const it of tall) it.h = it.g.getBoundingClientRect().height;
+    }
+    const gapOn = gap * zoom;   // the gap inside a zoomed column shrinks with it
+    const pack = (target) => {
+      const stacks = [];
+      let cur = null;
+      for (const it of items) {
+        if (it.span === 2) { stacks.push({ items: [it], span: 2, h: it.h }); cur = null; continue; }
+        if (cur && cur.h + gapOn + it.h <= target) { cur.items.push(it); cur.h += gapOn + it.h; continue; }
+        cur = { items: [it], span: 1, h: it.h };
+        stacks.push(cur);
+      }
+      return stacks;
+    };
+    const used = (stacks) => stacks.reduce((n, s) => n + s.span, 0);
+    const narrow = items.filter((it) => it.span === 1);
+    let target = Math.max(0, ...narrow.map((it) => it.h), narrow.reduce((n, it) => n + it.h, 0) / cols);
+    let stacks = pack(target);
+    while (used(stacks) > cols && target < H) { target = Math.min(H, target + 8); stacks = pack(target); }
+    const fits = used(stacks) <= cols && stacks.every((s) => s.h <= H + 1);
+    return { stacks, fits, zoom, used: used(stacks) };
+  };
+
+  let best = null;
+  for (const zoom of [1, 0.92, 0.85, 0.78, 0.72, 0.66, 0.6]) {
+    best = plan(zoom);
+    if (best.fits) break;
+  }
+
+  host.textContent = "";
+  const { stacks, zoom } = best;
+  const inCols = best.used <= cols;
+  for (const s of stacks) {
+    const col = el("div", "stack");
+    col.style.zoom = zoom;
+    // more columns than room (only past the last zoom step): they all narrow to fit
+    col.style.flex = inCols ? `0 0 ${width(s.span) / zoom}px` : `${s.span} 1 0`;
+    for (const it of s.items) col.appendChild(it.g);
+    host.appendChild(col);
+  }
+  layoutSign = layout_sign();
 }
 
 /** true/false/"scheduled"/"on-demand"/null for a card's status. */
@@ -295,15 +408,18 @@ function has_details(c) {
     (c.actions && c.actions.length) || (c.check && c.check[0] === "proxmox"));
 }
 
-function make_card(c) {
+/** `merged`: the card is named like its group, whose heading already shows its name and dot. */
+function make_card(c, merged = false) {
   if (is_guest(c)) return make_guest_card(c);
 
-  const n = el("div", "card " + (c.large ? "large" : "small"));
+  const n = el("div", "card " + (c.large ? "large" : "small") + (merged ? " merged" : ""));
   n.dataset.id = c.id;
-  const head = el("div", "head");
-  if (c.check) add_dot(head, c);
-  head.appendChild(el("span", "name", c.name));
-  n.appendChild(head);
+  if (!merged) {
+    const head = el("div", "head");
+    if (c.check) add_dot(head, c);
+    head.appendChild(el("span", "name", c.name));
+    n.appendChild(head);
+  }
   if (c.subtitle) n.appendChild(el("div", "spec", c.subtitle));
   if (c.metrics) n.appendChild(make_metrics(c.metrics));
   if (c.list) n.appendChild(make_list(c.list, c.limit || 6));

@@ -6,6 +6,17 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- Every group is now a framed box with a large heading; card names inside are smaller.
+- A card named like its group (PVE in group PVE, LOG in group LOG) no longer repeats the name: its
+  status dot moves into the group's heading. A long group title shrinks to fit its frame.
+- Groups are laid out by the page, not by CSS columns, and are never split between two columns
+  (before, a title could end up at the bottom of one column with its cards in the next). Columns
+  are balanced; a group taller than the screen spans two columns, with its cards in two columns
+  inside; a page that still does not fit is zoomed out a little (down to 60%) instead of cut.
+- `keep_together` on a group has no effect any more (no group splits now); it is still accepted.
+- New demo screenshots, plus one in portrait.
+
 ### Fixed
 - CI: a version tag in a repository without the `REGISTRY` variable built an invalid image name
   (`/owner/labhud:X.Y.Z`) and failed; it now builds the image without pushing it.
