@@ -59,6 +59,14 @@ docker compose logs labhud
 The log's first lines list the active sources, the ones not configured, the accepted host names
 and whether actions are on. Open `http://<server>:8095` on the display.
 
+When a card stays empty or shows an error, open `http://<server>:8095/status` in any browser: every
+source with its state (ok, failing, host down, off on schedule, not configured and which variables
+it needs), when it last answered, how long it took, when it is tried next and its last error, such
+as a wrong token or a refused certificate. The same, as JSON, is at `/api/status`. A configured
+source that keeps failing for 5 minutes (`LABHUD_SOURCE_GRACE`) also puts a small orange mark
+next to the clock; a tap on it lists those sources. A source whose host card is down does not
+count: the card already shows that.
+
 ## The display
 
 Any browser that runs modern JavaScript works. The layout is made for a phone or small tablet in

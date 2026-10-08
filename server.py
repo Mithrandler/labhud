@@ -35,6 +35,11 @@ ALLOWED_HOSTS = {h.strip().lower() for h in os.environ.get(
 ACTION_URL = os.environ.get("LABHUD_ACTION_URL", "")
 # A client opening stream after stream would hold one thread each. The wall needs one.
 MAX_SUBSCRIBERS = 8
+# How long a configured source may keep failing before the top bar shows a mark: one failed poll
+# is often a restart or a slow answer, and the card already says so on its own.
+SOURCE_GRACE = int(os.environ.get("LABHUD_SOURCE_GRACE", "300"))
+VERSION = os.environ.get("LABHUD_VERSION", "dev")
+STARTED = int(time.time())
 
 # Demo mode: made-up data for demo/config.toml, no network, no keys, no ping, no actions.
 DEMO = os.environ.get("LABHUD_DEMO", "").lower() in ("1", "true", "yes")
@@ -71,6 +76,8 @@ for _cards in TOPOLOGY["cards"].values():
 
 _data = {}
 _lock = threading.Lock()
+# name -> how the last polls of that source went, for /status (never the data itself)
+_health = {}
 _subscribers = []
 _subscribers_lock = threading.Lock()
 
@@ -121,7 +128,9 @@ def loop():
 
     def run(name):
         try:
+            started = time.monotonic()
             _, result = _collect(name)
+            took = round(time.monotonic() - started, 2)
             # Progressive backoff on a failed source. Without it, a source that refuses
             # authentication is polled at its normal interval forever — and qBittorrent, for
             # example, bans the IP after too many failed logins, so retrying sustains the very
@@ -133,6 +142,8 @@ def loop():
                 next_run[name] = time.monotonic() + min(interval * (2 ** (failures[name] - 1)), 600)
             else:
                 failures.pop(name, None)
+            _note_health(name, result, took, failures.get(name, 0),
+                         time.time() + next_run[name] - time.monotonic())
             if name == "status":
                 for source, card in SOURCE_HOST.items():
                     was, now = previous_status.get(card), result.get(card)
@@ -171,6 +182,51 @@ def loop():
 def snapshot():
     with _lock:
         return dict(_data)
+
+
+def _note_health(name, result, took, failures, next_at):
+    now = int(time.time())
+    with _lock:
+        h = _health.setdefault(name, {})
+        h.update(last_run=now, took=took, failures=failures, next_at=int(next_at))
+        if result.get("scheduled"):
+            h["state"] = "scheduled"
+        elif "unavailable" in result:
+            h.update(state="failing", error=result["unavailable"], error_at=now)
+            h.setdefault("failing_since", now)
+        else:
+            h.update(state="ok", last_ok=now)
+            h.pop("failing_since", None)
+
+
+def health():
+    """What /status shows: how each source is doing, never its data or its settings' values."""
+    now = int(time.time())
+    with _lock:
+        hosts = _data.get("status", {})
+        result = {}
+        for name in sorted(set(SOURCES) | set(INACTIVE)):
+            if name in INACTIVE:
+                result[name] = {"state": "not_configured", "needs": INACTIVE[name]}
+                continue
+            h = dict(_health.get(name, {"state": "waiting"}))
+            h["every"] = SOURCES[name]
+            card = SOURCE_HOST.get(name)
+            if card:
+                h["host"] = card
+                # The card already shows its host as down: the source's error is the consequence.
+                if h["state"] == "failing" and hosts.get(card) in (False, "scheduled"):
+                    h["state"] = "host_down"
+            h["alarm"] = h["state"] == "failing" and now - h["failing_since"] >= SOURCE_GRACE
+            result[name] = h
+    with _subscribers_lock:
+        displays = len(_subscribers)
+    return {
+        "version": VERSION, "demo": DEMO, "now": now, "started": STARTED,
+        "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": bool(ACTION_URL),
+        "grace": SOURCE_GRACE, "problems": [n for n, h in result.items() if h.get("alarm")],
+        "sources": result,
+    }
 
 
 # ---------------------------------------------------------------------------------------------
@@ -221,6 +277,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(dict(config.public(TOPOLOGY), action_url=ACTION_URL))
         if path == "/api/snapshot":  # useful for debugging and for the check screenshots
             return self._json(snapshot())
+        if path == "/api/status":
+            return self._json(health())
+        if path == "/status":
+            path = "/status.html"
         return self._static(path)
 
     def _static(self, path):

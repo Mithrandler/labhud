@@ -1,7 +1,7 @@
 """Smoke test: the real server in demo mode, over HTTP.
 
 Starts `server.py` with LABHUD_DEMO=1 on a free port, then checks the page, the config, the first
-SSE event, the host allowlist, and that every data path named in demo/config.toml has a value in
+SSE event, the host allowlist, /status, and that every data path named in demo/config.toml has a value in
 the snapshot. pbs.* is skipped: the demo keeps that host off on purpose.
 """
 
@@ -126,6 +126,22 @@ class DemoServer(unittest.TestCase):
         event = body.split(b"\n\n")[0].decode()
         self.assertTrue(event.startswith("event: full\ndata: "), event[:80])
         self.assertIsInstance(json.loads(event.split("data: ", 1)[1]), dict)
+
+    def test_status(self):
+        status, ctype, body = self.get("/status")
+        self.assertEqual(status, 200)
+        self.assertIn(b"/api/status", body)
+        deadline = time.monotonic() + 20
+        while True:
+            st = json.loads(self.get("/api/status")[2])
+            if st["sources"]["pbs"]["state"] != "waiting" or time.monotonic() > deadline:
+                break
+            time.sleep(0.5)
+        self.assertTrue(st["demo"])
+        self.assertEqual(st["problems"], [])
+        self.assertEqual(st["sources"]["proxmox"]["state"], "ok")
+        # PBS fails because its host is off on purpose: not a problem of its own
+        self.assertEqual(st["sources"]["pbs"]["state"], "host_down")
 
     def test_every_config_path_has_data(self):
         with open(os.path.join(ROOT, "demo", "config.toml"), "rb") as f:

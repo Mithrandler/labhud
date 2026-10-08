@@ -10,6 +10,8 @@ guest names, storage use, and whatever your own JSON documents carry (logins, al
 statistics). Treat the page as you would your network map.
 
 The keys never leave the server. The browser only receives the results.
+`/status` and `/api/status` add which sources run and their last error messages (keys and
+passwords blanked out, addresses not); they sit behind the same host check as the page.
 
 ## The layers to put in front of it
 

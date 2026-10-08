@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>labhud status</title>
+<!-- How each source is doing: for setting labhud up and for finding why a card stays empty.
+     Its own page, not the wall's: this one scrolls, and it is read on a computer or a phone in
+     the hand. It shows states and error messages only, never data or the settings' values. -->
+<style>
+  @font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #000; --card: #121214; --line: #2a2a2e; --text: #fff; --sub: #b4b8bf; --muted: #7d828a;
+    --title: #7cc4ff; --green: #34c759; --warn: #ff9f0a; --red: #ff453a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 "Roboto", system-ui, sans-serif; padding: 12px 16px 24px; }
+  h1 { font-size: 18px; color: var(--title); letter-spacing: .5px; }
+  h1 a { color: inherit; text-decoration: none; }
+  #general { color: var(--sub); margin: 4px 0 14px; }
+  #general b { color: var(--text); font-weight: 700; }
+  .src { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; max-width: 900px; }
+  .src .top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .src .name { font-weight: 700; min-width: 90px; }
+  .src .state { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+  .src .facts { color: var(--muted); font-size: 12px; }
+  .src .why { margin-top: 3px; color: var(--sub); font-size: 12px; overflow-wrap: anywhere; }
+  .ok .state { color: var(--green); }
+  .failing .state { color: var(--warn); }
+  .alarm .state, .alarm .why { color: var(--red); }
+  .alarm { border-color: var(--red); }
+  .host_down .state, .scheduled .state, .not_configured .state, .waiting .state { color: var(--muted); }
+  #error { color: var(--red); margin-bottom: 10px; }
+</style>
+</head>
+<body>
+  <h1><a href="/">labhud</a> status</h1>
+  <p id="general"></p>
+  <p id="error" hidden></p>
+  <div id="sources"></div>
+<script>
+"use strict";
+
+const STATES = {
+  ok: "ok", failing: "failing", host_down: "host down", scheduled: "off on schedule",
+  not_configured: "not configured", waiting: "not polled yet",
+};
+
+function ago(now, t) {
+  const s = Math.max(0, now - t);
+  if (s < 90) return s + " s ago";
+  if (s < 5400) return Math.round(s / 60) + " min ago";
+  if (s < 172800) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " days ago";
+}
+
+function span(cls, text) {
+  const n = document.createElement("span");
+  n.className = cls;
+  n.textContent = text;
+  return n;
+}
+
+function render(d) {
+  const general = document.getElementById("general");
+  general.textContent = "";
+  const facts = [
+    ["version", d.version], ["running since", ago(d.now, d.started)],
+    ["displays", d.displays + " of " + d.max_displays], ["actions", d.actions ? "on" : "off"],
+  ];
+  if (d.demo) facts.unshift(["mode", "DEMO"]);
+  facts.forEach(([k, v], i) => {
+    if (i) general.append(" · ");
+    general.append(k + " ");
+    general.appendChild(document.createElement("b")).textContent = v;
+  });
+
+  const list = document.getElementById("sources");
+  list.textContent = "";
+  // Problems first, then the rest in name order (the server sends them sorted).
+  const rank = (h) => (h.alarm ? 0 : h.state === "failing" ? 1 : 2);
+  const names = Object.keys(d.sources).sort((a, b) => rank(d.sources[a]) - rank(d.sources[b]));
+  for (const name of names) {
+    const h = d.sources[name];
+    const box = document.createElement("div");
+    box.className = "src " + h.state + (h.alarm ? " alarm" : "");
+    const top = box.appendChild(document.createElement("div"));
+    top.className = "top";
+    top.append(span("name", name), span("state", STATES[h.state] || h.state));
+    const facts = [];
+    if (h.last_ok) facts.push("last answer " + ago(d.now, h.last_ok));
+    else if (h.last_run) facts.push("never answered");
+    if (h.took !== undefined) facts.push("took " + h.took + " s");
+    if (h.every) facts.push("every " + h.every + " s");
+    if (h.failures) facts.push(h.failures + (h.failures === 6 ? "+" : "") + " failed in a row");
+    if (h.next_at && h.state !== "ok") facts.push("next try in " + Math.max(0, h.next_at - d.now) + " s");
+    if (h.host) facts.push("host card: " + h.host);
+    top.appendChild(span("facts", facts.join(" · ")));
+    let why = "";
+    if (h.state === "not_configured") why = "needs " + h.needs.join(", ");
+    else if (h.state === "failing" || h.state === "host_down") {
+      why = h.error + " (" + ago(d.now, h.error_at) + ")";
+      if (h.failing_since) why += " · failing since " + ago(d.now, h.failing_since);
+    }
+    if (why) box.appendChild(span("why", why)).style.display = "block";
+    list.appendChild(box);
+  }
+}
+
+function load() {
+  fetch("/api/status").then((r) => r.json()).then((d) => {
+    document.getElementById("error").hidden = true;
+    render(d);
+  }).catch((e) => {
+    const n = document.getElementById("error");
+    n.hidden = false;
+    n.textContent = "labhud does not answer: " + e;
+  });
+}
+
+load();
+if (!location.search.includes("static")) setInterval(load, 10000);
+</script>
+</body>
+</html>

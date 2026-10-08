@@ -6,6 +6,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- `/status`: a page with every source's state, last answer, poll time, next try and last error,
+  plus the version, uptime, connected displays and whether actions are on. `/api/status` gives
+  the same as JSON. No data and no setting values are shown.
+- A small orange mark next to the clock when a configured source has been failing for longer
+  than `LABHUD_SOURCE_GRACE` seconds (default 300); a tap lists those sources and their errors.
+
 ### Changed
 - A page whose groups need fewer columns than the screen has now spreads them over the whole
   width (wider columns) instead of leaving the right side empty.

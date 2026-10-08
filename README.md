@@ -42,7 +42,7 @@ In portrait the same page gets two columns, and the project name takes the free 
 
 ## Docs
 
-- [docs/install.md](docs/install.md): installing and updating
+- [docs/install.md](docs/install.md): installing and updating; `/status` for what is not working
 - [docs/security.md](docs/security.md): what the page reveals and what to put in front of it
 - [docs/live-agent.md](docs/live-agent.md): your own data (alerts, DNS, logins, game servers) as one JSON document
 - [docs/actions.md](docs/actions.md): buttons that wake hosts or start VMs (off by default)

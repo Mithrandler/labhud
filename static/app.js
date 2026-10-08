@@ -746,6 +746,46 @@ function mark_menu_alerts() {
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// ---------------------------------------------------------------------------------------------
+// Sources that keep failing (/api/status)
+// ---------------------------------------------------------------------------------------------
+
+let HEALTH = null;
+
+function check_health() {
+  fetch("/api/status").then((r) => r.json()).then((h) => {
+    HEALTH = h;
+    const n = $("#health");
+    n.hidden = !h.problems.length;
+    put(n, String(h.problems.length));
+    // the check screenshots' `?static&panel=health`, like `&panel=<card id>` in start_stream
+    if (location.search.includes("static") && new URLSearchParams(location.search).get("panel") === "health") open_health_panel();
+  }).catch(() => {});  // the stream's own mark already says when the server is gone
+}
+
+/** The panel for the mark: which sources, since when, and what they answered. Opened here and
+    not as /status, so the wall never navigates away from itself. */
+function open_health_panel() {
+  if (!HEALTH || !HEALTH.problems.length) return;
+  panelCard = null;
+  const body = $("#panel-body");
+  body.textContent = "";
+  const now = HEALTH.now;
+  for (const name of HEALTH.problems) {
+    const h = HEALTH.sources[name];
+    section(body, name, [
+      ["error", h.error, true],
+      ["failing for", duration(now - h.failing_since)],
+      ["last answer", h.last_ok ? duration(now - h.last_ok) + " ago" : "never"],
+    ]);
+  }
+  body.appendChild(el("p", "hint", "Every source, with details: " + location.origin + "/status"));
+  $("#panel-actions").textContent = "";
+  put($("#panel-title"), "SOURCES NOT ANSWERING");
+  $("#panel").hidden = false;
+  touched();
+}
+
 function render_clock() {
   const d = new Date();
   put($("#clock .time"), String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"));
@@ -1116,5 +1156,8 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
 
   render_clock();
   tick(render_clock, 10000);
+  check_health();
+  if (!location.search.includes("static")) tick(check_health, 60000);
+  $("#health").addEventListener("click", open_health_panel);
   tick(() => { if (Date.now() >= pausedUntil && $("#panel").hidden && $("#confirm").hidden) go(page + 1); }, PERIOD);
 });

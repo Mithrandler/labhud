@@ -77,7 +77,15 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #weather .t { font-size: 15px; font-weight: 700; color: var(--text); }
 #weather .city { color: var(--muted); }
 
-#clock { text-align: right; line-height: 1.05; }
+#clock { position: relative; justify-self: end; text-align: right; line-height: 1.05; }
+/* A source that keeps failing (LABHUD_SOURCE_GRACE): a small mark left of the clock. The card
+   already shows the error; this catches the sources no card shows, and points to /status. */
+#health {
+  position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%);
+  appearance: none; border: 1px solid var(--warn); border-radius: 9px; background: transparent;
+  color: var(--warn); font: 700 11px/1 var(--font); padding: 3px 6px 3px 5px; white-space: nowrap;
+}
+#health::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); margin-right: 4px; vertical-align: 1px; }
 #clock .time { display: block; font-size: 19px; font-weight: 700; letter-spacing: .5px; }
 #clock .date { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
 
@@ -285,6 +293,7 @@ body.with-alert { --alert: 22px; }
 #panel-body::-webkit-scrollbar { display: none; }
 #panel-body h3 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin: 8px 0 3px; }
 #panel-body h3:first-child { margin-top: 0; }
+#panel-body .hint { margin-top: 12px; font-size: 11px; color: var(--muted); }
 #panel-body .row { font-size: 12px; padding: 4px 6px; }
 
 /* The actions: big buttons, at the bottom. One tap on the card gets you here — the long press
