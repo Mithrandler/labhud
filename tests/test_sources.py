@@ -89,9 +89,9 @@ class Proxmox(SourceTest):
         self.assertEqual([s["name"] for s in a["storage"]], ["local", "local-lvm", "nas"])  # no pbs, no inactive
         self.assertEqual([s["name"] for s in a["storage_list"]], ["local-lvm", "nas"])
         self.assertTrue(a["storage"][1]["bad"])
-        self.assertEqual(a["storage"][1]["value"], "95,0G/100G 95%")
+        self.assertEqual(a["storage"][1]["value"], "95.0G/100G 95%")
         self.assertEqual(a["disk_used_of"], [105 * GB, 200 * GB])  # NFS left out
-        self.assertEqual(a["storage_all"], [{"name": "alpha lvm", "value": "95,0G/100G", "bad": True},
+        self.assertEqual(a["storage_all"], [{"name": "alpha lvm", "value": "95.0G/100G", "bad": True},
                                             {"name": "alpha nas", "value": "500G/1000G", "bad": False}])
         self.assertEqual(out["beta"], {"unavailable": "missing LABHUD_PROXMOX_BETA_URL/_TOKEN_ID/_TOKEN_SECRET"})
         self.assertEqual(self.http.calls[0]["headers"],
@@ -117,6 +117,12 @@ class Proxmox(SourceTest):
         self.assertEqual(rows["spare (102)"]["value"], "excluded")
         self.assertEqual(out["display"][-1]["name"], "spare (102)")
         self.assertEqual(out["stale"], 2)
+
+    def test_backup_age_is_floored(self):
+        # 5.5 days after the backup is still "5d ago": rounding said "6d" for last Saturday's run
+        with mock.patch.object(proxmox.time, "time", return_value=2000 + 5.5 * 86400):
+            rows = {r["name"]: r for r in proxmox.backups()["display"]}
+        self.assertEqual(rows["web (100)"]["value"], "5d ago")
 
     def test_backups_keep_last_result_when_node_sleeps(self):
         proxmox.backups()
@@ -340,7 +346,7 @@ class Common(unittest.TestCase):
 
     def test_fmt_bytes(self):
         self.assertEqual([_common.fmt_bytes(n) for n in (None, 512, 1536, 150 * GB, 3 * 1024 ** 5)],
-                         ["0B", "512B", "1,5K", "150G", "3072T"])
+                         ["0B", "512B", "1.5K", "150G", "3072T"])
 
     def test_percent(self):
         self.assertEqual((_common.percent(1, 3), _common.percent(1, 0), _common.percent(None, 2)), (33.3, None, None))

@@ -221,7 +221,8 @@ def backups():
                 rows.append({"name": name, "value": "never", "bad": True, "order": 10 ** 9})
             else:
                 age = now - g["ts"]
-                text = f"{age / 86400:.0f}d ago" if age >= 86400 else f"{age / 3600:.0f}h ago"
+                # floored, like ago(): a backup 5.5 days old is "5d ago", not "6d"
+                text = f"{age // 86400:.0f}d ago" if age >= 86400 else f"{age // 3600:.0f}h ago"
                 rows.append({"name": name, "value": text if g["ok"] else "FAILED " + text,
                              "bad": not g["ok"] or age > 8 * 86400, "order": age})
     # the oldest (and the failed) first; the excluded ones last

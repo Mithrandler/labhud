@@ -6,6 +6,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- The LabHUD name in the middle of the top bar, in portrait (where that space was empty).
+
+### Fixed
+- Sizes always use a decimal point (`1.5T`); the server side wrote `1,5T` while the page wrote `1.5T`.
+- Backup ages are floored like every other "ago": a backup 5.5 days old shows `5d ago`, not `6d ago`.
+
 ## [0.1.1] - 2026-10-08
 
 First public release.

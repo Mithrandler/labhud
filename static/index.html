@@ -9,9 +9,11 @@
 </head>
 <body>
   <!-- The top bar: weather on the left, the pages in the middle, the clock on the right.
-       There is no submenu: all groups of a page sit on the same screen. -->
+       There is no submenu: all groups of a page sit on the same screen.
+       The brand shows only in portrait, where the middle of the first row is free. -->
   <header id="topbar">
     <div id="weather" class="empty"><span class="ic"></span><span class="t"></span><span class="city"></span></div>
+    <div id="brand" aria-hidden="true">Lab<b>HUD</b></div>
     <nav id="menu" aria-label="Pages"></nav>
     <div id="clock"><span class="time"></span><span class="date"></span></div>
   </header>

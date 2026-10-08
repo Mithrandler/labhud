@@ -138,12 +138,12 @@ def percent(part, whole):
 
 
 def fmt_bytes(n):
-    """Same format as bytes() in app.js: 14G, 1,5T, 612M."""
+    """Same format as bytes() in app.js: 14G, 1.5T, 612M."""
     v, i = float(n or 0), 0
     while v >= 1024 and i < 4:
         v /= 1024
         i += 1
-    return (str(round(v)) if v >= 100 or i == 0 else f"{v:.1f}".replace(".", ",")) + "BKMGT"[i]
+    return (str(round(v)) if v >= 100 or i == 0 else f"{v:.1f}") + "BKMGT"[i]
 
 
 def ago(iso):
