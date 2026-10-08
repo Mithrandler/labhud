@@ -29,8 +29,13 @@ import config
 import events
 import notify
 import sources
+from sources import push
 
 PORT = int(os.environ.get("LABHUD_PORT", "8095"))
+# HTTPS on labhud's own port (PEM files), for a display or agents on a network you do not trust.
+# Without them, plain HTTP: put a reverse proxy in front for TLS, or keep the port on a trusted segment.
+TLS_CERT = os.environ.get("LABHUD_TLS_CERT", "")
+TLS_KEY = os.environ.get("LABHUD_TLS_KEY", "")
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 # The names the display may be requested under ("host:port", as the browser sends them). The
@@ -290,7 +295,7 @@ def loop():
             # fault it measures. The first retry at the normal interval, then doubled, up to
             # 10 minutes; on the first success it returns to its pace.
             interval = SOURCES.get(name, 60)
-            if "unavailable" in result:
+            if "unavailable" in result and getattr(ACTIVE.get(name), "backoff", True):
                 failures[name] = min(failures.get(name, 0) + 1, 6)
                 next_run[name] = time.monotonic() + min(interval * (2 ** (failures[name] - 1)), 600)
             else:
@@ -533,6 +538,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Signed actions (LABHUD_ACTION_SECRET): checks that the request comes from labhud's own
         page, then forwards it to the agent with a signature. One answer for every refusal."""
+        p = re.fullmatch(r"/api/push/([a-z0-9_]{1,64})", self.path)
+        if p:
+            return self._push(p.group(1))
         m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
@@ -543,6 +551,27 @@ class Handler(BaseHTTPRequestHandler):
         print(f"action {m.group(1)} from {self.client_address[0]}: "
               f"{'ok' if answer.get('ok') else answer.get('error')}", flush=True)
         self._json(answer, code)
+
+    def _push(self, name):
+        """An agent's data (sources/push.py). Not behind LABHUD_HOSTS: the signature is the check,
+        and an agent may reach labhud under any name. One answer for every refusal."""
+        try:
+            length = int(self.headers.get("Content-Length") or -1)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= push.MAX_BODY or name not in ACTIVE:
+            self.close_connection = True
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        body = self.rfile.read(length)
+        why = push.verify(name, self.headers, body)
+        if not why:
+            try:
+                push.receive(name, body)
+            except ValueError as e:
+                return self._json({"ok": False, "error": str(e)[:100]}, 400)
+            return self._json({"ok": True})
+        print(f"push to {name} from {self.client_address[0]} refused: {why}", flush=True)
+        self._json({"ok": False, "error": "forbidden"}, 403)
 
     def _static(self, path):
         if path == "/":
@@ -624,4 +653,14 @@ if __name__ == "__main__":
     notify.start()
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
     threading.Thread(target=sample_history, daemon=True, name="history").start()
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    if TLS_CERT:
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(TLS_CERT, TLS_KEY or None)
+        # The handshake happens in the request's own thread, so a client that never finishes it
+        # does not block the others.
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
+    print(f"listening on :{PORT}, {'HTTPS' if TLS_CERT else 'HTTP'}"
+          + (f"; pushed sources: {', '.join(sorted(push.KEYS))}" if push.KEYS else ""), flush=True)
+    httpd.serve_forever()

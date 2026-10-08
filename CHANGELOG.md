@@ -14,6 +14,13 @@ still change in a minor version; such changes are listed under **Changed** with 
   the Proxmox certificate it connects to. The log and `/status` name every unchecked host.
 - `LABHUD_*_FILE`: any setting read from a file (Compose secrets, systemd credentials).
 - `LABHUD_<SOURCE>_EVERY`: any source's poll interval.
+- Pushed sources: `LABHUD_PUSH_<NAME>_KEY`. An agent POSTs its JSON to `/api/push/<name>`, signed
+  with HMAC-SHA256 and a timestamp, and the host it runs on needs no open port. The bundled agent
+  does it with `LABHUD_AGENT_PUSH_URL` / `_KEY` (and `LABHUD_AGENT_PORT=0`).
+- HTTPS: `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY` for labhud, `LABHUD_AGENT_TLS_CERT` / `_KEY` for
+  the agent, which pins labhud's certificate with `LABHUD_AGENT_PUSH_PIN`.
+- `LABHUD_AGENT_READ_KEY` + `LABHUD_JSON_<NAME>_AUTH`: the agent's sensors only to labhud.
+- The weather (a public API) always has its certificate checked.
 
 ### Changed
 - A source that misses a poll keeps its last good answer, marked `stale`, for

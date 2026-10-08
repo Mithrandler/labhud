@@ -11,6 +11,9 @@ LABHUD_JSON_LIVE_EVERY=5                           # seconds between polls (opti
 LABHUD_JSON_LIVE_TIMEOUT=20                        # seconds (optional)
 ```
 
+If your endpoint wants a key, `LABHUD_JSON_LIVE_AUTH="Bearer <key>"` sends it as the
+`Authorization` header.
+
 The source name is the part between `LABHUD_JSON_` and `_URL`, lowercased. Name it `live` to
 get the built-in panels described below. Any other name works the same way for card metrics
 and lists, but not for the built-in panels. Several sources can share one URL variable:
@@ -84,3 +87,51 @@ A Proxmox host card can show its GPUs in its panel. Set `sensors = "<path>"` on 
 an object with flat keys `gpu0_util`, `gpu0_mem`, `gpu0_temp`, `gpu1_util` and so on. That is
 exactly what [`agents/labhud-agent.py`](../agents/labhud-agent.py) serves at `/`, together with
 `cpu_temp`.
+
+## Pushing instead of being polled
+
+labhud can also **receive** a source: the agent sends its JSON whenever it likes, and the host it
+runs on needs no open port at all. Each pushed source has its own key, known only to labhud and
+that one agent.
+
+On labhud:
+
+```sh
+LABHUD_PUSH_PVE_KEY=<python3 -c "import secrets; print(secrets.token_hex(32))">
+LABHUD_PUSH_PVE_STALE=60   # seconds without a push before its cards show an error (optional)
+```
+
+On the agent (`agents/labhud-agent.py`):
+
+```sh
+LABHUD_AGENT_PUSH_URL=http://192.0.2.50:8095/api/push/pve   # the name after /push/ = PVE, lowercased
+LABHUD_AGENT_PUSH_KEY=<the same key>
+LABHUD_AGENT_PORT=0          # listen on nothing (only if it runs no actions)
+```
+
+The data is then `pve.cpu_temp`, `pve.gpu0_util` and so on. A push is a `POST /api/push/<name>`
+with the JSON object as the body (1 MiB at most) and two headers, which your own agent can make
+as easily:
+
+- `X-Labhud-Time`: Unix seconds, within 30 seconds of labhud's clock;
+- `X-Labhud-Signature`: the hex HMAC-SHA256, keyed with the push key, of
+  `<time>.<name>.` followed by the body, byte for byte.
+
+```sh
+body='{"cpu_temp": 48.5}'; t=$(date +%s)
+sig=$(printf '%s' "$t.pve.$body" | openssl dgst -sha256 -hmac "$KEY" -r | cut -d' ' -f1)
+curl -sS -X POST "http://192.0.2.50:8095/api/push/pve" -H "X-Labhud-Time: $t" \
+     -H "X-Labhud-Signature: $sig" -H "Content-Type: application/json" --data "$body"
+```
+
+Anything else gets `403`, and labhud logs why. The push endpoint answers under any host name
+(`LABHUD_HOSTS` does not apply to it): the signature is the check.
+
+## Securing a polled agent
+
+If you keep polling (`LABHUD_JSON_<NAME>_URL`), close what the agent serves:
+
+- `LABHUD_AGENT_READ_KEY=<key>` on the agent, `LABHUD_JSON_<NAME>_AUTH="Bearer <key>"` on labhud:
+  without it, anyone who reaches the port reads the sensors.
+- `LABHUD_AGENT_TLS_CERT` / `LABHUD_AGENT_TLS_KEY` (PEM files) serve HTTPS; pin the certificate
+  on labhud with `LABHUD_PINS` (see [security.md](security.md#certificates)).

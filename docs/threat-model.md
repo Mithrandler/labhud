@@ -36,7 +36,7 @@ Each line: what happens, what stops it today, and what is left.
 |---|---|---|
 | A LAN device opens `:8095` | your firewall rule (labhud itself has no login) | without that rule, the whole snapshot is readable |
 | A web page uses DNS rebinding to read the snapshot | `LABHUD_HOSTS`: any other `Host` gets 421 | nothing, if `LABHUD_HOSTS` is set |
-| Someone sniffs the display's traffic | nothing: `:8095` is plain HTTP | put TLS in front (reverse proxy) or keep the display on a trusted segment or VPN |
+| Someone sniffs the display's traffic | `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY`, or a reverse proxy with TLS | plain HTTP by default |
 | Someone holds the display | nothing | they see what the wall shows, and can press the buttons |
 
 ### Stealing keys
@@ -53,8 +53,9 @@ Each line: what happens, what stops it today, and what is left.
 | attack | stopped by | left over |
 |---|---|---|
 | Faking a service's answer to hide a problem or raise a false one | pinned or verified certificates | hosts left unchecked |
-| Faking the live agent's JSON | nothing: it is plain HTTP with no key | push agents with a key of their own, TLS to agents: roadmap 8 and 9 |
-| Reading the agent's sensors | nothing: `GET /` on the agent is open | firewall `:9189` to labhud's IP |
+| Faking an agent's data | pushed: HMAC with that agent's own key, 30-second window. Polled: a pinned HTTPS certificate on the agent | a polled agent over plain HTTP can still be impersonated |
+| Reading the agent's sensors | pushed: the agent listens on nothing. Polled: `LABHUD_AGENT_READ_KEY` | an agent without a read key answers anyone who reaches it |
+| Pushing to a source with another's key | each key opens its own source only | nothing |
 
 ### Running actions
 
@@ -82,6 +83,7 @@ worth closing next, in order:
 
 1. **Pin the certificates** of the services labhud polls (`LABHUD_PINS`). Unpinned, a LAN
    attacker can collect keys.
-2. **Authenticate the agents' data** (push with a key, TLS), so the screen can trust what it shows.
+2. **Push from the agents** (`LABHUD_PUSH_<NAME>_KEY`), so the screen can trust what it shows
+   and the hosts need no open port.
 3. **Keys in files** (`LABHUD_*_FILE`), so they are not in the container's environment.
-4. **TLS in front of `:8095`** if the display is not on a segment you trust.
+4. **HTTPS on `:8095`** (`LABHUD_TLS_CERT`) if the display is not on a segment you trust.

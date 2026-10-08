@@ -19,7 +19,7 @@ def weather(cfg):
         "daily": "temperature_2m_max,temperature_2m_min", "timezone": cfg.get("timezone", "auto"),
         "forecast_days": 1,
     })
-    d = request(f"https://api.open-meteo.com/v1/forecast?{qs}", timeout=15)
+    d = request(f"https://api.open-meteo.com/v1/forecast?{qs}", timeout=15, public=True)
     current = d.get("current") or {}
     day = d.get("daily") or {}
     return {

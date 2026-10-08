@@ -28,9 +28,9 @@
 
 Security between machines:
 
-8. **Push agents.** The agent sends its data to labhud over HTTPS with a key of its own, and
+8. ~~**Push agents.**~~ Done. The agent sends its data to labhud over HTTPS with a key of its own, and
    listens on no port. Hosts no longer need an open port for the dashboard.
-9. **TLS to agents**, with the agent's certificate pinned in the config, so nobody on the LAN can
+9. ~~**TLS to agents**~~ Done (both ways, pinned), with the agent's certificate pinned in the config, so nobody on the LAN can
    read or forge the data.
 10. ~~**Secrets from files.**~~ Done. Every `LABHUD_*` secret can also be `LABHUD_*_FILE` (Docker secrets),
     so tokens stay out of `docker inspect` and the process environment.

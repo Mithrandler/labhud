@@ -42,6 +42,9 @@ direct action mode, where the display's browser talks to the agent itself.
 | display | `GET /api/stream` | Server-Sent Events: one full snapshot, then only the changes (`delta`), a keep-alive comment after 20 s of silence | same |
 | display | `GET /api/config`, `/api/snapshot`, `/api/history`, `/api/status`, `/status` | layout, current data, sparklines, source health | same |
 | display | `POST /action/<name>` | only in signed mode: the press of a button | `Origin` must be labhud's own page, action must be on a card in `config.toml` |
+| agent | `POST /api/push/<name>` | a pushed source's JSON | HMAC-SHA256 with that source's own key, 30-second window; not behind `LABHUD_HOSTS` |
+
+With `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY`, all of it is HTTPS.
 
 labhud has no login (see [security.md](security.md)): anyone who passes the firewall and uses an
 allowed host name sees everything the display sees.
@@ -56,7 +59,7 @@ allowed host name sees everything the display sees.
 | Synology DSM | HTTPS | user + password, session | 15 s |
 | qBittorrent | HTTP(S) | user + password, cookie | 10 s |
 | Sonarr, Radarr, Prowlarr, Bazarr, Jellyfin, Seerr, Navidrome, OMV | HTTP(S) | API key or user | 5–10 min |
-| `LABHUD_JSON_<NAME>_URL` | HTTP(S) GET | none | `LABHUD_JSON_<NAME>_EVERY`, default 10 s |
+| `LABHUD_JSON_<NAME>_URL` | HTTP(S) GET | `LABHUD_JSON_<NAME>_AUTH`, if set | `LABHUD_JSON_<NAME>_EVERY`, default 10 s |
 | hosts with `ping` / `tcp` on their card | ICMP echo / TCP connect | none | 30 s |
 | weather (`[weather]`) | HTTPS | none | 15 min |
 | `LABHUD_NOTIFY_URL` | HTTP(S) POST | `LABHUD_NOTIFY_AUTH` | on events only |
@@ -70,8 +73,11 @@ Certificates are checked per host: pinned (`LABHUD_PINS`), verified against CAs
 
 [`agents/labhud-agent.py`](../agents/labhud-agent.py) listens on `:9189` (plain HTTP):
 
-- `GET /`: the host's sensors (temperatures, fans) as JSON, for a `LABHUD_JSON_*_URL` source.
-  **No check at all**: anyone who reaches the port can read them.
+- `GET /`: the host's sensors (temperatures, GPUs) as JSON, for a `LABHUD_JSON_*_URL` source.
+  With `LABHUD_AGENT_READ_KEY`, only to that bearer key; without it, to anyone who reaches the port.
+- Or it **pushes** them to labhud (`LABHUD_AGENT_PUSH_URL`) and, with `LABHUD_AGENT_PORT=0`,
+  listens on nothing.
+- HTTPS with `LABHUD_AGENT_TLS_CERT` / `LABHUD_AGENT_TLS_KEY`.
 - `POST /action/<name>`: runs a command written in advance in its TOML file, never anything
   taken from the request. Off unless configured. Signed mode accepts only labhud's IP and a fresh,
   unused HMAC; direct mode accepts only the display's IP with the display's `Origin`.
@@ -101,5 +107,5 @@ Certificates are checked per host: pinned (`LABHUD_PINS`), verified against CAs
 | port | who listens | who should reach it |
 |---|---|---|
 | 8095/tcp | labhud | the displays, and your VPN if you use one |
-| 9189/tcp | labhud-agent (optional) | labhud's IP (sensors, signed actions) or the display's IP (direct actions) |
+| 9189/tcp | labhud-agent (optional; none when it only pushes) | labhud's IP (sensors, signed actions) or the display's IP (direct actions) |
 | your services' API ports | the services | labhud's IP |

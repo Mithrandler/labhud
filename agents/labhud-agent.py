@@ -29,6 +29,18 @@ allowlist is what stops the rest.
 Commands are argument lists, never passed through a shell; nothing from the request reaches
 them except the action's name, which only selects one. See docs/actions.md.
 
+Reading the sensors:
+    LABHUD_AGENT_READ_KEY  GET / answers only with "Authorization: Bearer <this key>" (labhud sends
+                           it with LABHUD_JSON_<NAME>_AUTH). Unset, anyone who reaches the port reads.
+Pushing them instead (the host then needs no open port: LABHUD_AGENT_PORT=0 if no actions):
+    LABHUD_AGENT_PUSH_URL  https://<labhud>:8095/api/push/<name>, matching LABHUD_PUSH_<NAME>_KEY
+    LABHUD_AGENT_PUSH_KEY  the same secret as LABHUD_PUSH_<NAME>_KEY on labhud
+    LABHUD_AGENT_PUSH_EVERY seconds between pushes (10)
+    LABHUD_AGENT_PUSH_PIN  sha256 of labhud's certificate, when labhud serves HTTPS with its own
+HTTPS for this agent's port: LABHUD_AGENT_TLS_CERT and LABHUD_AGENT_TLS_KEY (PEM files); pin it
+on labhud with LABHUD_PINS.
+
+Any setting may be given as <NAME>_FILE, a file holding the value (systemd LoadCredential=).
 Other settings: LABHUD_AGENT_PORT (9189), LABHUD_AGENT_TIMEOUT (seconds per command, 30).
 """
 
@@ -45,7 +57,23 @@ import sys
 import threading
 import time
 import tomllib
+import urllib.request
 
+
+def _from_files():
+    """LABHUD_AGENT_X_FILE -> LABHUD_AGENT_X, unless set directly (the same rule as labhud)."""
+    for name in [k for k in os.environ if k.startswith("LABHUD_AGENT_") and k.endswith("_FILE")]:
+        target = name[:-5]
+        if os.environ.get(target):
+            continue
+        try:
+            with open(os.environ[name], encoding="utf-8") as f:
+                os.environ[target] = f.read().strip()
+        except OSError as e:
+            sys.exit(f"{name}: cannot read {os.environ[name]} ({e.strerror})")
+
+
+_from_files()
 PORT = int(os.environ.get("LABHUD_AGENT_PORT", "9189"))
 TIMEOUT = int(os.environ.get("LABHUD_AGENT_TIMEOUT", "30"))
 ORIGIN = os.environ.get("LABHUD_AGENT_ORIGIN", "")
@@ -53,6 +81,13 @@ ALLOW = {x.strip() for x in os.environ.get("LABHUD_AGENT_ALLOW", "").split(",") 
 SECRET = os.environ.get("LABHUD_AGENT_SECRET", "").encode()
 MAX_AGE = 30  # seconds a signature stays valid
 ACTIONS_FILE = os.environ.get("LABHUD_AGENT_ACTIONS", "")
+READ_KEY = os.environ.get("LABHUD_AGENT_READ_KEY", "")
+PUSH_URL = os.environ.get("LABHUD_AGENT_PUSH_URL", "")
+PUSH_KEY = os.environ.get("LABHUD_AGENT_PUSH_KEY", "").encode()
+PUSH_EVERY = max(2, int(os.environ.get("LABHUD_AGENT_PUSH_EVERY", "10")))
+PUSH_PIN = os.environ.get("LABHUD_AGENT_PUSH_PIN", "").replace(":", "").lower()
+TLS_CERT = os.environ.get("LABHUD_AGENT_TLS_CERT", "")
+TLS_KEY = os.environ.get("LABHUD_AGENT_TLS_KEY", "")
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 CACHE_S = 5  # nvidia-smi takes ~100 ms; do not run it on every request
 
@@ -214,6 +249,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.split("?", 1)[0] != "/":
             return self._answer(404, {"error": "not found"})
+        if READ_KEY and not hmac.compare_digest(self.headers.get("Authorization", "").encode("utf-8", "replace"),
+                                                f"Bearer {READ_KEY}".encode()):
+            return self._answer(403, {"error": "forbidden"})
         try:
             self._answer(200, sensors())
         except Exception as e:  # always JSON, so the card shows the error instead of hanging
@@ -233,10 +271,84 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+# ---------------------------------------------------------------------------------------------
+# Push
+# ---------------------------------------------------------------------------------------------
+
+def _opener():
+    """urllib with labhud's certificate pinned, when it is set: compared right after the
+    handshake, before the data is sent."""
+    import functools
+    import http.client
+    import ssl
+    if not PUSH_PIN:
+        return urllib.request.build_opener()
+    loose = ssl.create_default_context()
+    loose.check_hostname, loose.verify_mode = False, ssl.CERT_NONE
+
+    class Pinned(http.client.HTTPSConnection):
+        def connect(self):
+            super().connect()
+            got = hashlib.sha256(self.sock.getpeercert(binary_form=True)).hexdigest()
+            if not hmac.compare_digest(got, PUSH_PIN):
+                self.sock.close()
+                raise ssl.SSLError(f"labhud's certificate is not the pinned one ({got[:16]}...)")
+
+    class Handler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            return self.do_open(functools.partial(Pinned), req, context=loose)
+
+    return urllib.request.build_opener(Handler(context=loose))
+
+
+def push_loop():
+    name = PUSH_URL.rstrip("/").rsplit("/", 1)[-1]
+    opener = _opener()
+    failing = False
+    while True:
+        try:
+            body = json.dumps(sensors(), separators=(",", ":")).encode()
+            ts = str(int(time.time()))
+            sig = hmac.new(PUSH_KEY, f"{ts}.{name}.".encode() + body, hashlib.sha256).hexdigest()
+            req = urllib.request.Request(PUSH_URL, data=body, method="POST", headers={
+                "Content-Type": "application/json", "X-Labhud-Time": ts, "X-Labhud-Signature": sig})
+            with opener.open(req, timeout=10) as r:
+                r.read()
+            if failing:
+                print("push: answering again", flush=True)
+            failing = False
+        except Exception as e:  # labhud restarting, network down: try again next time
+            if not failing:
+                print(f"push to {PUSH_URL} failed: {e}", flush=True)
+            failing = True
+        time.sleep(PUSH_EVERY)
+
+
 if __name__ == "__main__":
+    if PUSH_URL:
+        if not PUSH_KEY:
+            sys.exit("LABHUD_AGENT_PUSH_URL needs LABHUD_AGENT_PUSH_KEY")
+        print(f"pushing sensors to {PUSH_URL} every {PUSH_EVERY} s"
+              + (", labhud's certificate pinned" if PUSH_PIN else ""), flush=True)
+        threading.Thread(target=push_loop, daemon=True, name="push").start()
+    if not PORT:
+        if ACTIONS:
+            sys.exit("LABHUD_AGENT_PORT=0 turns the listener off, but actions need it")
+        if not PUSH_URL:
+            sys.exit("LABHUD_AGENT_PORT=0 with nothing to push: set LABHUD_AGENT_PUSH_URL")
+        print("not listening (LABHUD_AGENT_PORT=0)", flush=True)
+        threading.Event().wait()
     print(f"labhud-agent on :{PORT}; actions: "
           + (", ".join(sorted(ACTIONS)) + (" (signed" if SECRET else f" (origin {ORIGIN}")
              + f", from {', '.join(sorted(ALLOW))})" if ACTIONS
              else "off (needs LABHUD_AGENT_ACTIONS, LABHUD_AGENT_ALLOW and LABHUD_AGENT_SECRET or _ORIGIN)"),
           flush=True)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    if TLS_CERT:
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(TLS_CERT, TLS_KEY or None)
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+    print(f"sensors: {'key required' if READ_KEY else 'open to anyone who reaches the port'}"
+          f"{', over HTTPS' if TLS_CERT else ''}", flush=True)
+    server.serve_forever()

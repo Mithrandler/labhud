@@ -78,6 +78,29 @@ When a certificate is renewed, the source fails with "not the pinned one" until 
 If your services have certificates from a CA (Let's Encrypt, or your own), use `LABHUD_VERIFY=on`
 instead, with `LABHUD_CA=/path/ca.pem` for an internal CA. Pins still win for the hosts they name.
 
+## HTTPS for labhud itself
+
+`LABHUD_TLS_CERT` and `LABHUD_TLS_KEY` (PEM files) make labhud answer HTTPS on its port. A
+self-signed certificate is fine for agents, which pin it:
+
+```sh
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+  -subj /CN=labhud -keyout key.pem -out cert.pem
+python3 init.py fingerprint https://192.0.2.50:8095   # -> LABHUD_AGENT_PUSH_PIN on each agent
+```
+
+A browser will warn about a self-signed certificate once; for the display itself a reverse proxy
+with a real certificate is often simpler. Remember to use `https://` in `LABHUD_HOSTS` users' URLs:
+the names stay `host:port`.
+
+## Agents
+
+- **Push** (recommended): the agent sends its data to labhud, signed with a key of its own
+  (`LABHUD_PUSH_<NAME>_KEY`), and listens on nothing. A forged or replayed push is refused. See
+  [live-agent.md](live-agent.md#pushing-instead-of-being-polled).
+- **Polled**: give it a read key (`LABHUD_AGENT_READ_KEY` / `LABHUD_JSON_<NAME>_AUTH`), and
+  HTTPS with a pinned certificate if the network between them is not yours.
+
 ## Secrets in files
 
 Every `LABHUD_*` variable can be set as `LABHUD_*_FILE`, a path whose content is the value. With

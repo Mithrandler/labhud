@@ -32,7 +32,7 @@ class FakeHTTP:
         self.routes = routes
         self.calls = []
 
-    def __call__(self, url, headers=None, data=None, timeout=10, method=None, raw=False):
+    def __call__(self, url, headers=None, data=None, timeout=10, method=None, raw=False, public=False):
         self.calls.append({"url": url, "headers": headers or {}, "data": data})
         matches = [k for k in self.routes if k in url]
         if not matches:

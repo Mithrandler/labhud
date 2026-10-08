@@ -3,6 +3,8 @@
 #   LABHUD_JSON_<NAME>_URL      one URL, or several as "label=url,label=url"
 #   LABHUD_JSON_<NAME>_EVERY    seconds between polls (default 10)
 #   LABHUD_JSON_<NAME>_TIMEOUT  seconds per request (default 10)
+#   LABHUD_JSON_<NAME>_AUTH     sent as the Authorization header, e.g. "Bearer <key>" for an agent
+#                               with LABHUD_AGENT_READ_KEY
 #
 # The data is then addressable as "<name>.<key>" (lowercase name), or "<name>.<label>.<key>" with
 # several URLs. With one URL a failed request is the source's error; with several, a label that
@@ -17,15 +19,16 @@ from ._common import PREFIX, env, labelled_urls, request, source
 _VAR = re.compile(rf"^{PREFIX}JSON_([A-Z0-9_]+)_URL$")
 
 
-def _make(urls, timeout):
+def _make(urls, timeout, auth=""):
+    headers = {"Authorization": auth} if auth else None
     if list(urls) == [""]:
-        return lambda: request(urls[""], timeout=timeout)
+        return lambda: request(urls[""], headers, timeout=timeout)
 
     def fetch():
         out = {}
         for label, url in urls.items():
             try:
-                out[label] = request(url, timeout=timeout)
+                out[label] = request(url, headers, timeout=timeout)
             except (OSError, ValueError):
                 out[label] = {}
         return out
@@ -37,5 +40,5 @@ for _var, _value in sorted(os.environ.items()):
     if not _m or not _value.strip():
         continue
     _name = _m.group(1)
-    _fetch = _make(labelled_urls(_value), int(env(f"JSON_{_name}_TIMEOUT", "10")))
+    _fetch = _make(labelled_urls(_value), int(env(f"JSON_{_name}_TIMEOUT", "10")), env(f"JSON_{_name}_AUTH"))
     source(_name.lower(), every=int(env(f"JSON_{_name}_EVERY", "10")), env=(f"JSON_{_name}_URL",))(_fetch)

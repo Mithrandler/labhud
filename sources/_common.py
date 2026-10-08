@@ -84,8 +84,12 @@ class _PinnedHandler(urllib.request.HTTPSHandler):
         return self.do_open(functools.partial(_PinnedConnection, pin=self._pin), req, context=_NO_VERIFY)
 
 
-def tls_mode(url):
-    """("pinned", fingerprint) | ("verified", context) | ("unchecked", context) | (None, None) for http."""
+_PUBLIC = ssl.create_default_context()
+
+
+def tls_mode(url, public=False):
+    """("pinned", fingerprint) | ("verified", context) | ("unchecked", context) | (None, None) for
+    http. `public`: a service on the internet, with a real certificate: always checked."""
     u = urllib.parse.urlsplit(url)
     if u.scheme != "https":
         return None, None
@@ -94,8 +98,8 @@ def tls_mode(url):
     pin = PINS.get(where) or PINS.get(host)
     if pin:
         return "pinned", pin
-    if _VERIFIED:
-        return "verified", _VERIFIED
+    if _VERIFIED or public:
+        return "verified", _VERIFIED or _PUBLIC
     return "unchecked", _NO_VERIFY
 
 
@@ -111,10 +115,10 @@ def _note_tls(url, mode):
               f"`python3 init.py fingerprint https://{where}`) or set LABHUD_VERIFY=on.", flush=True)
 
 
-def urlopen(req, timeout):
+def urlopen(req, timeout, public=False):
     """urllib's urlopen with the certificate policy of the request's host."""
     url = req.full_url if isinstance(req, urllib.request.Request) else req
-    mode, how = tls_mode(url)
+    mode, how = tls_mode(url, public)
     if mode:
         _note_tls(url, mode)
     if mode == "pinned":
@@ -133,6 +137,7 @@ class Source:
     every: int            # seconds between two polls
     env: tuple = ()       # one or more groups of variables (without LABHUD_); active if any group is complete
     section: str = None   # a config.toml table the source needs, passed to fetch()
+    backoff: bool = True  # polled less often while failing (not a pushed source: it is only read)
 
     def missing(self, topology):
         """None if the source can run, otherwise the list of what is missing (names only, never values)."""
@@ -176,12 +181,12 @@ def beyond_reading(permissions):
                    for p in privs if not READ_ONLY.search(p)})
 
 
-def source(name, every, env=(), any_of=(), section=None):
+def source(name, every, env=(), any_of=(), section=None, backoff=True):
     """Registers a fetch function. `env` is the list of variables it needs, all of them;
     `any_of` is several such lists, of which one complete is enough."""
     def wrap(fn):
         groups = tuple(tuple(g) for g in any_of) if any_of else ((tuple(env),) if env else ())
-        REGISTRY[name] = Source(name, fn, every, groups, section)
+        REGISTRY[name] = Source(name, fn, every, groups, section, backoff)
         return fn
     return wrap
 
@@ -215,12 +220,12 @@ def labelled_urls(value):
 # HTTP
 # ---------------------------------------------------------------------------------------------
 
-def request(url, headers=None, data=None, timeout=10, method=None, raw=False):
+def request(url, headers=None, data=None, timeout=10, method=None, raw=False, public=False):
     """GET/POST JSON. Returns the decoded dict, or the raw text when raw=True."""
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data else "GET"))
     for k, v in (headers or {}).items():
         req.add_header(k, v)
-    with urlopen(req, timeout) as r:
+    with urlopen(req, timeout, public) as r:
         body = r.read()
     if raw:
         return body.decode("utf-8", "replace")
