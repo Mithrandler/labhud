@@ -17,6 +17,7 @@ title = "GENERAL"
     name = "PVE"
     subtitle = "i5-12500 · 64 GB · RTX 3060"
     ping = "192.0.2.10"
+    url = "https://192.0.2.10:8006"
     large = true
     metrics = [
       { key = "proxmox.pve.vms", label = "VM", format = "count" },

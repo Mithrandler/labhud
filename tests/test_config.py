@@ -159,6 +159,10 @@ class InvalidFiles(unittest.TestCase):
         problems = self.problems(text)
         self.assertIn(expected, problems, "\n".join(problems))
 
+    def test_bad_url(self):
+        text = MINIMAL.replace('name = "NAS"', 'name = "NAS"\nurl = "ftp://x"', 1)
+        self.assertTrue(any("url must start with http:// or https://" in p for p in self.problems(text)))
+
     def test_bad_night(self):
         self.assertProblem(MINIMAL + '\n[night]\nfrom = 23\nto = 23\ndim = 120\n',
                            "night: 'from' and 'to' are the same hour")

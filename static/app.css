@@ -306,7 +306,7 @@ body.with-alert { --alert: 22px; }
   display: flex; gap: 10px; padding: 9px 12px; flex: none;
   border-top: 1px solid var(--line); background: #0e0e11;
 }
-#panel-actions button {
+#panel-actions button, #panel-actions a.open {
   appearance: none; flex: 1; padding: 13px 8px; border-radius: 7px;
   background: var(--block); border: 1px solid var(--border); color: var(--text);
   font: 700 13px/1 var(--font); letter-spacing: .5px;
@@ -330,6 +330,26 @@ body.night #night-shade { opacity: var(--shade, .7); }
 /* A card that has just turned red: the page came to it, and it pulses for a few minutes. */
 .card.focus { box-shadow: 0 0 0 2px var(--red); animation: focus-ring 1.4s ease-in-out infinite; }
 @keyframes focus-ring { 0%, 100% { box-shadow: 0 0 0 2px var(--red); } 50% { box-shadow: 0 0 0 2px transparent; } }
+
+/* ?view=list: the phone in your hand. One scrolling column; no menu, no strip, no rotation. */
+body.view-list { --topbar: 40px; --strip: 0px; }
+body.view-list #menu, body.view-list #strip, body.view-list #brand { display: none; }
+body.view-list #topbar { grid-template-columns: auto 1fr auto; grid-template-rows: 40px; height: 40px; }
+body.view-list #topbar > * { grid-row: 1; }
+body.view-list #content { display: block; overflow-y: auto; touch-action: pan-y; padding: 4px 10px 20px; max-width: 720px; margin: 0 auto; color-scheme: dark; scrollbar-width: thin; scrollbar-color: #3a3d44 transparent; }
+.lsec h2 { font: 700 13px/1 var(--font); color: var(--title); letter-spacing: .5px; margin: 12px 2px 6px; }
+.lsec.problems h2 { color: var(--muted); }
+.lrow {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 9px 10px; margin-bottom: 4px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 7px; font-size: 14px;
+}
+.lrow.bad { border-color: var(--red); }
+.lrow .dot.none { visibility: hidden; }
+.lrow .name { font-weight: 700; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow .sum { flex: 1; min-width: 0; text-align: right; color: var(--sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow .ext { color: var(--accent); font-size: 13px; }
+#panel-actions a.open { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 
 #config-errors {
   position: fixed; left: 0; right: 0; bottom: var(--strip); z-index: 44;

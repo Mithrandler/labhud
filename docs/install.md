@@ -79,6 +79,11 @@ landscape (800×360 CSS pixels and up). For a wall: a kiosk browser that keeps t
 restarts the page after a crash, and a firewall rule that lets only the display reach port 8095.
 Pages rotate on their own; `http://<server>:8095/#<page id>` opens one directly.
 
+On your own phone (over your VPN), `http://<server>:8095/?view=list` is easier to read in the
+hand: one scrolling list with what is red at the top, then every card as a row with its first
+numbers. A tap opens the card's panel; a card with a `url` in the config gets an OPEN button
+there, to the service's own page. The wall never shows those links.
+
 ## Without Docker
 
 ```sh

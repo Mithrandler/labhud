@@ -30,6 +30,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 - Sparklines: every number shown as a percentage, a temperature or a rate gets a faint shade of
   its last 6 hours behind it (sampled once a minute, in memory, from `/api/history`).
   `sparklines = false` turns them off. The demo starts with six made-up hours.
+- `?view=list`: a view for a phone in the hand. One scrolling list, red cards first, then every
+  card as a row with its first numbers; a tap opens the panel. A card's new `url` key adds an
+  OPEN button to the panel in this view (never on the wall).
 - List rows may carry a time (`t`, Unix seconds) instead of a value: shown as the time today,
   as the date before.
 

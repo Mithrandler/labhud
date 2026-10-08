@@ -19,6 +19,8 @@
 const $ = (s, r) => (r || document).querySelector(s);
 const PERIOD = 20000;   // how long a page stays in the rotation
 const PAUSE = 60000;    // how long the rotation holds after a touch
+// ?view=list: the phone in your hand, not the wall. One scrolling list, problems first, links out.
+const LIST_VIEW = new URLSearchParams(location.search).get("view") === "list";
 
 let CFG = null;           // the topology, from /api/config
 let CARD_BY_ID = {};      // every card, flattened: the bottom strip looks its state up here
@@ -266,6 +268,7 @@ function watch_problems() {
 }
 
 function focus_on(id) {
+  if (LIST_VIEW) return;   // the list already puts problems first
   focusCard = id;
   focusUntil = Date.now() + FOCUS;
   pausedUntil = Math.max(pausedUntil, focusUntil);
@@ -612,6 +615,70 @@ function make_metrics(specs) {
     });
   }
   return host;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The list view (?view=list): every card as one row, problems first
+// ---------------------------------------------------------------------------------------------
+
+/** "CPU 12% · RAM 40%": a card's first numbers, or its first list row, in one line. */
+function summary(c) {
+  if (is_guest(c)) {
+    const g = get(`proxmox.${c.check[1]}.guests.${c.check[2]}`);
+    return g && g.running ? `CPU ${Math.round(g.cpu)}% · RAM ${Math.round(g.mem)}%` : "";
+  }
+  if (c.metrics) {
+    return c.metrics.slice(0, 3).map(([path, label, fmt]) => `${label} ${format(get(path), fmt)}`).join(" · ");
+  }
+  const first = c.list && (get(c.list) || [])[0];
+  return first ? detail_row(first).slice(0, 2).filter(Boolean).join(" ") : "";
+}
+
+function list_row(c) {
+  const r = el("div", "lrow");
+  if (c.check) add_dot(r, c); else r.appendChild(el("span", "dot none"));
+  r.appendChild(el("span", "name", c.name));
+  const sum = el("span", "sum");
+  r.appendChild(sum);
+  if (c.url) r.appendChild(el("span", "ext", "↗"));
+  updaters.push(() => { put(sum, summary(c)); cls(r, "bad", card_bad(c)); });
+  if (has_details(c)) r.addEventListener("click", () => { touched(); open_panel(c); });
+  else if (c.url) r.addEventListener("click", () => window.open(c.url, "_blank", "noopener"));
+  return r;
+}
+
+function mount_list() {
+  const host = $("#content");
+  host.textContent = "";
+  updaters = [];
+  // Problems: rebuilt only when the set of red cards changes
+  const probs = el("section", "lsec problems");
+  host.appendChild(probs);
+  let shown = null, rowFns = [];
+  updaters.push(() => {
+    const bad = Object.values(CARD_BY_ID).filter(card_bad);
+    const sign = bad.map((c) => c.id).join(",");
+    if (sign !== shown) {
+      shown = sign;
+      probs.textContent = "";
+      probs.appendChild(el("h2", null, bad.length ? `PROBLEMS · ${bad.length}` : "NO PROBLEMS"));
+      // the rows' own updaters live here, so a rebuild drops the old ones with the old rows
+      const page = updaters;
+      updaters = [];
+      for (const c of bad) probs.appendChild(list_row(c));
+      rowFns = updaters;
+      updaters = page;
+    }
+    for (const fn of rowFns) fn();
+  });
+  for (const p of CFG.pages) {
+    if (p.games) continue;
+    const sec = el("section", "lsec");
+    sec.appendChild(el("h2", null, p.title));
+    for (const g of p.groups) for (const c of CFG.cards[g.id] || []) sec.appendChild(list_row(c));
+    host.appendChild(sec);
+  }
+  update();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1225,8 +1292,15 @@ function render_actions(c) {
   const bar = $("#panel-actions");
   bar.textContent = "";
   const useful = useful_actions(c);
-  if (!useful.length) { bar.hidden = true; return; }
+  // the service's own page: only in the list view, where leaving the page is what you want
+  const link = LIST_VIEW && c.url;
+  if (!useful.length && !link) { bar.hidden = true; return; }
   bar.hidden = false;
+  if (link) {
+    const a = el("a", "open", "OPEN ↗");
+    a.href = c.url; a.target = "_blank"; a.rel = "noopener";
+    bar.appendChild(a);
+  }
   for (const a of useful) {
     const b = el("button", /shutdown|stop/.test(a) ? "danger" : "", action_label(a));
     b.type = "button";
@@ -1263,7 +1337,7 @@ function bind_gestures() {
     const dx = x - x0, dy = y - y0;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
     if (!$("#panel").hidden) { close_panel(); return; }
-    go(page + (dx < 0 ? 1 : -1));
+    if (!LIST_VIEW) go(page + (dx < 0 ? 1 : -1));
   };
   document.addEventListener("pointerdown", (e) => { x0 = x1 = e.clientX; y0 = y1 = e.clientY; touched(); }, { passive: true });
   document.addEventListener("pointermove", (e) => { x1 = e.clientX; y1 = e.clientY; }, { passive: true });
@@ -1299,7 +1373,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   render_menu();
   build_strip();
   bind_gestures();
-  go(page);
+  if (LIST_VIEW) { document.body.classList.add("view-list"); mount_list(); } else go(page);
   start_stream();
 
   render_clock();
@@ -1316,5 +1390,5 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   check_health();
   if (!location.search.includes("static")) tick(check_health, 60000);
   $("#health").addEventListener("click", open_health_panel);
-  tick(() => { if (Date.now() >= pausedUntil && $("#panel").hidden && $("#confirm").hidden) go(page + 1); }, PERIOD);
+  if (!LIST_VIEW) tick(() => { if (Date.now() >= pausedUntil && $("#panel").hidden && $("#confirm").hidden) go(page + 1); }, PERIOD);
 });

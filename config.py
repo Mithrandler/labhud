@@ -36,7 +36,7 @@ CHECKS = ("ping", "tcp", "proxmox")
 PAGE_KEYS = {"id", "title", "group", "games"}
 GROUP_KEYS = {"id", "title", "card", "keep_together"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
-             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions"}
+             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url"}
 METRIC_KEYS = {"key", "label", "format"}
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
 QUIET_KEYS = {"from", "to", "sources"}
@@ -177,6 +177,11 @@ def _card(ck, where, c):
                            ("sensors", str, "a dotted path into the data")):
         if (v := ck.opt(where, c, key, typ, what)) is not None:
             out[key] = v
+    # url: the service's own page, offered as OPEN in the panel of the list view (?view=list)
+    if (url := ck.opt(where, c, "url", str, "an http:// or https:// address")) is not None:
+        if not re.match(r"^https?://", url):
+            ck.err(where, f"url must start with http:// or https://, got {url!r}")
+        out["url"] = url
     if isinstance(out.get("limit"), int):
         if not 1 <= out["limit"] <= 50:
             ck.err(where, "limit must be between 1 and 50")

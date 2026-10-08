@@ -26,6 +26,7 @@ title = "GENERAL"
                                     #   tcp     = "host:port"   (for hosts that drop ping)
                                     #   proxmox = "node/vmid"   (state from the Proxmox API)
     large = true                    # full-width card with metrics
+    url = "https://192.0.2.10:8006" # optional: the service's page, OPEN in the list view (?view=list)
     metrics = [
       # key: dotted path into the collected data; format: count, percent, percent1 (one
       # decimal), bytes, used_of ([used, total] bytes), rate (bytes/s), celsius
