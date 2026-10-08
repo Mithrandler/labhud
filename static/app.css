@@ -154,6 +154,11 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 .card.guest .name { font-size: 11px; font-weight: 500; color: var(--text); letter-spacing: 0; text-transform: none; }
 .card.guest .val { font-size: 12px; font-weight: 700; color: var(--sub); line-height: 1.25; white-space: pre-line; }
 .card.guest .val.hot { color: var(--red); }
+.card.guest .val .lbl { font-size: .75em; font-weight: 500; color: var(--muted); margin-right: 2px; }
+.card.guest .val > :last-child { display: none; }          /* the "—" shown when the guest is off */
+.card.guest .val.off > * { display: none; }
+.card.guest .val.off > :last-child { display: inline; }
+.ghead { display: none; }
 .card.guest .disk { font-size: 10px; font-weight: 500; color: var(--sub); line-height: 1.2; }
 .card.guest .disk:empty { display: none; }
 
@@ -240,8 +245,16 @@ body.p-games #content {
   .card .spec { display: none; }
   /* landscape: Proxmox guests one per row ("docker  CPU 6% RAM 49%"), no disk (it shows in the panel) */
   .guests { grid-template-columns: 1fr; gap: 1px; }
-  .card.guest { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 5px; }
+  .card.guest { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 4px; }
   .card.guest .val { white-space: nowrap; font-size: 10px; }
+  /* one line per guest: the numbers in two aligned columns, their labels once in .ghead */
+  .card.guest .val .sep { display: inline-block; width: 3px; font-size: 0; }
+  .card.guest .val .lbl { display: none; }
+  .card.guest .val .num { display: inline-block; width: 3.3ch; text-align: right; }
+  .card.guest .val.off .num { display: none; }
+  .ghead { display: flex; justify-content: flex-end; gap: 3px; padding: 0 5px; font-size: 8px; color: var(--muted); letter-spacing: .3px; }
+  .ghead span { width: 4.1ch; text-align: right; }   /* 4.1ch at 8px = 3.3ch at 10px: over the numbers */
+  .group { padding-left: 3px; padding-right: 3px; }
   .card.guest .disk { display: none; }
 }
 

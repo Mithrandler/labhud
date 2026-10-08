@@ -214,7 +214,7 @@ title = "SECURITY"
 
   [[page.group]]
   id = "exposure"
-  title = "Exposure"
+  title = "Exposed ports"
 
     # The card stays short; the panel (list:) explains how the check works and lists every port.
     [[page.group.card]]

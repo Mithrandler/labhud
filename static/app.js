@@ -257,7 +257,14 @@ function mount() {
     let box = null;
     for (const c of cards) {
       if (is_guest(c)) {
-        if (!box) { box = el("div", "guests"); body.appendChild(box); }
+        if (!box) {
+          box = el("div", "guests");
+          // landscape only: the "CPU RAM" labels once above the rows, not on every row
+          const gh = el("div", "ghead");
+          gh.append(el("span", null, "CPU"), el("span", null, "RAM"));
+          box.appendChild(gh);
+          body.appendChild(box);
+        }
         box.appendChild(make_card(c));
       } else {
         box = null;
@@ -469,15 +476,22 @@ function make_guest_card(c) {
   add_dot(head, c);
   head.appendChild(el("span", "name", c.name));
   n.appendChild(head);
+  // "CPU 12%" and "RAM 45%" with small grey labels: in a landscape row the labels then take little
+  // room, and the guest's name keeps it. Built once; an update only rewrites the numbers.
   const val = el("div", "val");
+  const cpu = el("span", "num"), mem = el("span", "num"), off = el("span", "none", "—");
+  val.append(el("span", "lbl", "CPU"), cpu, el("span", "sep", "\n"), el("span", "lbl", "RAM"), mem, off);
   n.appendChild(val);
   const disk = el("div", "disk");
   n.appendChild(disk);
   const base = `proxmox.${c.check[1]}.guests.${c.check[2]}`;
   updaters.push(() => {
     const g = get(base);
-    if (!g || !g.running) { put(val, "—"); put(disk, ""); cls(val, "hot", false); return; }
-    put(val, `CPU ${Math.round(g.cpu || 0)}%\nRAM ${Math.round(g.mem || 0)}%`);
+    const running = !!(g && g.running);
+    cls(val, "off", !running);
+    if (!running) { put(disk, ""); cls(val, "hot", false); return; }
+    put(cpu, `${Math.round(g.cpu || 0)}%`);
+    put(mem, `${Math.round(g.mem || 0)}%`);
     put(disk, g.disk_used != null ? "Disk " + used_of(g.disk_used, g.disk_total, false) : "");
     // Do NOT colour by percentage: Proxmox computes it as `total - MemFree`, so it counts the page
     // cache too, and any Linux machine that ran for a day reaches ~95% without any problem.

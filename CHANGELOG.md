@@ -14,6 +14,8 @@ still change in a minor version; such changes are listed under **Changed** with 
   (before, a title could end up at the bottom of one column with its cards in the next). Columns
   are balanced; a group taller than the screen spans two columns, with its cards in two columns
   inside; a page that still does not fit is zoomed out a little (down to 60%) instead of cut.
+- Proxmox guest rows in landscape show only the numbers, with "CPU RAM" once above the rows, so
+  the guest names have room; the panel and portrait keep the labels on every row.
 - `keep_together` on a group has no effect any more (no group splits now); it is still accepted.
 - New demo screenshots, plus one in portrait.
 
