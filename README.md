@@ -43,6 +43,7 @@ In portrait the same page gets two columns, and the project name takes the free 
 ## Docs
 
 - [docs/install.md](docs/install.md): installing and updating; `/status` for what is not working
+- [docs/sources.md](docs/sources.md): per service, the key to create, the least rights it needs, a card to start from
 - [docs/security.md](docs/security.md): what the page reveals and what to put in front of it
 - [docs/architecture.md](docs/architecture.md): every connection, its direction, port and key
 - [docs/threat-model.md](docs/threat-model.md): what labhud protects, against whom, and the known gaps

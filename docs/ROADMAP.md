@@ -34,7 +34,7 @@ Security between machines:
    read or forge the data.
 10. ~~**Secrets from files.**~~ Done. Every `LABHUD_*` secret can also be `LABHUD_*_FILE` (Docker secrets),
     so tokens stay out of `docker inspect` and the process environment.
-11. **Hardened container.** Already there (uid 10001, read-only, only `NET_RAW`, see
+11. ~~**Hardened container.**~~ Done: CI starts the image read-only, with only `NET_RAW`, and fails if it runs as root. Already there (uid 10001, read-only, only `NET_RAW`, see
     `compose.example.yaml`); left: a CI check that the image still runs that way.
 11a. ~~**Verified certificates.**~~ Done: `LABHUD_PINS`, `LABHUD_VERIFY`. HTTPS to the services is not verified today (self-signed
     certificates). Per source: a CA file or a pinned certificate fingerprint, with "no check" as an
@@ -63,5 +63,6 @@ Documentation:
     direction, port and key.
 20. ~~**Threat model**~~ Done: [threat-model.md](threat-model.md), a stolen key, someone on
     the LAN, someone at the display; what labhud stops and what is left.
-21. **Per-source recipes**: which token to create, the least rights it needs, the config block.
-22. **Documentation site** on GitHub Pages, built from `docs/`.
+21. ~~**Per-source recipes**~~ Done: [sources.md](sources.md): which token to create, the least rights it needs, the config block.
+22. ~~**Documentation site**~~ Done: `mkdocs.yml` + `.github/workflows/docs.yml`, on GitHub Pages
+    once Pages is set to "GitHub Actions" in the repository settings.

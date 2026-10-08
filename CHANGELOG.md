@@ -29,6 +29,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 - Sources: Healthchecks, Scrutiny, Uptime Kuma (docs/integrations.md).
 - MQTT: card states (retained) and history events, with Home Assistant discovery
   (`LABHUD_MQTT_URL`).
+- Docs: architecture, threat model, per-source recipes (`docs/sources.md`), integrations; a
+  documentation site (MkDocs, GitHub Pages).
+- CI starts the image the hardened way (read-only, only `NET_RAW`) and fails if it runs as root.
+- The server drops a client that stalls for 60 s.
 
 ### Changed
 - A source that misses a poll keeps its last good answer, marked `stale`, for

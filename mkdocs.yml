@@ -1,0 +1,24 @@
+site_name: labhud
+site_description: A wall-mounted status display for your homelab
+repo_url: https://github.com/Mithrandler/labhud
+edit_uri: edit/main/docs/
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: black
+    accent: light blue
+  features: [navigation.sections, search.highlight, content.code.copy]
+markdown_extensions: [admonition, tables, toc]
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Sources: sources.md
+  - Integrations: integrations.md
+  - Your own data: live-agent.md
+  - Actions: actions.md
+  - Security:
+      - Overview: security.md
+      - Architecture: architecture.md
+      - Threat model: threat-model.md
+  - Roadmap: ROADMAP.md

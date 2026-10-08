@@ -93,6 +93,26 @@ jobs:
           registry: ${{ steps.extra.outputs.registry }}
           username: ${{ secrets.EXTRA_REGISTRY_USER }}
           password: ${{ secrets.EXTRA_REGISTRY_TOKEN }}
+      # The image must keep running the way compose.example.yaml runs it: not as root, on a
+      # read-only filesystem, with no capability but NET_RAW. Started for real, in demo mode.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: labhud:check
+      - name: Hardened run
+        run: |
+          docker run -d --name hardened --read-only --cap-drop ALL --cap-add NET_RAW \
+            --security-opt no-new-privileges:true -e LABHUD_DEMO=1 labhud:check
+          trap 'docker logs hardened; docker rm -f hardened >/dev/null' EXIT
+          sleep 5
+          [ "$(docker inspect -f '{{.State.Running}}' hardened)" = true ] || { echo "::error::not running"; exit 1; }
+          uid=$(docker exec hardened id -u)
+          [ "$uid" != 0 ] || { echo "::error::runs as root"; exit 1; }
+          docker exec hardened python3 -c "import json, urllib.request as u; r = u.Request('http://127.0.0.1:8095/api/status', headers={'Host': '127.0.0.1:8095'}); print('status ok, demo', json.load(u.urlopen(r))['demo'])"
+          docker exec hardened ping -c 1 -W 2 127.0.0.1 >/dev/null || { echo "::error::ping needs root"; exit 1; }
+          echo "uid $uid, read-only, NET_RAW only: ok"
       - uses: docker/build-push-action@v7
         with:
           context: .
