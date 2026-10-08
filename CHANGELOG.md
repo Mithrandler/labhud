@@ -6,6 +6,14 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- Certificate pinning: `LABHUD_PINS=host[:port]=<sha256>,...`. The certificate is compared right
+  after the handshake and the connection dropped, before the key is sent, if it is not that one.
+  `LABHUD_VERIFY=on` (+ `LABHUD_CA`) checks certificates the normal way instead.
+  `python3 init.py fingerprint https://host:port` prints the line, and `init.py` offers to pin
+  the Proxmox certificate it connects to. The log and `/status` name every unchecked host.
+- `LABHUD_*_FILE`: any setting read from a file (Compose secrets, systemd credentials).
+
 ### Fixed
 - A card already red (a VM stopped all along) no longer takes the screen as a new problem when
   its source misses one poll or answers after the first minute: only a card seen fine and then

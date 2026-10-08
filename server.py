@@ -24,6 +24,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
 import config
 import events
 import notify
@@ -181,7 +182,7 @@ def forward_action(name):
     import urllib.request
     req = urllib.request.Request(ACTION_URL + name, data=b"", method="POST", headers=sign(name))
     try:
-        with urllib.request.urlopen(req, timeout=45) as r:
+        with sources.urlopen(req, 45) as r:
             code, body = r.status, r.read()
     except urllib.error.HTTPError as e:
         code, body = e.code, e.read()
@@ -443,6 +444,7 @@ def health():
         "version": VERSION, "demo": DEMO, "now": now, "started": STARTED,
         "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": ("signed" if ACTION_SECRET else "direct") if ACTION_URL else False,
         "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "keys": KEY_CHECKS,
+        "tls": dict(sources.TLS_SEEN), "secret_files": envfiles.LOADED,
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
@@ -581,6 +583,11 @@ if __name__ == "__main__":
           + f"sources: {', '.join(sorted(ACTIVE)) or 'none'}; not configured: {', '.join(sorted(INACTIVE)) or 'none'}",
           flush=True)
     print(f"answering to: {', '.join(sorted(ALLOWED_HOSTS))} (LABHUD_HOSTS)", flush=True)
+    if envfiles.LOADED:
+        print(f"read from files: {', '.join(envfiles.LOADED)}", flush=True)
+    print("certificates: " + ", ".join(filter(None, [
+        f"{len(sources.PINS)} pinned" if sources.PINS else "",
+        "the rest checked (LABHUD_VERIFY)" if sources._common._VERIFIED else "the rest NOT checked"])), flush=True)
     # labhud has no login: whoever opens the page sees the buttons. The agent's own checks
     # (Origin + source IP allowlist, see docs/actions.md) are the only thing between a tap and the action.
     print(("actions: on, signed, forwarded by labhud to " + ACTION_URL if ACTION_URL and ACTION_SECRET

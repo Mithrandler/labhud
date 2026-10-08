@@ -78,6 +78,15 @@ function render(d) {
   const n = d.notify || {};
   facts.push(["notifications", !n.on ? "off" : n.problem ? n.problem
     : n.format + ", " + n.sent + " sent" + (n.last_error ? " · last error: " + n.last_error + " (" + ago(d.now, n.last_error_at) + ")" : "")]);
+  // HTTPS to the services: how each host's certificate is checked (see docs/security.md)
+  const tls = Object.entries(d.tls || {});
+  if (tls.length) {
+    const by = {};
+    for (const [where, mode] of tls) (by[mode] = by[mode] || []).push(where);
+    facts.push(["certificates", ["pinned", "verified", "unchecked"].filter((m) => by[m])
+      .map((m) => by[m].length + " " + m + (m === "unchecked" ? " (" + by[m].sort().join(", ") + ")" : "")).join(", ")]);
+  }
+  if ((d.secret_files || []).length) facts.push(["from files", d.secret_files.join(", ")]);
   facts.forEach(([k, v], i) => {
     if (i) general.append(" · ");
     general.append(k + " ");

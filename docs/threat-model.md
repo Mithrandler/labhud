@@ -45,14 +45,14 @@ Each line: what happens, what stops it today, and what is left.
 |---|---|---|
 | Reading keys through the page or `/status` | keys never go to the browser; error texts are scrubbed | addresses in error texts are not scrubbed |
 | A leaked `.env` | least-privilege keys: labhud warns at start when a Proxmox VE or PBS token can do more than read | *arr, Jellyfin and Seerr keys have full rights, there is no other kind |
-| `docker inspect` or `/proc/<pid>/environ` on labhud's host | nothing | secrets read from files: roadmap item 10 |
-| **A machine in the middle on the LAN** (ARP spoofing, a rogue DNS answer) | nothing: **HTTPS certificates are not verified** | it can pose as Proxmox or OPNsense and receive the key with labhud's next poll. Certificate pinning or a CA bundle is next on the roadmap |
+| `docker inspect` or `/proc/<pid>/environ` on labhud's host | `LABHUD_*_FILE`: keys read from files (Compose secrets) | keys set directly in `.env` are still in the environment |
+| **A machine in the middle on the LAN** (ARP spoofing, a rogue DNS answer) | `LABHUD_PINS` (the exact certificate) or `LABHUD_VERIFY=on`: the connection is dropped before the key is sent | **by default certificates are not checked**: it can pose as Proxmox or OPNsense and receive the key. The log and `/status` name every unchecked host |
 
 ### Forging data
 
 | attack | stopped by | left over |
 |---|---|---|
-| Faking a service's answer to hide a problem or raise a false one | nothing, for the same reason as above | same fix: verified certificates |
+| Faking a service's answer to hide a problem or raise a false one | pinned or verified certificates | hosts left unchecked |
 | Faking the live agent's JSON | nothing: it is plain HTTP with no key | push agents with a key of their own, TLS to agents: roadmap 8 and 9 |
 | Reading the agent's sensors | nothing: `GET /` on the agent is open | firewall `:9189` to labhud's IP |
 
@@ -80,7 +80,8 @@ Each line: what happens, what stops it today, and what is left.
 The firewall in front of `:8095` and `:9189` carries most of the weight. Inside that, the gaps
 worth closing next, in order:
 
-1. **Verify certificates** of the services labhud polls. Today a LAN attacker can collect keys.
+1. **Pin the certificates** of the services labhud polls (`LABHUD_PINS`). Unpinned, a LAN
+   attacker can collect keys.
 2. **Authenticate the agents' data** (push with a key, TLS), so the screen can trust what it shows.
-3. **Secrets from files**, so they are not in the container's environment.
+3. **Keys in files** (`LABHUD_*_FILE`), so they are not in the container's environment.
 4. **TLS in front of `:8095`** if the display is not on a segment you trust.

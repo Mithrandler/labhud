@@ -62,8 +62,9 @@ allowed host name sees everything the display sees.
 | `LABHUD_NOTIFY_URL` | HTTP(S) POST | `LABHUD_NOTIFY_AUTH` | on events only |
 | `LABHUD_ACTION_URL` (signed mode) | HTTP POST | HMAC-SHA256 of time, nonce and action name | on a button press only |
 
-Certificates are **not verified** on HTTPS today: homelab services mostly use self-signed ones.
-The connection is encrypted, but not authenticated (see the threat model, and the roadmap).
+Certificates are checked per host: pinned (`LABHUD_PINS`), verified against CAs
+(`LABHUD_VERIFY`), or, by default, **not at all**: encrypted, but not authenticated. The log and
+`/status` name every unchecked host. See [security.md](security.md#certificates).
 
 ## The action agent
 

@@ -13,7 +13,7 @@ config.toml as "name.<key>". Modules whose name starts with "_" are helpers, not
 import importlib
 import pkgutil
 
-from ._common import REGISTRY, RIGHTS, in_window, scrub  # noqa: F401  (re-exported for server.py)
+from ._common import PINS, REGISTRY, RIGHTS, TLS_SEEN, in_window, scrub, urlopen  # noqa: F401  (re-exported for server.py)
 from ._status import host_status  # noqa: F401
 
 

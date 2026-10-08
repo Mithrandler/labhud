@@ -32,11 +32,11 @@ Security between machines:
    listens on no port. Hosts no longer need an open port for the dashboard.
 9. **TLS to agents**, with the agent's certificate pinned in the config, so nobody on the LAN can
    read or forge the data.
-10. **Secrets from files.** Every `LABHUD_*` secret can also be `LABHUD_*_FILE` (Docker secrets),
+10. ~~**Secrets from files.**~~ Done. Every `LABHUD_*` secret can also be `LABHUD_*_FILE` (Docker secrets),
     so tokens stay out of `docker inspect` and the process environment.
 11. **Hardened container.** Already there (uid 10001, read-only, only `NET_RAW`, see
     `compose.example.yaml`); left: a CI check that the image still runs that way.
-11a. **Verified certificates.** HTTPS to the services is not verified today (self-signed
+11a. ~~**Verified certificates.**~~ Done: `LABHUD_PINS`, `LABHUD_VERIFY`. HTTPS to the services is not verified today (self-signed
     certificates). Per source: a CA file or a pinned certificate fingerprint, with "no check" as an
     explicit, logged choice. First on the list in [threat-model.md](threat-model.md).
 

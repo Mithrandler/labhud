@@ -9,20 +9,117 @@
 # browser: the phone only sees the result, through SSE.
 
 import base64
+import functools
+import hashlib
+import hmac
+import http.client
 import json
 import os
 import re
 import ssl
+import threading
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
 PREFIX = "LABHUD_"
 
-# Homelab certificates are mostly self-signed, on LAN addresses.
+# Homelab certificates are mostly self-signed, on LAN addresses. Unchecked, HTTPS is encrypted but
+# anyone who can sit between labhud and a service (ARP spoofing, a forged DNS answer) can pose as
+# it and receive its key. So, per host (see docs/security.md):
+#   LABHUD_PINS="192.0.2.10:8006=<sha256 of the certificate>,nas.lan=<...>"   the exact certificate
+#   LABHUD_VERIFY=on (+ LABHUD_CA=/path/ca.pem)   normal checking, against the system CAs or yours
+#   neither: not checked (the default in 0.1.x), logged once per host and shown on /status.
 _NO_VERIFY = ssl.create_default_context()
 _NO_VERIFY.check_hostname = False
 _NO_VERIFY.verify_mode = ssl.CERT_NONE
+
+
+def parse_pins(value):
+    """"host[:port]=AB:CD:...,other=abcd..." -> {"host[:port]": "abcd..."}. Colons and case in the
+    fingerprint do not matter (openssl prints AB:CD:..., init.py prints plain hex)."""
+    out = {}
+    for part in (p.strip() for p in (value or "").split(",") if p.strip()):
+        where, sep, fp = part.partition("=")
+        fp = fp.replace(":", "").strip().lower()
+        if not sep or not re.fullmatch(r"[0-9a-f]{64}", fp):
+            raise SystemExit(f"LABHUD_PINS: {part!r} is not host[:port]=<sha256 fingerprint>")
+        out[where.strip().lower()] = fp
+    return out
+
+
+PINS = parse_pins(os.environ.get(PREFIX + "PINS"))
+VERIFY = os.environ.get(PREFIX + "VERIFY", "").lower() in ("1", "on", "true", "yes")
+_CA = os.environ.get(PREFIX + "CA", "")
+_VERIFIED = ssl.create_default_context(cafile=_CA or None) if VERIFY or _CA else None
+# "host:port" -> "pinned" | "verified" | "unchecked", for /status; the first unchecked use is logged.
+TLS_SEEN = {}
+_tls_lock = threading.Lock()
+
+
+class _PinnedConnection(http.client.HTTPSConnection):
+    """Compares the certificate with the pinned fingerprint right after the handshake, before a
+    single byte of the request (and so of the key) is sent."""
+
+    def __init__(self, *args, pin, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pin = pin
+
+    def connect(self):
+        super().connect()
+        got = hashlib.sha256(self.sock.getpeercert(binary_form=True)).hexdigest()
+        if not hmac.compare_digest(got, self._pin):
+            self.sock.close()
+            raise ssl.SSLError(f"the certificate of {self.host}:{self.port} is not the pinned one "
+                               f"(it has {got[:16]}...): changed, or someone in between")
+
+
+class _PinnedHandler(urllib.request.HTTPSHandler):
+    def __init__(self, pin):
+        super().__init__(context=_NO_VERIFY)
+        self._pin = pin
+
+    def https_open(self, req):
+        return self.do_open(functools.partial(_PinnedConnection, pin=self._pin), req, context=_NO_VERIFY)
+
+
+def tls_mode(url):
+    """("pinned", fingerprint) | ("verified", context) | ("unchecked", context) | (None, None) for http."""
+    u = urllib.parse.urlsplit(url)
+    if u.scheme != "https":
+        return None, None
+    host = (u.hostname or "").lower()
+    where = f"{host}:{u.port or 443}"
+    pin = PINS.get(where) or PINS.get(host)
+    if pin:
+        return "pinned", pin
+    if _VERIFIED:
+        return "verified", _VERIFIED
+    return "unchecked", _NO_VERIFY
+
+
+def _note_tls(url, mode):
+    u = urllib.parse.urlsplit(url)
+    where = f"{(u.hostname or '').lower()}:{u.port or 443}"
+    with _tls_lock:
+        if TLS_SEEN.get(where) == mode:
+            return
+        TLS_SEEN[where] = mode
+    if mode == "unchecked":
+        print(f"warning: the certificate of {where} is not checked. Pin it (LABHUD_PINS, see "
+              f"`python3 init.py fingerprint https://{where}`) or set LABHUD_VERIFY=on.", flush=True)
+
+
+def urlopen(req, timeout):
+    """urllib's urlopen with the certificate policy of the request's host."""
+    url = req.full_url if isinstance(req, urllib.request.Request) else req
+    mode, how = tls_mode(url)
+    if mode:
+        _note_tls(url, mode)
+    if mode == "pinned":
+        return urllib.request.build_opener(_PinnedHandler(how)).open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout, context=how)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -123,7 +220,7 @@ def request(url, headers=None, data=None, timeout=10, method=None, raw=False):
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data else "GET"))
     for k, v in (headers or {}).items():
         req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=timeout, context=_NO_VERIFY) as r:
+    with urlopen(req, timeout) as r:
         body = r.read()
     if raw:
         return body.decode("utf-8", "replace")

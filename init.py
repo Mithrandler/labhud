@@ -27,6 +27,16 @@ import config  # noqa: E402
 from sources._common import _NO_VERIFY, beyond_reading, env_name  # noqa: E402
 
 
+def fingerprint(url):
+    """The SHA-256 of the certificate a service presents, as LABHUD_PINS wants it. Compare it with
+    what the service itself shows (Proxmox: Node > System > Certificates) before you trust it."""
+    import hashlib
+    import ssl
+    u = urllib.parse.urlsplit(url if "://" in url else "https://" + url)
+    pem = ssl.get_server_certificate((u.hostname, u.port or 443), timeout=10)
+    return f"{u.hostname}:{u.port or 443}", hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+
+
 def ask(question, default="", secret=False, optional=False):
     shown = f" [{default}]" if default else ""
     while True:
@@ -125,12 +135,15 @@ def build_config(found, host, weather=None, title="LABHUD"):
     return "\n".join(out) + "\n"
 
 
-def build_env(found, url, token_id, secret, hosts):
+def build_env(found, url, token_id, secret, hosts, pin=None):
     out = ["# Made by labhud init. Keep this file readable only by you (chmod 600).",
            "# Every other source and setting: .env.example.",
            f"LABHUD_HOSTS={','.join(hosts)}",
-           "",
-           f"LABHUD_PROXMOX_NODES={','.join(found['nodes'])}"]
+           ""]
+    if pin:
+        out += ["# The certificate Proxmox presented during init: anything else is refused (docs/security.md).",
+                f"LABHUD_PINS={pin[0]}={pin[1]}", ""]
+    out += [f"LABHUD_PROXMOX_NODES={','.join(found['nodes'])}"]
     for node in found["nodes"]:
         key = env_name(node)
         out += [f"LABHUD_PROXMOX_{key}_URL={url}", f"LABHUD_PROXMOX_{key}_TOKEN_ID={token_id}",
@@ -149,6 +162,17 @@ def write(folder, name, text, mode):
 
 
 def main():
+    if sys.argv[1:2] == ["fingerprint"]:
+        if len(sys.argv) < 3:
+            sys.exit("usage: python3 init.py fingerprint https://host:port [...]")
+        pins = []
+        for url in sys.argv[2:]:
+            where, fp = fingerprint(url)
+            print(f"{where}  {':'.join(fp[i:i + 2] for i in range(0, 64, 2)).upper()}")
+            pins.append(f"{where}={fp}")
+        print("\nCompare with the fingerprint the service shows itself, then add to .env:")
+        print("LABHUD_PINS=" + ",".join(pins))
+        return
     folder = sys.argv[1] if len(sys.argv) > 1 else "."
     print("labhud init: a first config from your Proxmox VE. Ctrl-C stops without writing anything.\n")
     print("You need an API token: Datacenter > Permissions > API Tokens > Add, with privilege")
@@ -175,6 +199,17 @@ def main():
         print("  The token can only read. Good.")
 
     host = urllib.parse.urlsplit(url).hostname
+    pin = None
+    if url.startswith("https://"):
+        try:
+            pin = fingerprint(url)
+            fp = ":".join(pin[1][i:i + 2] for i in range(0, 64, 2)).upper()
+            print(f"\n  Its certificate: {fp}")
+            print("  Compare with Node > System > Certificates (SHA-256 fingerprint) in Proxmox.")
+            if ask("  Pin it, so labhud talks only to this certificate? (y/n)", "y").lower() not in ("y", "yes"):
+                pin = None
+        except Exception as e:
+            print(f"  could not read its certificate ({e}); not pinned")
     weather = None
     city = ask("\nCity for the weather (empty: no weather)", optional=True)
     if city:
@@ -195,7 +230,7 @@ def main():
     finally:
         os.unlink(tmp)
     cfg = write(folder, "config.toml", text, 0o644)
-    env = write(folder, ".env", build_env(found, url, token_id, secret, hosts), 0o600)
+    env = write(folder, ".env", build_env(found, url, token_id, secret, hosts, pin), 0o600)
     print(f"\nWritten: {cfg} and {env}.")
     if cfg.endswith(".new") or env.endswith(".new"):
         print("Some files already existed and were left alone: compare the .new ones and keep what you want.")

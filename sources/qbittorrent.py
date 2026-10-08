@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from ._common import env, request, source
+from ._common import env, request, source, urlopen
 
 _cookie = {"value": None}
 
@@ -24,7 +24,7 @@ def _login():
         "username": env("QBITTORRENT_USER"), "password": env("QBITTORRENT_PASS"),
     }).encode()
     req = urllib.request.Request(f"{_url()}/api/v2/auth/login", data=data, headers={"Referer": _url()})
-    with urllib.request.urlopen(req, timeout=10) as r:
+    with urlopen(req, 10) as r:
         # qBittorrent 5.2 answers a successful login with 204 and an empty body, not "Ok."
         cookie = r.headers.get("Set-Cookie") or ""
     # The cookie name varies with the version: it used to be "SID", 5.2.3 calls it "QBT_SID_<port>".

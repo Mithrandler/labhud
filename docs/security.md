@@ -48,6 +48,55 @@ token may do. Anything beyond reading (`VM.PowerMgmt`, `Sys.Modify`, `Datastore.
 logged as a warning and shown on `/status`. The guest agent's disk usage needs `VM.Monitor`
 (Proxmox 8) or `VM.GuestAgent.Audit` (Proxmox 9), which count as reading.
 
+## Certificates
+
+Most homelab services present a self-signed certificate, so labhud cannot check them the usual
+way, and by default it does not check them at all. The traffic is encrypted, but a device that
+can get between labhud and a service (ARP spoofing on the LAN, a forged DNS answer) can pose as
+the service and receive its key with the next poll. The startup log and `/status` list every
+host whose certificate is not checked.
+
+Pin them. For each service:
+
+```sh
+python3 init.py fingerprint https://192.0.2.10:8006 https://192.0.2.20:8007
+# or, from the image:
+docker run --rm ghcr.io/mithrandler/labhud python3 /app/init.py fingerprint https://192.0.2.10:8006
+```
+
+Compare the fingerprint with the one the service shows itself (Proxmox VE: *Node > System >
+Certificates*; PBS: *Dashboard > Show Fingerprint*), then put the printed line in `.env`:
+
+```sh
+LABHUD_PINS=192.0.2.10:8006=<sha256>,192.0.2.20:8007=<sha256>
+```
+
+labhud then compares the certificate right after the handshake and drops the connection, before
+sending anything, if it is not that one. A pin without a port applies to every port of the host.
+When a certificate is renewed, the source fails with "not the pinned one" until you update the pin.
+
+If your services have certificates from a CA (Let's Encrypt, or your own), use `LABHUD_VERIFY=on`
+instead, with `LABHUD_CA=/path/ca.pem` for an internal CA. Pins still win for the hosts they name.
+
+## Secrets in files
+
+Every `LABHUD_*` variable can be set as `LABHUD_*_FILE`, a path whose content is the value. With
+Compose secrets the keys stay out of `docker inspect` and out of the process environment:
+
+```yaml
+services:
+  labhud:
+    environment:
+      LABHUD_PBS_TOKEN_SECRET_FILE: /run/secrets/pbs
+    secrets: [pbs]
+secrets:
+  pbs:
+    file: ./secrets/pbs   # chmod 600; the container reads it as uid 10001
+```
+
+A value set directly wins over a file. A file that is missing or empty stops labhud at start,
+naming the variable.
+
 ## Notifications
 
 Off unless `LABHUD_NOTIFY_URL` is set. Each message carries a line from the history: card and
