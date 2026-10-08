@@ -247,22 +247,32 @@ function go(i) {
 const FOCUS = 180000;    // how long a new problem holds its page (and keeps a dimmed screen lit)
 const WARMUP = Date.now() + 60000;   // the first minute only learns what is already wrong
 let PAGE_OF_CARD = {};   // card id -> page index
-let knownBad = new Set();
+let lastBad = {};         // card id -> true (red) / false (fine), last time its state was known
 let focusCard = null, focusUntil = 0, wakeUntil = 0;
 
-/** Red on the screen: the card's host is down, or one of its numbers is past the critical mark. */
+/** Red on the screen: the card's host is down, or one of its numbers is past the critical mark.
+    null when nothing about the card is known (its source has not answered, or missed a poll). */
 function card_bad(c) {
-  if (card_status(c) === false) return true;
-  return (c.metrics || []).some(([path, , fmt]) => severity(path, fmt, get(path)) === "crit");
+  const st = card_status(c);
+  if (st === false) return true;
+  const vals = (c.metrics || []).map(([path, , fmt]) => [path, fmt, get(path)]);
+  if (vals.some(([path, fmt, v]) => severity(path, fmt, v) === "crit")) return true;
+  if (st === null && vals.every(([, , v]) => v === undefined || v === null)) return null;
+  return false;
 }
 
-/** Only a card that turns red while the screen watches moves the page: what was already red at
-    start (a VM stopped on purpose, say) would otherwise hold one page forever. */
+/** Only a card SEEN fine and then red while the screen watches moves the page: what was already
+    red at start (a VM stopped on purpose, say) would otherwise hold one page forever, and a source
+    that misses one poll, or answers late, must not make an old problem look new. */
 function watch_problems() {
-  const bad = new Set(Object.values(CARD_BY_ID).filter(card_bad).map((c) => c.id));
-  const fresh = Date.now() < WARMUP ? null
-    : [...bad].find((id) => !knownBad.has(id) && PAGE_OF_CARD[id] !== undefined);
-  knownBad = bad;
+  const warm = Date.now() < WARMUP;
+  let fresh = null;
+  for (const c of Object.values(CARD_BY_ID)) {
+    const bad = card_bad(c);
+    if (bad === null) continue;   // unknown: keep what was last known
+    if (bad && lastBad[c.id] === false && !warm && !fresh && PAGE_OF_CARD[c.id] !== undefined) fresh = c.id;
+    lastBad[c.id] = bad;
+  }
   if (fresh) focus_on(fresh);
   else if (focusCard && Date.now() >= focusUntil) { focusCard = null; apply_focus(); render_night(); }
 }

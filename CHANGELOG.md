@@ -6,6 +6,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Fixed
+- A card already red (a VM stopped all along) no longer takes the screen as a new problem when
+  its source misses one poll or answers after the first minute: only a card seen fine and then
+  red counts as new.
+
 ## [0.1.4] - 2026-10-08
 
 ### Added
