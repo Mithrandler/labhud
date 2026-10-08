@@ -578,6 +578,9 @@ TYPES = {
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "wall"
+    # A client that stops halfway (a body shorter than announced, a TLS handshake never finished)
+    # gives up its thread after this long. The SSE stream writes at least every 20 s, so it stays.
+    timeout = 60
 
     def _headers(self, code, ctype, length=None, cache=None):
         self.send_response(code)
@@ -762,6 +765,8 @@ if __name__ == "__main__":
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     notify.start()
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
+    # Maintenance as kept at the last stop is not news: in the snapshot before the watcher starts.
+    _data["maintenance"] = dict(maintenance_now(), _t=int(time.time()))
     if not DEMO:
         restore_history()
         if store.DIR:
