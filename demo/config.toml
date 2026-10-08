@@ -106,6 +106,17 @@ title = "GENERAL"
     large = true
     on_demand = true
 
+  # What changed lately: kept by labhud itself (events.py), no source to set up.
+  [[page.group]]
+  id = "recent"
+  title = "Recent"
+
+    [[page.group.card]]
+    id = "events"
+    name = "RECENT"
+    list = "events.recent"
+    limit = 6
+
 [[page]]
 id = "network"
 title = "NETWORK"

@@ -630,7 +630,7 @@ function make_list(path, limit) {
       if (!d) { if (!x.r.hidden) x.r.hidden = true; return; }
       if (x.r.hidden) x.r.hidden = false;
       put(x.name, String(d.name ?? d.text ?? ""));
-      put(x.val, String(d.value ?? d.label ?? ""));
+      put(x.val, String(d.value ?? d.label ?? (d.t ? when(d.t) : "")));
       // `bad: true` comes explicitly from the source; the words remain for lists that do not set it yet
       cls(x.r, "bad", d.bad === true ||
         (d.bad !== false && /failed|\bdown\b|missing|expired/i.test(String(d.value ?? ""))));
@@ -1181,7 +1181,14 @@ function render_actions(c) {
 
 /** One `{name, value, bad}` item (or `{text, label}`) as a panel row. */
 function detail_row(d) {
-  return [String(d.name ?? d.text ?? ""), String(d.value ?? d.label ?? ""), d.bad === true];
+  return [String(d.name ?? d.text ?? ""), String(d.value ?? d.label ?? (d.t ? when(d.t) : "")), d.bad === true];
+}
+
+/** A row's time (Unix seconds): "14:05" today, "7 Oct" before. */
+function when(ts) {
+  const d = new Date(ts * 1000);
+  if (d.toDateString() === new Date().toDateString()) return short_time(ts);
+  return d.getDate() + " " + MONTHS[d.getMonth()];
 }
 
 function short_time(ts) {

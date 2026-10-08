@@ -20,6 +20,11 @@ still change in a minor version; such changes are listed under **Changed** with 
   pulses with a red ring. What is already red when the page loads does not move it.
 - `[night]` in the config: between two hours of the display's clock the screen dims to `dim`
   percent. A touch lights it up for a minute, a new problem for as long as it holds its page.
+- `events.recent`: a history of what changed (hosts up and down, guests started and stopped,
+  sources that stopped answering and came back, new alerts, config reloads), newest first, for
+  any `list` card. Kept in memory, last 50. The demo has a RECENT card with it.
+- List rows may carry a time (`t`, Unix seconds) instead of a value: shown as the time today,
+  as the date before.
 
 ### Changed
 - A page whose groups need fewer columns than the screen has now spreads them over the whole

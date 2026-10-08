@@ -245,6 +245,14 @@ FETCHERS = {"proxmox": (proxmox, 10), "temp": (temp, 10), "synology": (synology,
             "sonarr": (sonarr, 300), "radarr": (radarr, 300), "jellyfin": (jellyfin, 30), "weather": (weather, 600)}
 
 
+def events():
+    """A made-up recent past for the RECENT card, newest first (see events.py)."""
+    rows = [(25, "jellyfin answering again", False), (41, "jellyfin not answering: HTTP Error 401", True),
+            (130, "windows stopped", False), (310, "BACKUP off", False), (365, "BACKUP up", False),
+            (540, "Disk on nas-backup above 85% in 12 days, at the current rate", True)]
+    return [{"name": text, "t": _ago(minutes * 60), "bad": bad} for minutes, text, bad in rows]
+
+
 def sources():
     """{name: Source}, in place of what sources.load() would find."""
     return {name: Source(name, fetch, every) for name, (fetch, every) in FETCHERS.items()}

@@ -117,6 +117,15 @@ title = "NETWORK"
     list = "recent.added"   # dotted path to a list in the collected data
     limit = 5                     # rows shown on the card (1-50)
 
+    # What changed lately (hosts up/down, guests started/stopped, sources that stopped
+    # answering, new alerts, config reloads), kept by labhud itself: nothing to set up.
+    # The history lives in memory, so a restart starts a new one.
+    [[page.group.card]]
+    id = "events"
+    name = "CHANGES"
+    list = "events.recent"
+    limit = 6
+
 # Bottom strip: a row of status lights with a short code, each borrowing the state of a card.
 # `ip` is optional and adds per-host traffic where the router reports it.
 [[strip]]

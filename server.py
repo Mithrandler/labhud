@@ -20,6 +20,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import config
+import events
 import sources
 
 PORT = int(os.environ.get("LABHUD_PORT", "8095"))
@@ -88,6 +89,20 @@ _data = {}
 _lock = threading.Lock()
 # name -> how the last polls of that source went, for /status (never the data itself)
 _health = {}
+# What changed, newest first: the `events` source (see events.py). The demo starts with a made-up past.
+EVENTS = events.Log(demo.events() if DEMO else ())
+
+
+def _log(found):
+    """Adds [(text, bad)] to the history and sends it to the displays."""
+    if not found:
+        return
+    for text, bad in found:
+        EVENTS.add(text, bad)
+    result = dict(EVENTS.snapshot(), _t=int(time.time()))
+    with _lock:
+        _data["events"] = result
+    _publish({"events": result})
 _subscribers = []
 _subscribers_lock = threading.Lock()
 
@@ -152,8 +167,8 @@ def loop():
                 next_run[name] = time.monotonic() + min(interval * (2 ** (failures[name] - 1)), 600)
             else:
                 failures.pop(name, None)
-            _note_health(name, result, took, failures.get(name, 0),
-                         time.time() + next_run[name] - time.monotonic())
+            _log(_note_health(name, result, took, failures.get(name, 0),
+                              time.time() + next_run[name] - time.monotonic()))
             if name == "status":
                 for source, card in SOURCE_HOST.items():
                     was, now = previous_status.get(card), result.get(card)
@@ -166,7 +181,9 @@ def loop():
             without_time = {k: v for k, v in result.items() if k != "_t"}
             sig = json.dumps(without_time, sort_keys=True, ensure_ascii=False, default=str)
             with _lock:
+                before = _data.get(name)
                 _data[name] = result
+            _log(events.changes(name, before, result, TOPOLOGY))
             if signatures.get(name) != sig:
                 signatures[name] = sig
                 _publish({name: result})
@@ -198,7 +215,7 @@ def _mark_inactive():
     """The snapshot's entries for sources that do not run: "not configured", or gone after a reload."""
     with _lock:
         for name in list(_data):
-            if name not in SOURCES and name not in INACTIVE:
+            if name not in SOURCES and name not in INACTIVE and name != "events":
                 del _data[name]
                 _health.pop(name, None)
         for name, needs in INACTIVE.items():
@@ -240,16 +257,21 @@ def watch_config():
             CONFIG_ERRORS = e.problems
             print(f"config.toml not applied, {len(e.problems)} problem(s):\n  " + "\n  ".join(e.problems), flush=True)
             _send("config", {"errors": CONFIG_ERRORS})
+            _log([(f"config.toml not applied ({len(e.problems)} problem(s))", True)])
             continue
         _apply(topology)
         _mark_inactive()
         CONFIG_ERRORS = []
         print(f"config.toml reloaded; sources: {', '.join(sorted(ACTIVE)) or 'none'}", flush=True)
+        _log([("config.toml reloaded", False)])
         _send("config", {"reload": True})
 
 
 def _note_health(name, result, took, failures, next_at):
+    """Records how the poll went; returns the events it makes: a source that has kept failing
+    past SOURCE_GRACE (with its host up), and the same source answering again."""
     now = int(time.time())
+    found = []
     with _lock:
         h = _health.setdefault(name, {})
         h.update(last_run=now, took=took, failures=failures, next_at=int(next_at))
@@ -258,9 +280,17 @@ def _note_health(name, result, took, failures, next_at):
         elif "unavailable" in result:
             h.update(state="failing", error=result["unavailable"], error_at=now)
             h.setdefault("failing_since", now)
+            card = SOURCE_HOST.get(name)
+            host_down = card and _data.get("status", {}).get(card) in (False, "scheduled")
+            if now - h["failing_since"] >= SOURCE_GRACE and not host_down and not h.get("announced"):
+                h["announced"] = True
+                found.append((f"{name} not answering: {h['error']}", True))
         else:
             h.update(state="ok", last_ok=now)
             h.pop("failing_since", None)
+            if h.pop("announced", None):
+                found.append((f"{name} answering again", False))
+    return found
 
 
 def health():
@@ -402,6 +432,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     _mark_inactive()
+    _log([("labhud started", False)])
     print(("DEMO MODE, made-up data; " if DEMO else "")
           + f"sources: {', '.join(sorted(ACTIVE)) or 'none'}; not configured: {', '.join(sorted(INACTIVE)) or 'none'}",
           flush=True)
