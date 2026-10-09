@@ -75,10 +75,12 @@ def reload():
         if not m or not value.strip():
             continue
         name = m.group(1).lower()
-        if name not in KEYS:
-            new.append(name)
+        known = name in KEYS
         KEYS[name] = value.strip().encode()
         _STALE[name] = int(env(f"PUSH_{m.group(1)}_STALE", "60"))
+        if known:
+            continue
+        new.append(name)
         # Checked every 2 s, never backed off: a push can arrive at any moment.
         source(name, every=2, env=(f"PUSH_{m.group(1)}_KEY",), backoff=False,
                title=f"{name} (pushed)", about="An agent that pushes its data to labhud.")(_make(name))

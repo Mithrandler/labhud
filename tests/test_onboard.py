@@ -136,3 +136,17 @@ class Suggest(unittest.TestCase):
         for bad in (["192.0.2.0/24"], ["a b"], ["h"] * 33):
             with self.assertRaises(ValueError):
                 onboard.suggest(bad)
+
+
+class NameClash(unittest.TestCase):
+    def test_a_configured_source_is_not_replaced_by_an_unconfigured_one(self):
+        with mock.patch.dict(os.environ, {"LABHUD_MINE_URL": "http://192.0.2.1"}):
+            @source("clash", every=10, env=("MINE_URL",))
+            def mine():
+                return {}
+
+            @source("clash", every=10, env=("BUILTIN_URL",))
+            def builtin():
+                return {}
+            self.assertIs(REGISTRY["clash"].fetch, mine)
+        REGISTRY.pop("clash", None)

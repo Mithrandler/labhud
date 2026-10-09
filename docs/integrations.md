@@ -98,6 +98,57 @@ metrics = [{ key = "docker.running", label = "Up", format = "count" },
 list = "docker.labelled"        # or docker.containers, docker.group.media, docker.nas.containers
 ```
 
+## UPS (NUT)
+
+```sh
+LABHUD_NUT_HOST=192.0.2.20:3493   # upsd, with LISTEN on its LAN address in upsd.conf
+LABHUD_NUT_UPS=eaton              # optional: the first UPS upsd lists
+```
+
+`nut.on_battery` and `nut.low_battery` are true/false; `nut.status` is readable text
+("ON BATTERY, discharging"). `nut.charge` (%), `nut.runtime_min`, `nut.load` (%).
+
+## Certificate expiry
+
+`LABHUD_CERTS=example.com,mail.example.com:993` checks each name hourly the way a browser does:
+days left, and red when it does not verify at all. `certs.cert_min_days`, `certs.cert_under_14`,
+`list = "certs.list"` (soonest first).
+
+## DNS: Technitium, Pi-hole, AdGuard Home
+
+All three give `queries`, `blocked` and `blocked_percent` over the last 24 hours, so one card
+works with any of them; Technitium and AdGuard add `top_blocked` (a list). Technitium wants an
+API token from Administration > Sessions > Create Token: a login token expires silently. Pi-hole
+v6 wants an app password.
+
+```toml
+metrics = [{ key = "technitium.queries", label = "Queries", format = "count" },
+           { key = "technitium.blocked_percent", label = "Blocked", format = "percent1" }]
+list = "technitium.top_blocked"
+```
+
+## Beszel
+
+If Beszel already watches your machines, labhud reads it instead of needing its own agent on
+each: `beszel.systems` (a list, down first) and `beszel.<name>.{up, cpu, mem, disk}`. A Beszel
+user with read access is enough.
+
+## Updates, Traefik, Speedtest Tracker, Immich, Home Assistant
+
+- `updates.*` from What's Up Docker: `updates.available`, `list = "updates.containers"`.
+- `traefik.*` from Traefik's API: routers, services and their errors; `list = "traefik.problems"`.
+- `speedtest.download` / `upload` (format `rate`) and `ping` from Speedtest Tracker's last result.
+- `immich.photos`, `videos`, `usage` (format `bytes`); the key must be an admin's.
+- `homeassistant.<domain>.<object>.value` for each entity in `LABHUD_HA_ENTITIES`: a room's
+  temperature is `homeassistant.sensor.rack_temperature.value`; on/off become 1/0.
+
+## Game servers
+
+`LABHUD_GAMES=rust=a2s://192.0.2.70:28017,mc=minecraft://192.0.2.71:25565` asks each server
+the game's own way, every 30 s: Valve's A2S for Steam games (the query port) and the status ping
+for Minecraft Java. `games.servers` is a list ("3/50 · map", or offline in red);
+`games.<name>.{up, players, max}` for metrics.
+
 ## MQTT and Home Assistant
 
 labhud can publish every card's state and every line of its history to an MQTT broker.

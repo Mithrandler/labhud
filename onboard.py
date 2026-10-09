@@ -107,6 +107,17 @@ CARDS = {
     "uptimekuma": ([("up", "Up", "count"), ("down", "Down", "count")], {"list": "uptimekuma.monitors"}),
     "docker": ([("running", "Up", "count"), ("unhealthy", "Unhealthy", "count"), ("restarting", "Restarting", "count")],
                {"list": "docker.containers"}),
+    "nut": ([("charge", "Battery", "percent1"), ("runtime_min", "Minutes", "count"), ("load", "Load", "percent1")], {}),
+    "certs": ([("cert_min_days", "Soonest", "count"), ("cert_under_14", "Under 14d", "count")], {"list": "certs.list"}),
+    "technitium": ([("queries", "Queries", "count"), ("blocked_percent", "Blocked", "percent1")], {"list": "technitium.top_blocked"}),
+    "pihole": ([("queries", "Queries", "count"), ("blocked_percent", "Blocked", "percent1")], {}),
+    "adguard": ([("queries", "Queries", "count"), ("blocked_percent", "Blocked", "percent1")], {"list": "adguard.top_blocked"}),
+    "beszel": ([("up", "Up", "count"), ("down", "Down", "count")], {"list": "beszel.systems"}),
+    "updates": ([("available", "Updates", "count")], {"list": "updates.containers"}),
+    "games": ([("online", "Online", "count"), ("players", "Players", "count")], {"list": "games.servers"}),
+    "traefik": ([("routers", "Routers", "count"), ("router_errors", "Errors", "count")], {"list": "traefik.problems"}),
+    "speedtest": ([("download", "↓", "rate"), ("upload", "↑", "rate")], {}),
+    "immich": ([("photos", "Photos", "count"), ("videos", "Videos", "count"), ("usage", "Size", "bytes")], {}),
     "scrutiny": ([("failed", "Failed", "count"), ("hottest", "Hottest", "celsius")], {"list": "scrutiny.disks"}),
 }
 

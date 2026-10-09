@@ -201,7 +201,15 @@ def source(name, every, env=(), any_of=(), section=None, backoff=True, title="",
     ({variable: text}) describe it on the setup page."""
     def wrap(fn):
         groups = tuple(tuple(g) for g in any_of) if any_of else ((tuple(env),) if env else ())
-        REGISTRY[name] = Source(name, fn, every, groups, section, backoff, title or name, about, hints)
+        new = Source(name, fn, every, groups, section, backoff, title or name, about, hints)
+        old = REGISTRY.get(name)
+        # Two sources with one name (LABHUD_JSON_GAMES_URL and the built-in `games`): the one
+        # that is set up wins, so a built-in added later never hides your own source.
+        if old and old.fetch is not fn and old.missing({}) is None and not section:
+            if new.missing({}) is not None:
+                return fn
+            print(f"warning: two sources are called {name!r}; the later one is used", flush=True)
+        REGISTRY[name] = new
         return fn
     return wrap
 

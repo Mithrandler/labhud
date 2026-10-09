@@ -47,6 +47,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **Upkeep:** Proxmox VE snapshots older than 14 days (`backups.snapshots`), "full in N days"
   on storages filling within 60 days, and on PBS: datastores with PBS's own full-date estimate,
   failed verify jobs and days since the last garbage collection.
+- **New sources:** UPS through NUT (`nut`, on battery / charge / minutes left), certificate expiry
+  of your public names (`certs`), DNS filters (`technitium`, `pihole`, `adguard`, same numbers for
+  all three), Beszel (`beszel`), container updates from What's Up Docker (`updates`), Traefik
+  routers and errors (`traefik`), Speedtest Tracker (`speedtest`), Immich (`immich`), Home
+  Assistant entities (`homeassistant`) and game servers asked with Steam A2S or Minecraft's
+  status ping (`games`). Each has a form on the setup page and a first card. See
+  docs/integrations.md.
 - **Docker** source (`LABHUD_DOCKER_URL`, one engine or several, through a docker-socket-proxy):
   running, unhealthy, restarting and crashed containers, problems first. Containers can list
   themselves with labels (`labhud.enable`, `labhud.name`, `labhud.group`, `labhud.url`), so a new
