@@ -6,8 +6,17 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-09
+
+### Changed
+- labhud now reads a `.env` next to `config.toml` by itself, when there is one. Its values only
+  fill variables the environment leaves unset, so a running Compose setup sees no difference;
+  `LABHUD_ENV_FILE` names another file.
+- labhud-agent pushes CPU, RAM, disk, load and uptime besides the temperatures.
+- Proxmox guests carry their `tags` and `template` in the data.
+
 ### Added
-- `onboard.py`: what setting labhud up needs, shared by `init.py` and the coming setup page.
+- `onboard.py`: what setting labhud up needs, shared by `init.py` and the setup page.
   `catalog()` lists every source with a form (title, one line, and per variable a label, a hint
   and whether it is secret; never a value), `try_source()` runs a source once with proposed
   values in place of the environment, for the calling thread only, and `merge_env()` sets values
@@ -78,8 +87,8 @@ still change in a minor version; such changes are listed under **Changed** with 
   running, unhealthy, restarting and crashed containers, problems first. Containers can list
   themselves with labels (`labhud.enable`, `labhud.name`, `labhud.group`, `labhud.url`), so a new
   container appears on the display without editing `config.toml`.
-- labhud-agent pushes CPU, RAM, disk, load and uptime too (`cpu`, `mem`, `mem_used_of`, `disk`,
-  `disk_used_of`, `load1`, `uptime`), so a machine without Proxmox gets a full card.
+- New agent readings: `cpu`, `mem`, `mem_used_of`, `disk`, `disk_used_of`, `load1`, `uptime`, so
+  a machine without Proxmox gets a full card.
 
 ## [0.1.5] - 2026-10-08
 
@@ -235,7 +244,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/Mithrandler/labhud/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Mithrandler/labhud/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/Mithrandler/labhud/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Mithrandler/labhud/compare/v0.1.2...v0.1.3

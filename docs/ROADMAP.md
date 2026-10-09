@@ -59,3 +59,19 @@ Documentation:
 21. ~~**Per-source recipes**~~ ([sources.md](sources.md)).
 22. ~~**Documentation site**~~: MkDocs on GitHub Pages, live once Pages is set to
     "GitHub Actions" in the repository settings.
+
+## Setup and what other dashboards have (2026-10-09, done, in 0.1.6)
+
+Ideas from Homarr, Homepage, Glance, Dashy and Pulse, chosen all at once:
+
+23. ~~**Setup page**~~ on first start, ~~**setup checklist**~~ on `/status`, ~~**config editor**~~.
+24. ~~**One-line agents**~~ (`init.py agent`, `/agent/install.sh`), ~~**Docker labels**~~,
+    ~~**guest cards that follow Proxmox**~~ (`guests`, `guests_tag`) and the adoption list,
+    ~~**Find services**~~ on the setup page.
+25. ~~**Upkeep**~~: snapshots, storage forecast, PBS verify/GC; ~~**thresholds with hysteresis**~~.
+26. ~~**Sources**~~: NUT, certificates, Technitium/Pi-hole/AdGuard, Beszel, What's Up Docker,
+    Traefik, Speedtest Tracker, Immich, Home Assistant, game servers, RSS, releases, CalDAV.
+27. ~~**Wall**~~: calm mode, Fully Kiosk screen control, public status page, first-run tour.
+28. ~~**Config**~~: any JSON API without code, `include`, quick search in the list view.
+
+Still open: demo data and screenshots for the new sources.

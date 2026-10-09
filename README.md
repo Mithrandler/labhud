@@ -8,10 +8,21 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **Zero dependencies.** Python standard library on the server, plain JS in the browser, no build step.
 - **No secrets in the browser.** One server talks to your services; the screen only receives a
   snapshot over Server-Sent Events.
-- **Optional sources.** Proxmox VE, Proxmox Backup Server, OPNsense, Synology DSM,
-  OpenMediaVault, qBittorrent, Sonarr, Radarr, Prowlarr, Bazarr, Jellyfin, Navidrome, Seerr:
-  each one turns on when you give it a URL and a key. Anything else comes in as your own JSON.
-- **One config file** (TOML) describing your pages and cards.
+- **A setup page on first start.** Start it on an empty folder, open the link from its log, and
+  it walks you through Proxmox (nodes, VMs, LXCs), every other service (tried before it is
+  kept) and the display, then writes the config and starts. `init.py agent <name>` adds any
+  Linux machine with one `curl | sh` line; `init.py edit` opens the config in a browser.
+- **Optional sources.** Proxmox VE (guests, backups, snapshots, storage running out), Proxmox
+  Backup Server, OPNsense, Synology DSM, OpenMediaVault, Docker (with `labhud.*` labels), a UPS
+  through NUT, certificate expiry, Technitium / Pi-hole / AdGuard, Beszel, Uptime Kuma,
+  Healthchecks, Scrutiny, Traefik, What's Up Docker, qBittorrent, the *arr apps, Jellyfin,
+  Navidrome, Seerr, Immich, Speedtest Tracker, Home Assistant, game servers (Steam A2S,
+  Minecraft), RSS, GitHub releases, a CalDAV calendar: each one turns on when you give it a URL
+  and a key. Any other JSON API comes in without code.
+- **Made for a wall.** Problems take the screen; numbers past a mark notify after 5 minutes, not
+  on every spike; a calm mode shows only the clock when all is well; Fully Kiosk's screen goes
+  off at night; a separate public status page shows names and states only.
+- **One config file** (TOML) describing your pages and cards, reloaded on save.
 - **Demo mode** with made-up data, so you can try it without touching your lab.
 
 > [!WARNING]
@@ -49,7 +60,7 @@ In portrait the same page gets two columns, and the project name takes the free 
 - [docs/threat-model.md](docs/threat-model.md): what labhud protects, against whom, and the known gaps
 - [docs/live-agent.md](docs/live-agent.md): your own data (alerts, DNS, logins, game servers) as one JSON document
 - [docs/actions.md](docs/actions.md): buttons that wake hosts or start VMs (off by default)
-- [docs/integrations.md](docs/integrations.md): Healthchecks, Scrutiny, Uptime Kuma, MQTT and Home Assistant
+- [docs/integrations.md](docs/integrations.md): Docker, NUT, certificates, DNS filters, Beszel, Uptime Kuma, Healthchecks, Scrutiny, Traefik, feeds, the screen, the public page, MQTT and Home Assistant
 - [config.example.toml](config.example.toml): every config option, commented
 - [.env.example](.env.example): every source and the variables it reads
 - [CHANGELOG.md](CHANGELOG.md) · [docs/ROADMAP.md](docs/ROADMAP.md)
