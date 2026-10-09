@@ -48,7 +48,9 @@ MAINTENANCE_KEYS = {"buttons", "window"}
 WINDOW_KEYS = {"cards", "from", "until", "reason"}
 ALERTS_KEYS = {"path", "page"}
 NIGHT_KEYS = {"from", "to", "dim"}
-TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "sparklines",
+CALM_KEYS = {"after"}
+PUBLIC_KEYS = {"title", "groups"}
+TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "sparklines",
             "maintenance"}
 # The formats whose numbers get a sparkline (the last hours, behind the value)
 TREND_FORMATS = {"percent", "percent1", "celsius", "rate", "used_of"}
@@ -245,6 +247,7 @@ def load(path=None):
     maintenance  {buttons: bool, windows: [{cards, from, until, reason?}]} (times as Unix seconds)
     alerts       {path, page?} or None
     night        {from, to, dim} or None: the screen dims in that window (the display's local time)
+    calm         {after} or None: seconds with nothing red before the screen shows only the clock
     trends       [data path]: the numbers kept for sparklines (empty with sparklines = false)
     """
     path = path or config_path()
@@ -490,13 +493,44 @@ def _validate(raw, path):
                     ck.err("night", f"dim must be from 0 to 100, got {dim}")
                 night["dim"] = dim
 
+    # Calm: after `after` seconds with nothing red, the screen shows only a big clock and "all
+    # good"; the first problem (or a touch) brings the cards back.
+    calm = None
+    if "calm" in raw:
+        cm = raw["calm"]
+        if not isinstance(cm, dict):
+            ck.err("top level", "calm must be written as a [calm] table")
+        else:
+            ck.unknown("calm", cm, CALM_KEYS)
+            after = ck.opt("calm", cm, "after", int, "seconds")
+            if after is not None and not 30 <= after <= 86400:
+                ck.err("calm", f"after must be from 30 to 86400 seconds, got {after}")
+            calm = {"after": after or 300}
+
+    # Public status page (LABHUD_PUBLIC_PORT): only the names and states of these groups' cards.
+    public_page = None
+    if "public" in raw:
+        pb = raw["public"]
+        if not isinstance(pb, dict):
+            ck.err("top level", "public must be written as a [public] table")
+        else:
+            ck.unknown("public", pb, PUBLIC_KEYS)
+            groups = pb.get("groups")
+            if not isinstance(groups, list) or not groups or not all(isinstance(g, str) for g in groups):
+                ck.err("public", "groups must be a list of group ids")
+                groups = []
+            for g in groups:
+                if g not in cards:
+                    ck.err("public", f"group '{g}' does not exist")
+            public_page = {"title": ck.opt("public", pb, "title", str, "a string") or "Status", "groups": groups}
+
     for name, a in actions.items():
         if a.get("choices") and not any(name in c.get("actions", ()) for cs in cards.values() for c in cs):
             ck.err(f"action.{name}", "has choices but no card offers it (add it to a card's actions)")
     if ck.problems:
         raise ConfigError(path, ck.problems)
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
-            "weather": weather, "night": night,
+            "weather": weather, "night": night, "calm": calm, "public": public_page,
             "trends": [] if sparklines is False else sorted({
                 m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) if m[2] in TREND_FORMATS})}
 
@@ -505,6 +539,7 @@ def public(topology):
     """What the browser gets from /api/config: the layout, without the server-side schedules
     and without the weather coordinates (only the city name is shown)."""
     out = {k: topology[k] for k in ("title", "pages", "cards", "strip", "actions", "alerts", "night", "trends")}
+    out["calm"] = topology.get("calm")
     out["maintenance_buttons"] = topology["maintenance"]["buttons"]
     out["city"] = (topology.get("weather") or {}).get("city", "")
     return out

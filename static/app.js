@@ -231,6 +231,7 @@ function update() {
     mark_menu_alerts();
     if (panelCard) fill_panel();   // an open panel refreshes with the new data
     watch_problems();
+    render_calm();
   });
 }
 
@@ -314,6 +315,44 @@ function apply_focus() {
   if (!focusCard) return;
   const n = document.querySelector(`#content [data-id="${CSS.escape(focusCard)}"]`);
   if (n) n.classList.add("focus");
+}
+
+/** [calm]: after CFG.calm.after seconds with nothing red and no alert, only the clock shows.
+    Anything red, an alert, a focus, a touch or an open panel brings the cards back at once. */
+let calmSince = Date.now();
+let calmSpot = 0;
+function render_calm() {
+  if (!CFG || !CFG.calm || LIST_VIEW) return;
+  const now = Date.now();
+  const anyBad = Object.values(CARD_BY_ID).some((c) => card_bad(c) === true);
+  const alerting = !$("#alerts").hidden;
+  const busy = anyBad || alerting || focusCard || now < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden;
+  if (busy) calmSince = now;
+  const on = location.search.includes("calm") || now - calmSince >= CFG.calm.after * 1000;
+  const box = $("#calm");
+  if (box.hidden === !on) {
+    if (on) render_calm_text();
+    return;
+  }
+  box.hidden = !on;
+  if (on) render_calm_text();
+}
+
+function render_calm_text() {
+  const box = $("#calm");
+  const d = new Date();
+  put($(".time", box), String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"));
+  put($(".date", box), DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()]);
+  const cards = Object.values(CARD_BY_ID).filter((c) => card_bad(c) === false);
+  put($(".facts", box), cards.length + " checked, none red");
+  // a new spot every 5 minutes, inside the middle of the screen
+  const spot = Math.floor(Date.now() / 300000);
+  if (spot !== calmSpot) {
+    calmSpot = spot;
+    const r = (n) => 35 + ((spot * n) % 31);   // 35..65 %, deterministic, no Math.random
+    $(".box", box).style.left = r(7) + "%";
+    $(".box", box).style.top = r(13) + "%";
+  }
 }
 
 function night_now() {
@@ -1076,6 +1115,8 @@ function render_weather() {
 
 function touched() {
   pausedUntil = Math.max(pausedUntil, Date.now() + PAUSE);
+  calmSince = Date.now();
+  if (CFG && CFG.calm && !$("#calm").hidden) { $("#calm").hidden = true; }
   wakeUntil = Date.now() + PAUSE;   // a touch lights a dimmed screen up for the same minute
   if (CFG) render_night();
 }
@@ -1464,6 +1505,10 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   tick(render_clock, 10000);
   render_night();
   tick(render_night, 10000);
+  if (CFG.calm && !LIST_VIEW) {
+    $("#calm").addEventListener("click", touched);
+    tick(render_calm, 10000);
+  }
   if (CFG.trends && CFG.trends.length) {
     load_history();
     if (!location.search.includes("static")) tick(load_history, 60000);

@@ -30,6 +30,7 @@ import events
 import mqtt
 import notify
 import sources
+import screen
 import store
 import thresholds
 from sources import push
@@ -330,6 +331,66 @@ def card_states():
     return out
 
 
+def public_status():
+    """What the public page shows: per chosen group, each card's name and state. No address, no
+    number, no action: this may face the internet (LABHUD_PUBLIC_PORT)."""
+    pub = TOPOLOGY.get("public")
+    if not pub:
+        return None
+    states = card_states()
+    titles = {g["id"]: g["title"] for p in TOPOLOGY["pages"] for g in p["groups"]}
+    groups = []
+    for gid in pub["groups"]:
+        items = [{"name": c.get("name", c["id"]), "state": states[c["id"]]}
+                 for c in TOPOLOGY["cards"].get(gid, []) if c["id"] in states]
+        groups.append({"title": titles.get(gid, gid), "items": items})
+    every = [i["state"] for g in groups for i in g["items"]]
+    return {"title": pub["title"], "now": int(time.time()), "groups": groups,
+            "all_up": all(x in ("up", "scheduled", "on-demand", "maintenance") for x in every)}
+
+
+class PublicHandler(BaseHTTPRequestHandler):
+    """LABHUD_PUBLIC_PORT: the public status page, and nothing else of labhud's."""
+    protocol_version = "HTTP/1.1"
+    server_version = "labhud"
+    timeout = 30
+    FILES = {"/": ("public.html", "text/html; charset=utf-8"), "/public.js": ("public.js", "text/javascript; charset=utf-8"),
+             "/fonts/roboto-latin-400-normal.woff2": ("fonts/roboto-latin-400-normal.woff2", "font/woff2"),
+             "/fonts/roboto-latin-700-normal.woff2": ("fonts/roboto-latin-700-normal.woff2", "font/woff2")}
+
+    def log_message(self, *args):
+        pass
+
+    def _send(self, code, ctype, body, cache="no-cache"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", cache)
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path == "/api/public":
+            data = public_status()
+            body = json.dumps(data or {"error": "no [public] in config.toml"}, ensure_ascii=False).encode()
+            return self._send(200 if data else 404, "application/json; charset=utf-8", body)
+        if path in self.FILES:
+            name, ctype = self.FILES[path]
+            with open(os.path.join(STATIC, name), "rb") as f:
+                return self._send(200, ctype, f.read(), "public, max-age=86400" if name.startswith("fonts/") else "no-cache")
+        self._send(404, "text/plain; charset=utf-8", b"not found\n")
+
+
+def start_public(port):
+    httpd = ThreadingHTTPServer(("0.0.0.0", port), PublicHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True, name="public").start()
+    print(f"public status page on :{port}" + ("" if TOPOLOGY.get("public") else " (empty: no [public] in config.toml)"), flush=True)
+
+
 def mqtt_cards():
     return {c["id"]: c.get("name", c["id"]) for cards in TOPOLOGY["cards"].values() for c in cards if c.get("check")}
 
@@ -386,6 +447,8 @@ def _log(found):
                                             and card not in maintenance_now())
         EVENTS.add(text, bad)
         mqtt.event(text, bad)
+        if bad:
+            screen.wake()
         notify.submit(TOPOLOGY["title"], text, bad, still_true)
     if not DEMO:
         store.save("events", EVENTS.snapshot()["recent"])
@@ -953,6 +1016,9 @@ if __name__ == "__main__":
     threading.Thread(target=loop, daemon=True, name="collect").start()
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     notify.start()
+    if screen.enabled():
+        print(f"screen: Fully Kiosk at {screen.URL}" + ("" if TOPOLOGY.get("night") else " (idle: no [night] in config.toml)"), flush=True)
+    screen.start(lambda: None if DEMO else TOPOLOGY.get("night"))
     if mqtt.enabled():
         print(f"mqtt: {mqtt.problem() or 'on, ' + mqtt.PREFIX + '/…'}", flush=True)
         mqtt.announce(mqtt_cards(), TOPOLOGY["title"])
@@ -967,6 +1033,8 @@ if __name__ == "__main__":
                   else f"LABHUD_DATA: {store.PROBLEM}", flush=True)
     threading.Thread(target=sample_history, daemon=True, name="history").start()
     threading.Thread(target=watch_maintenance, daemon=True, name="maintenance").start()
+    if os.environ.get("LABHUD_PUBLIC_PORT"):
+        start_public(int(os.environ["LABHUD_PUBLIC_PORT"]))
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     if TLS_CERT:
         import ssl

@@ -326,6 +326,14 @@ body.with-alert { --alert: 22px; }
 
 /* the link to the aggregator: a discreet dot, red only while the stream is broken */
 /* [night]: everything dims under one sheet, so no colour or contrast rule has to change. */
+/* [calm]: a big clock on black. It moves to another spot every few minutes (a jump, not an
+   animation): the same pixels lit for hours would burn into an OLED. */
+#calm { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; }
+#calm .box { position: absolute; text-align: center; transform: translate(-50%, -50%); }
+#calm .time { font-size: min(28vw, 42vh); font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+#calm .date { color: var(--sub); font-size: min(5vw, 7vh); margin-top: .2em; }
+#calm .state { color: var(--green); font-weight: 700; letter-spacing: .3em; font-size: min(4vw, 6vh); margin-top: .8em; }
+#calm .facts { color: var(--muted); font-size: min(2.6vw, 4vh); margin-top: .4em; }
 #night-shade { position: fixed; inset: 0; z-index: 100; pointer-events: none; background: #000; opacity: 0; transition: opacity 2s; }
 body.night #night-shade { opacity: var(--shade, .7); }
 

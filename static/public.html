@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Status</title>
+<!-- labhud's public status page (LABHUD_PUBLIC_PORT): names and states only. -->
+<style>
+  @font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); }
+  :root { color-scheme: dark; --bg: #000; --card: #121214; --line: #2a2a2e; --text: #fff; --sub: #b4b8bf; --muted: #7d828a;
+          --title: #7cc4ff; --green: #34c759; --warn: #ff9f0a; --red: #ff453a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 "Roboto", system-ui, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+  h1 { color: var(--title); margin: 0 0 4px; letter-spacing: .04em; }
+  #summary { font-weight: 700; margin: 12px 0 20px; padding: 12px 14px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
+  #summary.up { color: var(--green); } #summary.down { color: var(--red); }
+  h2 { font-size: 14px; color: var(--sub); text-transform: uppercase; letter-spacing: .08em; margin: 20px 0 6px; }
+  ul { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  li { display: flex; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--line); }
+  li:first-child { border-top: 0; }
+  .st { font-weight: 700; } .up { color: var(--green); } .down { color: var(--red); }
+  .maintenance, .scheduled, .on-demand { color: var(--muted); }
+  footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Status</h1>
+  <div id="summary"></div>
+  <div id="groups"></div>
+  <footer id="updated"></footer>
+</main>
+<script src="/public.js"></script>
+</body>
+</html>

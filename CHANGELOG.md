@@ -54,6 +54,14 @@ still change in a minor version; such changes are listed under **Changed** with 
   Assistant entities (`homeassistant`) and game servers asked with Steam A2S or Minecraft's
   status ping (`games`). Each has a form on the setup page and a first card. See
   docs/integrations.md.
+- **`[calm]`:** after a while with nothing red, the screen shows only a big clock and "ALL
+  GOOD"; a problem, an alert or a touch brings the cards back. The clock jumps every 5 minutes
+  (OLED burn-in). `?static&calm` shows it for screenshots.
+- **Screen control** through Fully Kiosk Browser (`LABHUD_FULLY_URL`/`_PASS`): off or dimmed during
+  `[night]`, on in the morning, lit for three minutes by a new problem (`screen.py`).
+- **Public status page** (`LABHUD_PUBLIC_PORT` + `[public] groups`): names and states only, on a
+  port of its own that serves nothing else.
+- **Feeds, releases and a calendar:** `rss`, `releases` (GitHub) and `agenda` (CalDAV) sources.
 - **Docker** source (`LABHUD_DOCKER_URL`, one engine or several, through a docker-socket-proxy):
   running, unhealthy, restarting and crashed containers, problems first. Containers can list
   themselves with labels (`labhud.enable`, `labhud.name`, `labhud.group`, `labhud.url`), so a new

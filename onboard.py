@@ -118,6 +118,8 @@ CARDS = {
     "traefik": ([("routers", "Routers", "count"), ("router_errors", "Errors", "count")], {"list": "traefik.problems"}),
     "speedtest": ([("download", "↓", "rate"), ("upload", "↑", "rate")], {}),
     "immich": ([("photos", "Photos", "count"), ("videos", "Videos", "count"), ("usage", "Size", "bytes")], {}),
+    "agenda": ([("today", "Today", "count")], {"list": "agenda.events"}),
+    "releases": ([], {"list": "releases.list"}),
     "scrutiny": ([("failed", "Failed", "count"), ("hottest", "Hottest", "celsius")], {"list": "scrutiny.disks"}),
 }
 

@@ -215,3 +215,16 @@ latitude = 52.52
 longitude = 13.41
 timezone = "Europe/Berlin"   # optional, defaults to the location's own
 city = "Berlin"              # optional, shown next to the temperature
+
+# Optional: when nothing is red for `after` seconds (300), the screen shows only a big clock and
+# "ALL GOOD"; a problem or a touch brings the cards back. The clock jumps to another spot every
+# 5 minutes so an OLED does not burn in.
+# [calm]
+# after = 300
+
+# Optional: a public status page on its own port (LABHUD_PUBLIC_PORT), with only the names and
+# states (up, down, maintenance) of these groups' cards: no address, number or button. Expose
+# that port alone, e.g. for the people who play on your game servers.
+# [public]
+# title = "Lab status"
+# groups = ["pve"]

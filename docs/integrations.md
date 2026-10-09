@@ -149,6 +149,26 @@ the game's own way, every 30 s: Valve's A2S for Steam games (the query port) and
 for Minecraft Java. `games.servers` is a list ("3/50 · map", or offline in red);
 `games.<name>.{up, players, max}` for metrics.
 
+## Feeds, releases, a calendar
+
+For a page of things to read, away from the technical ones: `LABHUD_RSS` (`rss.<name>`, a list
+per feed), `LABHUD_RELEASES=owner/repo,...` (`releases.list`, from GitHub) and a CalDAV calendar
+(`agenda.events`, the next two weeks; `agenda.today`). For Nextcloud, the calendar URL is in the
+calendar's menu (Copy private link, minus `?export`), with an app password.
+
+## The screen (Fully Kiosk Browser)
+
+With `LABHUD_FULLY_URL` and `LABHUD_FULLY_PASS`, labhud tells the tablet's Fully Kiosk Browser to
+turn the screen off at the start of `[night]` (or set it to `dim` percent of full brightness)
+and on again at the end; a new problem at night lights it for three minutes.
+`LABHUD_FULLY_BRIGHTNESS` (0-255) sets the daytime brightness.
+
+## Public status page
+
+`LABHUD_PUBLIC_PORT=8096` and a `[public]` table in config.toml serve a separate page on that
+port with only the names and states of the chosen groups' cards: no address, number, panel or
+action, and nothing else of labhud's answers there. It is meant to be the one port you expose.
+
 ## MQTT and Home Assistant
 
 labhud can publish every card's state and every line of its history to an MQTT broker.
