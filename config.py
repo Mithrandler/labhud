@@ -50,7 +50,7 @@ ALERTS_KEYS = {"path", "page"}
 NIGHT_KEYS = {"from", "to", "dim"}
 CALM_KEYS = {"after"}
 PUBLIC_KEYS = {"title", "groups"}
-TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "sparklines",
+TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "include", "sparklines",
             "maintenance"}
 # The formats whose numbers get a sparkline (the last hours, behind the value)
 TREND_FORMATS = {"percent", "percent1", "celsius", "rate", "used_of"}
@@ -258,7 +258,75 @@ def load(path=None):
         raise ConfigError(path, ["file not found (copy config.example.toml to start)"]) from None
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(path, [f"not valid TOML: {e}"]) from None
+    raw = _with_includes(raw, path)
     return _validate(raw, path)
+
+
+# What an included file may hold: more pages, strip entries, actions and quiet hours. The rest
+# (title, weather, night...) stays in config.toml, so there is one place to look for it.
+INCLUDE_ARRAYS = ("page", "strip")
+INCLUDE_TABLES = ("action", "quiet_hours")
+
+
+def included(path, raw=None):
+    """The files `include = [...]` names, as glob patterns relative to config.toml's folder, sorted."""
+    import glob
+    if raw is None:
+        try:
+            with open(path, "rb") as f:
+                raw = tomllib.load(f)
+        except (OSError, tomllib.TOMLDecodeError):
+            return []
+    pats = raw.get("include") or []
+    if isinstance(pats, str):
+        pats = [pats]
+    folder = os.path.dirname(os.path.abspath(path))
+    files = []
+    for pat in pats if isinstance(pats, list) else []:
+        if isinstance(pat, str):
+            files += sorted(glob.glob(os.path.join(folder, pat)))
+    return [f for f in dict.fromkeys(files) if os.path.abspath(f) != os.path.abspath(path)]
+
+
+def _with_includes(raw, path):
+    """raw with every included file's pages, strip entries, actions and quiet hours added after
+    its own, in file name order. Raises ConfigError naming the file at fault."""
+    if "include" not in raw:
+        return raw
+    pats = raw["include"]
+    if isinstance(pats, str):
+        pats = [pats]
+    if not isinstance(pats, list) or not all(isinstance(p, str) for p in pats):
+        raise ConfigError(path, ["include must be a list of file patterns, e.g. [\"pages/*.toml\"]"])
+    raw = dict(raw)
+    problems = []
+    for f in included(path, raw):
+        name = os.path.relpath(f, os.path.dirname(os.path.abspath(path)))
+        try:
+            with open(f, "rb") as fh:
+                part = tomllib.load(fh)
+        except (OSError, tomllib.TOMLDecodeError) as e:
+            problems.append(f"{name}: {e}")
+            continue
+        for key in part:
+            if key not in INCLUDE_ARRAYS + INCLUDE_TABLES:
+                problems.append(f"{name}: '{key}' belongs in config.toml (an included file holds only "
+                                f"{', '.join(INCLUDE_ARRAYS + INCLUDE_TABLES)})")
+        for key in INCLUDE_ARRAYS:
+            if isinstance(part.get(key), list):
+                raw[key] = list(raw.get(key) or []) + part[key]
+        for key in INCLUDE_TABLES:
+            if isinstance(part.get(key), dict):
+                merged = dict(raw.get(key) or {})
+                for k, v in part[key].items():
+                    if k in merged:
+                        problems.append(f"{name}: [{key}.{k}] is already defined")
+                    merged[k] = v
+                raw[key] = merged
+    if problems:
+        raise ConfigError(path, problems)
+    raw.pop("include", None)
+    return raw
 
 
 def loads(text, path="config.toml"):
@@ -267,7 +335,7 @@ def loads(text, path="config.toml"):
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(path, [f"not valid TOML: {e}"]) from None
-    return _validate(raw, path)
+    return _validate(_with_includes(raw, path), path)
 
 
 def _validate(raw, path):

@@ -62,6 +62,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **Public status page** (`LABHUD_PUBLIC_PORT` + `[public] groups`): names and states only, on a
   port of its own that serves nothing else.
 - **Feeds, releases and a calendar:** `rss`, `releases` (GitHub) and `agenda` (CalDAV) sources.
+- **Any JSON API without code:** `LABHUD_JSON_<NAME>_PICK` (key=path, with list indexes),
+  `_LIST` / `_LIST_NAME` / `_LIST_VALUE` (a card list from a list in the answer), `_HEADERS`,
+  `_PUBLIC`. A top-level JSON list is accepted when picked from.
+- **`include = ["pages/*.toml"]`:** pages, strip entries, actions and quiet hours from other files;
+  an edit to any of them reloads.
 - **Docker** source (`LABHUD_DOCKER_URL`, one engine or several, through a docker-socket-proxy):
   running, unhealthy, restarting and crashed containers, problems first. Containers can list
   themselves with labels (`labhud.enable`, `labhud.name`, `labhud.group`, `labhud.url`), so a new

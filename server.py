@@ -634,11 +634,15 @@ def watch_config():
     until the file is fixed. No restart either way."""
     global CONFIG_ERRORS
     def stamp():
-        try:
-            st = os.stat(CONFIG_PATH)
-            return st.st_mtime_ns, st.st_size, st.st_ino
-        except OSError:
-            return None
+        # config.toml and every file it includes: an edit to any of them reloads
+        out = []
+        for path in [CONFIG_PATH] + config.included(CONFIG_PATH):
+            try:
+                st = os.stat(path)
+                out.append((path, st.st_mtime_ns, st.st_size, st.st_ino))
+            except OSError:
+                out.append((path, None))
+        return tuple(out)
     seen = stamp()
     while True:
         time.sleep(3)

@@ -8,6 +8,9 @@
 # Addresses below are from 192.0.2.0/24, a range reserved for documentation: replace them.
 
 title = "LABHUD"        # browser tab title (optional, this is the default)
+# include = ["pages/*.toml"]   # optional: more pages (and strip entries, actions, quiet hours) from
+                               # other files, in name order after this file's; an edit to any of
+                               # them reloads like an edit here
 
 [[page]]
 id = "general"          # lowercase letters only

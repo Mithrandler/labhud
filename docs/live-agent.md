@@ -23,6 +23,25 @@ and lists, but not for the built-in panels. Several sources can share one URL va
 Every key below is **optional**. A key that is missing shows as "—" or an empty panel section.
 It never breaks the display.
 
+## Any JSON API, without code
+
+The endpoint does not have to be made for labhud. Pick values out of any JSON answer and give
+them your own names, and turn a list in it into a card list:
+
+```sh
+LABHUD_JSON_GITEA_URL=https://git.example.org/api/v1/repos/me/app/issues?state=open
+LABHUD_JSON_GITEA_HEADERS=Authorization: token <key>
+LABHUD_JSON_GITEA_PICK=first=0.title
+LABHUD_JSON_GITEA_LIST=.               # the answer itself is the list
+LABHUD_JSON_GITEA_LIST_NAME=title
+LABHUD_JSON_GITEA_LIST_VALUE=user.login
+```
+
+Paths are dotted, with list indexes (`data.0.stats.total`, `-1` for the last). `_PICK` keeps
+only the values named, `_LIST` adds `<name>.list`, `_HEADERS` adds headers (`Name: value; ...`),
+`_PUBLIC=on` checks the certificate of a service on the internet. Then `gitea.first` and
+`list = "gitea.list"` in the config.
+
 ## Anything, from the config
 
 Each value in the document can be addressed by its dotted path:
