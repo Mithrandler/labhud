@@ -35,6 +35,14 @@
   #error { color: var(--red); margin-bottom: 10px; }
   .risky { border-color: var(--warn); }
   .src .why.key { color: var(--warn); }
+  #checklist { max-width: 900px; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  #checklist h2 { font-size: 13px; color: var(--sub); margin-bottom: 4px; }
+  #checklist li { list-style: none; display: flex; gap: 8px; align-items: baseline; }
+  #checklist .mark { width: 1.2em; font-weight: 700; }
+  #checklist .yes .mark { color: var(--green); }
+  #checklist .no .mark { color: var(--warn); }
+  #checklist .na { color: var(--muted); }
+  #checklist .how { color: var(--muted); font-size: 12px; }
   #config { color: #ffd9e2; background: #3a0d1c; border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; max-width: 900px; white-space: pre-line; }
 </style>
 </head>
@@ -43,6 +51,7 @@
   <p id="general"></p>
   <p id="error" hidden></p>
   <p id="config" hidden></p>
+  <div id="checklist" hidden><h2>Setup</h2><ul></ul></div>
   <div id="sources"></div>
 <script>
 "use strict";
@@ -105,6 +114,16 @@ function render(d) {
   if (!cfg.hidden) {
     cfg.textContent = "config.toml was edited but not applied (the last good version is running):\n· "
       + d.config_errors.join("\n· ");
+  }
+
+  const cl = document.getElementById("checklist");
+  cl.hidden = !(d.checklist || []).length;
+  const ul = cl.querySelector("ul");
+  ul.textContent = "";
+  for (const c of d.checklist || []) {
+    const li = ul.appendChild(document.createElement("li"));
+    li.className = c.ok === true ? "yes" : c.ok === false ? "no" : "na";
+    li.append(span("mark", c.ok === true ? "✓" : c.ok === false ? "!" : "–"), span("item", c.item), span("how", c.how));
   }
 
   const list = document.getElementById("sources");

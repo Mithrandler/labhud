@@ -24,6 +24,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 - labhud reads a `.env` itself: `LABHUD_ENV_FILE`, or `.env` next to the config file. Its values
   only fill variables the environment leaves unset.
 - `config.loads(text)`: validation of a config not written yet.
+- `/status` starts with a setup checklist: sources set up and answering, Proxmox/PBS keys
+  read-only, certificates checked, `LABHUD_HOSTS` naming the display, actions signed, keys in
+  files, history kept, pushing agents heard from. Also in `/api/status` as `checklist`.
 
 ## [0.1.5] - 2026-10-08
 

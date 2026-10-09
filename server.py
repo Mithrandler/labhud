@@ -575,6 +575,42 @@ def _note_health(name, result, took, failures, next_at):
     return found
 
 
+def checklist(result):
+    """What is set up well and what is left, for the top of /status: [{"item", "ok", "how"}], where
+    ok is True, False, or None for "not needed here". From states only, never values."""
+    out = []
+
+    def add(item, ok, how):
+        out.append({"item": item, "ok": ok, "how": how})
+
+    configured = [n for n in result if result[n]["state"] != "not_configured"]
+    add("At least one source set up", bool(configured),
+        f"{len(configured)} set up" if configured else "the setup page, or .env.example")
+    failing = [n for n in configured if result[n]["state"] == "failing"]
+    add("Every source set up answers", not failing, ", ".join(failing) or "all answer")
+    limited = {n: k for n, k in KEY_CHECKS.items() if "extra" in k}
+    risky = [n for n, k in limited.items() if k["extra"]]
+    add("Proxmox/PBS keys can only read", not risky if limited else None,
+        "too much: " + ", ".join(risky) if risky else "checked" if limited else "no Proxmox or PBS source")
+    unchecked = sorted(w for w, m in sources.TLS_SEEN.items() if m == "unchecked")
+    add("Certificates of the services checked", not unchecked if sources.TLS_SEEN else None,
+        "LABHUD_PINS for " + ", ".join(unchecked) if unchecked else "pinned or verified" if sources.TLS_SEEN else "no HTTPS source yet")
+    default_hosts = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
+    add("LABHUD_HOSTS names the display", bool(ALLOWED_HOSTS - default_hosts),
+        "only localhost: the display gets 421" if not ALLOWED_HOSTS - default_hosts else "set")
+    if ACTION_URL:
+        add("Actions signed", bool(ACTION_SECRET), "set" if ACTION_SECRET else "LABHUD_ACTION_SECRET (docs/actions.md)")
+    add("Keys kept in files, not in the environment", bool(envfiles.LOADED) or None,
+        "LABHUD_*_FILE: " + ", ".join(envfiles.LOADED) if envfiles.LOADED else "optional: LABHUD_*_FILE (docs/security.md)")
+    add("History kept across restarts", store.enabled(),
+        "in " + str(store.DIR) if store.enabled() else (store.PROBLEM or "LABHUD_DATA + a mounted folder"))
+    pushed = sorted(push.KEYS)
+    if pushed:
+        silent = [n for n in pushed if result.get(n, {}).get("state") != "ok"]
+        add("Every pushing agent has reported", not silent, "waiting for " + ", ".join(silent) if silent else f"{len(pushed)} agent(s)")
+    return out
+
+
 def health():
     """What /status shows: how each source is doing, never its data or its settings' values."""
     now = int(time.time())
@@ -608,6 +644,7 @@ def health():
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
+        "checklist": [] if DEMO else checklist(result),
         "sources": result,
     }
 
