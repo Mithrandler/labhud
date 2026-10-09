@@ -62,6 +62,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **Public status page** (`LABHUD_PUBLIC_PORT` + `[public] groups`): names and states only, on a
   port of its own that serves nothing else.
 - **Feeds, releases and a calendar:** `rss`, `releases` (GitHub) and `agenda` (CalDAV) sources.
+- **Quick search** in the list view (`?view=list`): type part of a card's, group's or subtitle's
+  name; Enter opens the only match's `url` (or its panel), Escape clears.
+- **First-run tour:** four short notes the first time a screen opens labhud (kept in that
+  browser's storage; never in screenshots or the list view; `?static&tour` shows it).
 - **Config editor in the browser:** `init.py edit` prints a one-time link (`/edit#CODE`, 15
   minutes); the page checks config.toml as you type and saves only a valid file, in place,
   keeping `config.toml.bak`. Same protections as the setup page (`editmode.py`).

@@ -765,13 +765,45 @@ function mount_list() {
     }
     for (const fn of rowFns) fn();
   });
+  // Quick search: type part of a name; Enter opens the only match's page (its `url`) or panel.
+  const search = el("input", "lsearch");
+  search.type = "search";
+  search.placeholder = "Search";
+  search.setAttribute("aria-label", "Search the cards");
+  host.insertBefore(search, probs);
+  const rows = [];
   for (const p of CFG.pages) {
     if (p.games) continue;
     const sec = el("section", "lsec");
     sec.appendChild(el("h2", null, p.title));
-    for (const g of p.groups) for (const c of CFG.cards[g.id] || []) sec.appendChild(list_row(c));
+    for (const g of p.groups) {
+      for (const c of CFG.cards[g.id] || []) {
+        const r = list_row(c);
+        rows.push([r, c, sec, norm(c.name + " " + (c.subtitle || "") + " " + g.title)]);
+        sec.appendChild(r);
+      }
+    }
     host.appendChild(sec);
   }
+  const filter = () => {
+    const q = norm(search.value);
+    const hits = rows.filter(([r, , , text]) => { const on = !q || text.includes(q); r.hidden = !on; return on; });
+    for (const sec of host.querySelectorAll(".lsec:not(.problems)")) {
+      sec.hidden = !!q && ![...sec.querySelectorAll(".lrow")].some((r) => !r.hidden);
+    }
+    probs.hidden = !!q;
+    return hits;
+  };
+  search.addEventListener("input", filter);
+  search.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { search.value = ""; filter(); }
+    if (ev.key !== "Enter") return;
+    const hits = filter();
+    if (hits.length !== 1) return;
+    const c = hits[0][1];
+    if (c.url) window.open(c.url, "_blank", "noopener");
+    else if (has_details(c)) open_panel(c);
+  });
   update();
 }
 
@@ -1478,6 +1510,41 @@ function bind_gestures() {
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// The first-run tour: once per screen (its browser's storage), never in screenshots or the list
+// ---------------------------------------------------------------------------------------------
+
+const TOUR = [
+  "Tap any card: its details open, with its buttons (wake, start, maintenance) at the bottom.",
+  "Pages change every 20 seconds. A touch holds the page for a minute; tap a page's name to go there.",
+  "When something breaks, the screen goes to it by itself and the card pulses red for a few minutes.",
+  "An orange mark by the clock means a service does not answer: tap it. Every detail is at /status.",
+];
+const TOUR_KEY = "labhud-tour-done";
+
+function start_tour() {
+  const forced = location.search.includes("tour");
+  if (LIST_VIEW || (location.search.includes("static") && !forced)) return;
+  try { if (!forced && localStorage.getItem(TOUR_KEY)) return; } catch (e) { return; }   // no storage: no tour
+  const box = $("#tour");
+  let i = 0;
+  const show = () => {
+    put($(".text", box), TOUR[i]);
+    put($(".steps", box), `${i + 1} of ${TOUR.length}`);
+    put($(".next", box), i === TOUR.length - 1 ? "Got it" : "Next");
+  };
+  const done = () => {
+    box.hidden = true;
+    try { localStorage.setItem(TOUR_KEY, "1"); } catch (e) { /* ignore */ }
+    touched();
+  };
+  $(".next", box).addEventListener("click", (ev) => { ev.stopPropagation(); if (++i >= TOUR.length) done(); else show(); });
+  $(".skip", box).addEventListener("click", (ev) => { ev.stopPropagation(); done(); });
+  show();
+  box.hidden = false;
+  touched();
+}
+
 function from_address() {
   const m = /^#([a-z]+)/.exec(location.hash || "");
   if (!m) return;
@@ -1519,5 +1586,6 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   check_health();
   if (!location.search.includes("static")) tick(check_health, 60000);
   $("#health").addEventListener("click", open_health_panel);
+  start_tour();
   if (!LIST_VIEW) tick(() => { if (Date.now() >= pausedUntil && $("#panel").hidden && $("#confirm").hidden) go(page + 1); }, PERIOD);
 });
