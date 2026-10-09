@@ -3,6 +3,7 @@
 
     python3 init.py [folder]          # writes <folder>/config.toml and <folder>/.env
     python3 init.py agent <name> [URL]  # a key and a card for a machine running labhud-agent
+    python3 init.py edit [minutes]      # a one-time link to edit config.toml in a browser
     docker run --rm -it -v "$PWD:/out" ghcr.io/mithrandler/labhud:latest python3 /app/init.py /out
 
 It asks for a Proxmox VE address and an API token, checks that they work and that the token can
@@ -62,7 +63,27 @@ def agent(args):
     print(f"The card stays empty until the first push; /status lists {name} under the setup checklist.")
 
 
+def edit(args):
+    """init.py edit [minutes]: a one-time link to edit config.toml in a browser."""
+    import editmode
+    minutes = int(args[0]) if args and args[0].isdigit() else editmode.DEFAULT_MINUTES
+    cfg = config.config_path()
+    if not os.access(cfg, os.W_OK):
+        sys.exit(f"{cfg} is not writable by labhud: mount it read-write to edit it from a browser")
+    try:
+        code = editmode.open_ticket(cfg, minutes)
+    except OSError as e:
+        sys.exit(f"cannot write {editmode.ticket_path(cfg)} ({e.strerror}): the editor needs config.toml's "
+                 "folder writable (the setup page's /config folder)")
+    hosts = [h for h in os.environ.get("LABHUD_HOSTS", "").split(",") if h.strip()]
+    scheme = "https" if os.environ.get("LABHUD_TLS_CERT") else "http"
+    where = f"{scheme}://{hosts[0].strip()}" if hosts else "http://<labhud-host>:8095"
+    print(f"Open {where}/edit#{code}  (valid {minutes} minutes)")
+
+
 def main():
+    if sys.argv[1:2] == ["edit"]:
+        return edit(sys.argv[2:])
     if sys.argv[1:2] == ["agent"]:
         return agent(sys.argv[2:])
     if sys.argv[1:2] == ["fingerprint"]:

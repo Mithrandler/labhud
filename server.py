@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
 import config
+import editmode
 import events
 import mqtt
 import notify
@@ -864,6 +865,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(history())
         if path == "/status":
             path = "/status.html"
+        if path == "/edit":
+            path = "/edit.html"
         return self._static(path)
 
     def do_POST(self):
@@ -872,6 +875,9 @@ class Handler(BaseHTTPRequestHandler):
         p = re.fullmatch(r"/api/push/([a-z0-9_]{1,64})", self.path)
         if p:
             return self._push(p.group(1))
+        ed = re.fullmatch(r"/edit/api/(load|check|save)", self.path)
+        if ed:
+            return self._edit(ed.group(1))
         mt = re.fullmatch(r"/api/maintenance/([A-Za-z0-9_.-]{1,64})", self.path)
         if mt:
             return self._maintenance(mt.group(1))
@@ -891,6 +897,44 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
         return self._host_ok() and origin in (f"http://{host}", f"https://{host}")
+
+    def _edit(self, step):
+        """The config editor (editmode.py): a code from `init.py edit`, the page's own Origin,
+        JSON only. One answer for every refusal."""
+        try:
+            length = int(self.headers.get("Content-Length") or -1)
+        except ValueError:
+            length = -1
+        if not (self._same_page() and 0 <= length <= 512 * 1024
+                and (self.headers.get("Content-Type") or "").startswith("application/json")):
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        body = self.rfile.read(length)
+        if not editmode.check(CONFIG_PATH, self.headers.get("X-Labhud-Edit")):
+            print(f"config editor: refused from {self.client_address[0]}", flush=True)
+            return self._json({"ok": False, "error": "the code is wrong or expired: run init.py edit again"}, 403)
+        if step == "load":
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                return self._json({"ok": True, "text": f.read(), "path": CONFIG_PATH,
+                                   "writable": os.access(CONFIG_PATH, os.W_OK)})
+        try:
+            text = json.loads(body).get("text")
+            if not isinstance(text, str):
+                raise ValueError
+        except (ValueError, AttributeError):
+            return self._json({"ok": False, "error": "no text"}, 400)
+        try:
+            config.loads(text, CONFIG_PATH)
+            problems = []
+        except config.ConfigError as e:
+            problems = e.problems
+        if step == "check" or problems:
+            return self._json({"ok": not problems, "problems": problems})
+        try:
+            editmode.save(CONFIG_PATH, text)
+        except OSError as e:
+            return self._json({"ok": False, "problems": [f"not saved: {e.strerror}"]})
+        print(f"config editor: config.toml saved from {self.client_address[0]}", flush=True)
+        self._json({"ok": True, "problems": []})
 
     def _maintenance(self, card):
         """A card's MAINTENANCE button: {"minutes": n} (0 ends it). Off unless

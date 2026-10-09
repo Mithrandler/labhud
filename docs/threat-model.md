@@ -63,6 +63,14 @@ HTTP (`setupmode.py`).
 | "Find services" used to scan a network | the code; at most 32 hosts typed one by one, no ranges, only the listed ports | with the code, a few requests to each host listed |
 | The page reopened later | it is not served once `config.toml` exists; `LABHUD_SETUP=off` disables it entirely | deleting `config.toml` brings it back, with a new code |
 
+### The config editor
+
+| attack | stopped by | left over |
+|---|---|---|
+| Someone at the display, or on the network, rewrites config.toml | a code from `init.py edit`, run where labhud's files are; it expires (15 min); 10 wrong codes lock for a minute | whoever can run commands in labhud's container can edit, as they could edit the file |
+| A web page in the display's browser posts to the editor | LABHUD_HOSTS, Origin = Host, JSON only, the code in a header | none known |
+| A broken or hostile config | every save is checked like a start; the old file is kept as config.toml.bak | a valid config can still point cards at other hosts: it is the same power as editing the file |
+
 ### Forging data
 
 | attack | stopped by | left over |

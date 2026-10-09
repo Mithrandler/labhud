@@ -62,6 +62,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **Public status page** (`LABHUD_PUBLIC_PORT` + `[public] groups`): names and states only, on a
   port of its own that serves nothing else.
 - **Feeds, releases and a calendar:** `rss`, `releases` (GitHub) and `agenda` (CalDAV) sources.
+- **Config editor in the browser:** `init.py edit` prints a one-time link (`/edit#CODE`, 15
+  minutes); the page checks config.toml as you type and saves only a valid file, in place,
+  keeping `config.toml.bak`. Same protections as the setup page (`editmode.py`).
 - **Any JSON API without code:** `LABHUD_JSON_<NAME>_PICK` (key=path, with list indexes),
   `_LIST` / `_LIST_NAME` / `_LIST_VALUE` (a card list from a list in the answer), `_HEADERS`,
   `_PUBLIC`. A top-level JSON list is accepted when picked from.

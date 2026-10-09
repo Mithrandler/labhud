@@ -6,7 +6,7 @@ RUN apk add --no-cache iputils libcap \
  && setcap cap_net_raw+ep "$(command -v ping)" \
  && adduser -D -u 10001 labhud
 WORKDIR /app
-COPY config.py envfiles.py events.py init.py mqtt.py notify.py onboard.py screen.py server.py setupmode.py store.py thresholds.py ./
+COPY config.py editmode.py envfiles.py events.py init.py mqtt.py notify.py onboard.py screen.py server.py setupmode.py store.py thresholds.py ./
 COPY sources ./sources
 COPY agents/labhud-agent.py agents/install.sh ./agents/
 COPY static ./static

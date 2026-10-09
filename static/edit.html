@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>labhud config</title>
+<link rel="stylesheet" href="/setup/setup.css">
+<style>
+  main { max-width: 1100px; }
+  #text { width: 100%; min-height: 62vh; background: var(--card); color: var(--text); border: 1px solid var(--border);
+          border-radius: 8px; padding: 12px; font: 13px/1.5 ui-monospace, monospace; tab-size: 2; resize: vertical; }
+  #problems li { margin: 2px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>LABHUD <span>config.toml</span></h1>
+  <p id="where" class="small"></p>
+  <p class="msg" id="msg"></p>
+  <ul id="problems" class="bad"></ul>
+  <textarea id="text" spellcheck="false" autocapitalize="off" autocomplete="off" hidden></textarea>
+  <div class="row"><button id="save" disabled>Save</button><button id="check" type="button" class="ghost">Check</button>
+    <a class="small" href="/status">status</a> · <a class="small" href="/">display</a></div>
+</main>
+<script src="/edit.js"></script>
+</body>
+</html>

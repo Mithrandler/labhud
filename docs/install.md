@@ -86,6 +86,17 @@ seconds after you save it. A good file is applied and the display reloads; a bro
 out, its problems are shown in a banner on the display, and the last good version keeps running.
 (With Docker, see the note on editors in `compose.example.yaml`.)
 
+### Editing it later, in a browser
+
+```sh
+docker exec labhud python3 /app/init.py edit       # prints http://<host>:8095/edit#ABCD-EFGH
+```
+
+The link opens config.toml in a plain editor, checked as you type; Save is offered only when the
+file is valid, keeps the old one as `config.toml.bak`, and the display reloads. The code expires
+after 15 minutes (`init.py edit 60` for an hour). It needs the config folder writable (the setup
+page's `/config`).
+
 ## 3. Give it keys
 
 In `.env`, uncomment and fill in only the services you have. A source runs when its URL and key
