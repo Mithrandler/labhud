@@ -220,7 +220,7 @@ def catalog():
                 own.setdefault(group, name)
     out = []
     for name, src in sorted(REGISTRY.items(), key=lambda kv: kv[1].title.lower()):
-        if name in OWN_STEP or not src.env:
+        if name in OWN_STEP or not src.env or not src.backoff:  # pushed sources: init.py agent
             continue
         derived = [own[g] for g in src.env if own.get(g) not in (None, name)]
         out.append({"name": name, "title": src.title, "about": src.about,
@@ -274,3 +274,60 @@ def merge_env(existing, values):
             out.append("")
         out += added
     return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------------------------
+# A pushing agent (init.py agent <name>)
+# ---------------------------------------------------------------------------------------------
+
+AGENT_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}")
+
+
+def agent_card(name):
+    """config.toml lines: a group with one large card showing what labhud-agent pushes."""
+    title = name.upper().replace("_", "-")
+    lines = ["", "  [[page.group]]", f'  id = "agent-{ident(name)}"', f"  title = {q(title)}", "",
+             "    [[page.group.card]]", f'    id = "host-agent-{ident(name)}"', f"    name = {q(title)}",
+             "    large = true", "    metrics = ["]
+    for key, label, fmt in (("cpu", "CPU", "percent"), ("mem_used_of", "RAM", "used_of"),
+                            ("disk_used_of", "Disk", "used_of"), ("cpu_temp", "Temp", "celsius")):
+        lines.append(f'      {{ key = "{name}.{key}", label = "{label}", format = "{fmt}" }},')
+    return lines + ["    ]"]
+
+
+def add_agent(name, config_path, env_path):
+    """Adds pushed source `name`: a new key in .env (600), then a card in config.toml (labhud
+    reads both when the config changes). Returns the key. Raises ValueError, writing nothing, if
+    the name is taken or the config would not load."""
+    import secrets
+    if not AGENT_NAME.fullmatch(name or ""):
+        raise ValueError("the name must be a-z, 0-9 and _, starting with a letter, at most 32")
+    var = f"{PREFIX}PUSH_{name.upper()}_KEY"
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            env_text = f.read()
+    except FileNotFoundError:
+        env_text = ""
+    if re.search(rf"^\s*(export\s+)?{var}\s*=", env_text, re.M) or os.environ.get(var):
+        raise ValueError(f"{var} is already set: that agent exists")
+    with open(config_path, encoding="utf-8") as f:
+        cfg = f.read()
+    new_cfg = cfg.rstrip("\n") + "\n" + "\n".join(agent_card(name)) + "\n"
+    import config
+    try:
+        config.loads(new_cfg, config_path)
+    except config.ConfigError as e:
+        raise ValueError("config.toml would not load: " + "; ".join(e.problems)) from None
+    key = secrets.token_hex(32)
+    _write_file(env_path, merge_env(env_text, {var: key}), 0o600)
+    _write_file(config_path, new_cfg, None)
+    return key
+
+
+def _write_file(path, text, mode):
+    """Replaces the file's content in place, keeping its inode (a single mounted file follows)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode if mode is not None else 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    if mode is not None:
+        os.chmod(path, mode)

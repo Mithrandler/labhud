@@ -531,6 +531,10 @@ def watch_config():
         if now == seen:
             continue
         seen = now
+        # a pushing agent added by `init.py agent`: its key went into .env just before the config
+        if envfiles.load_dotenv(envfiles.DOTENV):
+            for name in push.reload():
+                print(f"pushed source {name}: key read from {envfiles.DOTENV}", flush=True)
         try:
             topology = config.load(CONFIG_PATH)
         except config.ConfigError as e:
@@ -660,6 +664,11 @@ TYPES = {
 }
 
 
+AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
+AGENT_FILES = {"/agent/install.sh": os.path.join(AGENTS, "install.sh"),
+               "/agent/labhud-agent.py": os.path.join(AGENTS, "labhud-agent.py")}
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "wall"
@@ -685,6 +694,10 @@ class Handler(BaseHTTPRequestHandler):
         return (self.headers.get("Host") or "").lower() in ALLOWED_HOSTS
 
     def do_GET(self):
+        # The agent and its installer: public code, no data, fetched by machines that may know
+        # labhud under any name (like /api/push), so before the LABHUD_HOSTS check.
+        if self.path in AGENT_FILES:
+            return self._agent_file(self.path)
         if not self._host_ok():
             # Text, not JSON: this is what someone sees on their first try on another port or name.
             # Echoing the Host back is safe as text/plain.
@@ -770,6 +783,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True})
         print(f"push to {name} from {self.client_address[0]} refused: {why}", flush=True)
         self._json({"ok": False, "error": "forbidden"}, 403)
+
+    def _agent_file(self, path):
+        try:
+            with open(AGENT_FILES[path], "rb") as f:
+                body = f.read()
+            if path.endswith(".sh"):
+                with open(AGENT_FILES["/agent/labhud-agent.py"], "rb") as f:
+                    body = body.replace(b"@AGENT_SHA256@", hashlib.sha256(f.read()).hexdigest().encode())
+        except OSError:
+            return self._json({"error": "not found"}, 404)
+        self._headers(200, "text/plain; charset=utf-8", len(body), "no-cache")
+        self.wfile.write(body)
 
     def _static(self, path):
         if path == "/":

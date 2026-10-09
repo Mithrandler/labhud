@@ -8,6 +8,7 @@ RUN apk add --no-cache iputils libcap \
 WORKDIR /app
 COPY config.py envfiles.py events.py init.py mqtt.py notify.py onboard.py server.py setupmode.py store.py ./
 COPY sources ./sources
+COPY agents/labhud-agent.py agents/install.sh ./agents/
 COPY static ./static
 COPY demo ./demo
 # The app may also be mounted read-only over /app; without this Python complains it cannot write __pycache__.

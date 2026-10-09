@@ -4,7 +4,8 @@
 Standard library only. Run it on the machine whose sensors you want, or that should run the
 actions (a Proxmox host, for example).
 
-    GET  /                  {cpu_temp, gpu_count, gpu<N>_util, gpu<N>_mem, gpu<N>_temp, ...}
+    GET  /                  {cpu, mem, mem_used_of, disk, disk_used_of, load1, uptime, cpu_temp,
+                             gpu_count, gpu<N>_util, gpu<N>_mem, gpu<N>_temp, ...}
     POST /action/<name>     runs the command configured for <name>; answers {ok, action, error?}
 
 Point labhud at it with LABHUD_JSON_<NAME>_URL (sensors; then `sensors = "<name>"` on a host
@@ -166,10 +167,58 @@ def gpus():
 _cache = {"t": 0.0, "data": None}
 
 
+_last_cpu = []
+
+
+def cpu_percent():
+    """Busy share of all CPUs since the previous call (the first call: since boot)."""
+    try:
+        with open("/proc/stat") as f:
+            v = [int(x) for x in f.readline().split()[1:]]
+    except (OSError, ValueError):
+        return None
+    idle, total = v[3] + (v[4] if len(v) > 4 else 0), sum(v[:8])
+    before = _last_cpu[:] or [0, 0]
+    _last_cpu[:] = [idle, total]
+    d_total, d_idle = total - before[1], idle - before[0]
+    return round(100.0 * (d_total - d_idle) / d_total, 1) if d_total > 0 else None
+
+
+def system():
+    """cpu, mem_used_of [used, total], disk_used_of [used, total] of /, load1, uptime (seconds)."""
+    out = {"cpu": cpu_percent()}
+    try:
+        mem = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, _, v = line.partition(":")
+                mem[k] = int(v.split()[0]) * 1024
+        total = mem["MemTotal"]
+        used = total - mem.get("MemAvailable", mem.get("MemFree", 0))
+        out["mem_used_of"] = [used, total]
+        out["mem"] = round(100.0 * used / total, 1) if total else None
+    except (OSError, KeyError, ValueError):
+        pass
+    try:
+        st = os.statvfs("/")
+        total, free = st.f_blocks * st.f_frsize, st.f_bavail * st.f_frsize
+        out["disk_used_of"] = [total - free, total]
+        out["disk"] = round(100.0 * (total - free) / total, 1) if total else None
+    except OSError:
+        pass
+    try:
+        out["load1"] = os.getloadavg()[0]
+        with open("/proc/uptime") as f:
+            out["uptime"] = int(float(f.read().split()[0]))
+    except (OSError, ValueError):
+        pass
+    return out
+
+
 def sensors():
     now = time.monotonic()
     if _cache["data"] is None or now - _cache["t"] > CACHE_S:
-        data = {"cpu_temp": cpu_temp()}
+        data = dict(system(), cpu_temp=cpu_temp())
         found = gpus()
         data["gpu_count"] = len(found)
         # flat keys, so a card metric can address one directly: "temp.pve.gpu0_temp"

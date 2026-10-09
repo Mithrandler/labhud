@@ -66,12 +66,23 @@ def _make(name):
     return fetch
 
 
-for _var, _value in sorted(os.environ.items()):
-    _m = _VAR.match(_var)
-    if not _m or not _value.strip():
-        continue
-    _name = _m.group(1).lower()
-    KEYS[_name] = _value.strip().encode()
-    _STALE[_name] = int(env(f"PUSH_{_m.group(1)}_STALE", "60"))
-    # Checked every 2 s, never backed off: a push can arrive at any moment.
-    source(_name, every=2, env=(f"PUSH_{_m.group(1)}_KEY",), backoff=False)(_make(_name))
+def reload():
+    """Registers every LABHUD_PUSH_<NAME>_KEY in the environment; returns the names that are new.
+    Run at import, and again when config.toml changes (`init.py agent` adds a key to .env first)."""
+    new = []
+    for var, value in sorted(os.environ.items()):
+        m = _VAR.match(var)
+        if not m or not value.strip():
+            continue
+        name = m.group(1).lower()
+        if name not in KEYS:
+            new.append(name)
+        KEYS[name] = value.strip().encode()
+        _STALE[name] = int(env(f"PUSH_{m.group(1)}_STALE", "60"))
+        # Checked every 2 s, never backed off: a push can arrive at any moment.
+        source(name, every=2, env=(f"PUSH_{m.group(1)}_KEY",), backoff=False,
+               title=f"{name} (pushed)", about="An agent that pushes its data to labhud.")(_make(name))
+    return new
+
+
+reload()

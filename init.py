@@ -2,6 +2,7 @@
 """labhud init: a first config.toml and .env from your Proxmox, in a few questions.
 
     python3 init.py [folder]          # writes <folder>/config.toml and <folder>/.env
+    python3 init.py agent <name> [URL]  # a key and a card for a machine running labhud-agent
     docker run --rm -it -v "$PWD:/out" ghcr.io/mithrandler/labhud:latest python3 /app/init.py /out
 
 It asks for a Proxmox VE address and an API token, checks that they work and that the token can
@@ -22,7 +23,7 @@ import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config  # noqa: E402
-from onboard import build_config, build_env, discover, fingerprint, geocode, write  # noqa: E402,F401
+from onboard import add_agent, build_config, build_env, discover, fingerprint, geocode, write  # noqa: E402,F401
 
 
 def ask(question, default="", secret=False, optional=False):
@@ -33,7 +34,37 @@ def ask(question, default="", secret=False, optional=False):
             return answer or default
 
 
+def agent(args):
+    """init.py agent <name> [labhud URL]: a key and a card for a machine running labhud-agent,
+    and the line that installs it there."""
+    import envfiles
+    if not args:
+        sys.exit("usage: python3 init.py agent <name> [http://labhud-host:8095]")
+    name = args[0]
+    cfg = config.config_path()
+    env_path = envfiles.dotenv_path()
+    try:
+        key = add_agent(name, cfg, env_path)
+    except (ValueError, OSError) as e:
+        sys.exit(f"not added: {e}")
+    url = args[1] if len(args) > 1 else ""
+    if not url:
+        hosts = [h for h in os.environ.get("LABHUD_HOSTS", "").split(",") if h.strip()
+                 and not h.startswith(("localhost", "127."))]
+        scheme = "https" if os.environ.get("LABHUD_TLS_CERT") else "http"
+        url = f"{scheme}://{hosts[0].strip()}" if hosts else "http://<labhud-host>:8095"
+    url = url.rstrip("/")
+    print(f"Added {name}: its key is in {env_path}, its card in {cfg}; labhud picks both up in a few seconds.\n")
+    print("On that machine (Linux with systemd and python3 3.11+), run:\n")
+    print(f"  curl -fsSL {url}/agent/install.sh | sudo sh -s -- {name} {url}\n")
+    print("and paste this key when it asks (it is shown only now):\n")
+    print(f"  {key}\n")
+    print(f"The card stays empty until the first push; /status lists {name} under the setup checklist.")
+
+
 def main():
+    if sys.argv[1:2] == ["agent"]:
+        return agent(sys.argv[2:])
     if sys.argv[1:2] == ["fingerprint"]:
         if len(sys.argv) < 3:
             sys.exit("usage: python3 init.py fingerprint https://host:port [...]")

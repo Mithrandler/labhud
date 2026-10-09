@@ -88,6 +88,32 @@ an object with flat keys `gpu0_util`, `gpu0_mem`, `gpu0_temp`, `gpu1_util` and s
 exactly what [`agents/labhud-agent.py`](../agents/labhud-agent.py) serves at `/`, together with
 `cpu_temp`.
 
+## Adding a machine in one line
+
+For any Linux machine with systemd and Python 3.11+ (a NAS, a VPS, a Raspberry Pi), on labhud's
+side:
+
+```sh
+docker exec labhud python3 /app/init.py agent nas      # or python3 init.py agent nas
+```
+
+This makes a key, adds `LABHUD_PUSH_NAS_KEY` to the `.env` next to `config.toml` (the setup
+page's folder) and a NAS card with CPU, RAM, disk and temperature to `config.toml`. labhud picks
+both up a few seconds later, with no restart. It prints the line to run on the machine:
+
+```sh
+curl -fsSL http://192.0.2.50:8095/agent/install.sh | sudo sh -s -- nas http://192.0.2.50:8095
+```
+
+The installer, served by labhud, downloads the agent from it, checks the agent's SHA-256, asks
+for the key (so it is not in the shell history), and installs a systemd service that pushes every
+10 s, listens on no port and runs as a throwaway user on a read-only system. The card is live
+within seconds; `/status` shows the agent under the setup checklist until its first push.
+
+Over plain HTTP the script can be changed in transit: run it on a network you trust, or serve
+labhud over HTTPS. Needs `.env` and `config.toml` writable by labhud's user (the setup page's
+`/config` folder); with a read-only `config.toml`, copy the lines it would add by hand.
+
 ## Pushing instead of being polled
 
 labhud can also **receive** a source: the agent sends its JSON whenever it likes, and the host it

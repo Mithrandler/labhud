@@ -27,6 +27,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 - `/status` starts with a setup checklist: sources set up and answering, Proxmox/PBS keys
   read-only, certificates checked, `LABHUD_HOSTS` naming the display, actions signed, keys in
   files, history kept, pushing agents heard from. Also in `/api/status` as `checklist`.
+- **A machine in one line:** `init.py agent <name>` adds a push key and a card while labhud runs
+  (no restart: new `LABHUD_PUSH_*_KEY` lines in `.env` are read when the config changes) and
+  prints `curl -fsSL http://labhud:8095/agent/install.sh | sudo sh -s -- <name> <url>`. labhud
+  serves the installer and the agent at `/agent/`; the installer checks the agent's checksum,
+  asks for the key, and sets up a sandboxed systemd service that pushes and opens no port.
+- labhud-agent pushes CPU, RAM, disk, load and uptime too (`cpu`, `mem`, `mem_used_of`, `disk`,
+  `disk_used_of`, `load1`, `uptime`), so a machine without Proxmox gets a full card.
 
 ## [0.1.5] - 2026-10-08
 
