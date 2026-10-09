@@ -16,6 +16,9 @@ title = "GENERAL"
   [[page.group]]
   id = "pve"            # unique across all pages
   title = "Proxmox"
+  # guests = "pve"        # optional: labhud adds a card for every guest of node "pve" that has
+                          # none elsewhere, and removes it when the guest is deleted
+  # guests_tag = "labhud" # optional, with guests: only the guests with this Proxmox tag
 
     [[page.group.card]]
     id = "host-pve"                 # unique across all pages

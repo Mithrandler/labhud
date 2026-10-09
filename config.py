@@ -35,7 +35,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$")
 CHECKS = ("ping", "tcp", "proxmox")
 
 PAGE_KEYS = {"id", "title", "group", "games"}
-GROUP_KEYS = {"id", "title", "card", "keep_together"}
+GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
              "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url"}
 METRIC_KEYS = {"key", "label", "format"}
@@ -305,6 +305,14 @@ def _validate(raw, path):
                     ck.err(gw, "duplicate group id (group ids are unique across all pages)")
                 group_ids.add(gid)
             group = {"id": gid, "title": ck.need(gw, g, "title", str, "a string")}
+            # guests = "<node>": labhud adds a card for every guest of that node that has none
+            # elsewhere, as guests come and go; guests_tag keeps only those with that Proxmox tag
+            if (node := ck.opt(gw, g, "guests", str, "a Proxmox node name")) is not None:
+                group["guests"] = node
+            if (tag := ck.opt(gw, g, "guests_tag", str, "a Proxmox tag")) is not None:
+                if "guests" not in g:
+                    ck.err(gw, "guests_tag has no effect without guests")
+                group["guests_tag"] = tag.lower()
             # keep_together: no effect since 0.1.3, when no group splits across columns any more;
             # still accepted so older configs load unchanged
             ck.opt(gw, g, "keep_together", bool, "true or false")

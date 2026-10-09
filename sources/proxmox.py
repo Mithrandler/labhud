@@ -93,7 +93,10 @@ def _node(node, url, header):
             "mem": percent(r.get("mem"), r.get("maxmem")),
             "mem_bytes": r.get("mem"), "mem_max": r.get("maxmem"),
             "disk": r.get("maxdisk"), "uptime": r.get("uptime"),
+            "tags": sorted(t.lower() for t in re.split(r"[;, ]", r.get("tags") or "") if t),
         }
+        if r.get("template"):
+            guests[str(vmid)]["template"] = True
         if running and r.get("type") == "lxc":
             guests[str(vmid)]["disk_used"] = r.get("disk")
             guests[str(vmid)]["disk_total"] = r.get("maxdisk")

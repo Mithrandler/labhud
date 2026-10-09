@@ -32,6 +32,10 @@ still change in a minor version; such changes are listed under **Changed** with 
   prints `curl -fsSL http://labhud:8095/agent/install.sh | sudo sh -s -- <name> <url>`. labhud
   serves the installer and the agent at `/agent/`; the installer checks the agent's checksum,
   asks for the key, and sets up a sandboxed systemd service that pushes and opens no port.
+- **Guest cards that follow Proxmox:** `guests = "<node>"` on a group adds a card for every
+  guest of that node that has none, and drops it when the guest is deleted (a node that does not
+  answer keeps its cards); `guests_tag = "labhud"` takes only tagged guests. `/status` lists
+  guests with no card (with the TOML to paste) and cards whose guest is gone.
 - **Docker** source (`LABHUD_DOCKER_URL`, one engine or several, through a docker-socket-proxy):
   running, unhealthy, restarting and crashed containers, problems first. Containers can list
   themselves with labels (`labhud.enable`, `labhud.name`, `labhud.group`, `labhud.url`), so a new

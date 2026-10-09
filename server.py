@@ -82,9 +82,49 @@ CONFIG_PATH = config.config_path()
 CONFIG_ERRORS = []
 
 
+def auto_guests(topology, px, previous=None):
+    """`topology` with a card added to every `guests = "<node>"` group for each guest of that
+    node (with `guests_tag`: only those tagged) that has no card anywhere. Recomputed from the
+    file's topology on every change, so a deleted guest's card goes away by itself."""
+    groups = [g for page in topology["pages"] for g in page["groups"] if g.get("guests")]
+    if not groups:
+        return topology
+    have = {(c["check"][1], int(c["check"][2])) for cs in topology["cards"].values() for c in cs
+            if (c.get("check") or [None])[0] == "proxmox"}
+    ids = {c["id"] for cs in topology["cards"].values() for c in cs}
+    cards = {gid: list(cs) for gid, cs in topology["cards"].items()}
+    for g in groups:
+        node, tag = g["guests"], g.get("guests_tag")
+        answer = (px or {}).get(node) or {}
+        if "guests" not in answer:  # the node did not answer: keep the cards it had
+            for c in ((previous or {}).get("cards") or {}).get(g["id"], []):
+                if c.get("auto") and c["id"] not in ids:
+                    cards[g["id"]].append(c)
+                    ids.add(c["id"])
+            continue
+        guests = answer["guests"]
+        for vmid, info in sorted(guests.items(), key=lambda kv: int(kv[0])):
+            if info.get("template") or (node, int(vmid)) in have or (tag and tag not in (info.get("tags") or [])):
+                continue
+            cid = re.sub(r"[^A-Za-z0-9_-]", "-", f"auto-{node}-{vmid}")
+            if cid in ids:
+                continue
+            cards[g["id"]].append({"id": cid, "name": info.get("name") or str(vmid),
+                                   "check": ["proxmox", node, int(vmid)], "auto": True})
+            ids.add(cid)
+            have.add((node, int(vmid)))
+    return dict(topology, cards=cards)
+
+
+def _auto_ids(topology):
+    return sorted(c["id"] for cs in topology["cards"].values() for c in cs if c.get("auto"))
+
+
 def _apply(topology):
     """Everything derived from config.toml, computed again when the file changes."""
-    global TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST
+    global TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST, FILE_TOPOLOGY
+    FILE_TOPOLOGY = topology
+    topology = auto_guests(topology, (globals().get("_data") or {}).get("proxmox"), globals().get("TOPOLOGY"))
     # Only the sources whose settings are present run; the others are reported as not configured.
     active, inactive = (demo.sources(), {}) if DEMO else sources.load(topology)
     # name -> interval in seconds. The paces follow how fast the measured thing changes, not "as
@@ -449,6 +489,10 @@ def loop():
             if signatures.get(name) != sig:
                 signatures[name] = sig
                 _publish({name: result})
+                if name == "proxmox" and _auto_ids(auto_guests(FILE_TOPOLOGY, result, TOPOLOGY)) != _auto_ids(TOPOLOGY):
+                    _apply(FILE_TOPOLOGY)  # a guest came or went in a `guests = "<node>"` group
+                    print(f"guest cards now: {', '.join(_auto_ids(TOPOLOGY)) or 'none'}", flush=True)
+                    _send("config", {"reload": True})
                 if name in ("status", "proxmox"):
                     mqtt.update(card_states())
         finally:
@@ -615,6 +659,30 @@ def checklist(result):
     return out
 
 
+def adoption():
+    """Proxmox guests with no card, and cards whose guest is gone, for /status. Only nodes that
+    answered count: a node that is down says nothing about its guests."""
+    with _lock:
+        px = dict(_data.get("proxmox") or {})
+    have = {}
+    for cs in TOPOLOGY["cards"].values():
+        for c in cs:
+            if (c.get("check") or [None])[0] == "proxmox":
+                have[(c["check"][1], int(c["check"][2]))] = c["id"]
+    new, gone = [], []
+    for node, answer in sorted(px.items()):
+        guests = answer.get("guests") if isinstance(answer, dict) else None
+        if guests is None:
+            continue
+        for vmid, info in sorted(guests.items(), key=lambda kv: int(kv[0])):
+            if not info.get("template") and (node, int(vmid)) not in have:
+                new.append({"node": node, "vmid": int(vmid), "name": info.get("name") or vmid,
+                            "type": info.get("type"), "tags": info.get("tags") or []})
+        gone += [{"card": cid, "node": n, "vmid": v} for (n, v), cid in sorted(have.items())
+                 if n == node and str(v) not in guests]
+    return {"new": new, "gone": gone}
+
+
 def health():
     """What /status shows: how each source is doing, never its data or its settings' values."""
     now = int(time.time())
@@ -649,6 +717,7 @@ def health():
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
         "checklist": [] if DEMO else checklist(result),
+        "adoption": adoption(),
         "sources": result,
     }
 

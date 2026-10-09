@@ -43,6 +43,10 @@
   #checklist .no .mark { color: var(--warn); }
   #checklist .na { color: var(--muted); }
   #checklist .how { color: var(--muted); font-size: 12px; }
+  #adoption { max-width: 900px; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  #adoption h2 { font-size: 13px; color: var(--sub); margin-bottom: 4px; }
+  #adoption p { color: var(--muted); font-size: 12px; margin: 4px 0; }
+  #adoption pre { color: var(--sub); font-size: 12px; white-space: pre-wrap; background: #000; border-radius: 6px; padding: 6px 8px; user-select: all; }
   #config { color: #ffd9e2; background: #3a0d1c; border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; max-width: 900px; white-space: pre-line; }
 </style>
 </head>
@@ -52,6 +56,7 @@
   <p id="error" hidden></p>
   <p id="config" hidden></p>
   <div id="checklist" hidden><h2>Setup</h2><ul></ul></div>
+  <div id="adoption" hidden><h2>Proxmox guests</h2><div></div></div>
   <div id="sources"></div>
 <script>
 "use strict";
@@ -124,6 +129,23 @@ function render(d) {
     const li = ul.appendChild(document.createElement("li"));
     li.className = c.ok === true ? "yes" : c.ok === false ? "no" : "na";
     li.append(span("mark", c.ok === true ? "✓" : c.ok === false ? "!" : "–"), span("item", c.item), span("how", c.how));
+  }
+
+  const ad = document.getElementById("adoption");
+  const a = d.adoption || { new: [], gone: [] };
+  ad.hidden = !a.new.length && !a.gone.length;
+  const body = ad.querySelector("div");
+  body.textContent = "";
+  if (a.new.length) {
+    const p = body.appendChild(document.createElement("p"));
+    p.textContent = a.new.length + " guest(s) with no card. Paste into a group in config.toml, or give a group "
+      + "guests = \"<node>\" to add them automatically (guests_tag = \"labhud\" for tagged ones only):";
+    const pre = body.appendChild(document.createElement("pre"));
+    pre.textContent = a.new.map((g) => `    [[page.group.card]]\n    id = "vm-${g.node}-${g.vmid}"\n    name = ${JSON.stringify(String(g.name))}\n    proxmox = "${g.node}/${g.vmid}"\n`).join("\n");
+  }
+  if (a.gone.length) {
+    const p = body.appendChild(document.createElement("p"));
+    p.textContent = "Cards whose guest no longer exists: " + a.gone.map((g) => `${g.card} (${g.node}/${g.vmid})`).join(", ");
   }
 
   const list = document.getElementById("sources");
