@@ -4,8 +4,8 @@
 #   LABHUD_BESZEL_USER   a Beszel user (an e-mail address); a read-only user is enough
 #   LABHUD_BESZEL_PASS
 #
-# Data: beszel.{total, up, down, systems}; `systems` is a card list, down first
-# (list = "beszel.systems"), and each system as beszel.<name>.{up, cpu, mem, disk} for metrics
+# Data: beszel.{total, up, down, systems}; `systems` is a card list, down first, each with its
+# fullest of CPU, RAM and disk (list = "beszel.systems"), and each system as beszel.<name>.{up, cpu, mem, disk} for metrics
 # (the name lowercase, anything but letters and digits as "_").
 
 import json
@@ -46,9 +46,13 @@ def summarize(items):
         out["up" if up else "down"] += 0 if paused else 1
         out[key(s.get("name"))] = {"up": up, "cpu": info.get("cpu"), "mem": info.get("mp"), "disk": info.get("dp")}
         if up:
-            value = " · ".join(f"{label} {round(info[k])}%" for label, k in (("CPU", "cpu"), ("RAM", "mp"), ("disk", "dp"))
-                               if isinstance(info.get(k), (int, float)))
-            bad = any((info.get(k) or 0) >= 92 for k in ("cpu", "mp", "dp"))
+            # only the fullest of the three: a wall's column has no room for all of them, and the
+            # one closest to full is the one that matters (all three are in beszel.<name>)
+            known = [(info[k], label) for label, k in (("CPU", "cpu"), ("RAM", "mp"), ("disk", "dp"))
+                     if isinstance(info.get(k), (int, float))]
+            top = max(known) if known else None
+            value = f"{top[1]} {round(top[0])}%" if top else "up"
+            bad = bool(top) and top[0] >= 92
         else:
             value, bad = (s.get("status") or "?"), not paused
         rows.append({"name": s.get("name") or "?", "value": value, "bad": bad})

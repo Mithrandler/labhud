@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- Beszel's list shows each system's fullest of CPU, RAM and disk ("disk 79%") instead of all
+  three, which left no room for the name on a wall's column.
+
 ## [0.1.6] - 2026-10-09
 
 ### Changed

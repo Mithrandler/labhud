@@ -63,7 +63,7 @@ class Beszel(Base):
             got = beszel.beszel()
         self.assertEqual((got["total"], got["up"], got["down"]), (3, 1, 1))
         self.assertEqual(got["nas"], {"up": True, "cpu": 12.4, "mem": 95.1, "disk": 40})
-        self.assertEqual(got["systems"][0], {"name": "NAS", "value": "CPU 12% · RAM 95% · disk 40%", "bad": True})
+        self.assertEqual(got["systems"][0], {"name": "NAS", "value": "RAM 95%", "bad": True})
         self.assertEqual(got["systems"][-1], {"name": "old", "value": "paused", "bad": False})
 
 
