@@ -39,6 +39,14 @@ still change in a minor version; such changes are listed under **Changed** with 
   guest of that node that has none, and drops it when the guest is deleted (a node that does not
   answer keeps its cards); `guests_tag = "labhud"` takes only tagged guests. `/status` lists
   guests with no card (with the TOML to paste) and cards whose guest is gone.
+- **Thresholds with hysteresis.** On the display, a number keeps its warn/crit colour until it is
+  5 points (3 °C) under the mark, so it no longer blinks between colours. On the server
+  (`thresholds.py`), a number past its critical mark for `LABHUD_ALERT_HOLD` seconds (300) is an
+  event and a notification ("PVE Disk 93%"), and "back to 85%" when it clears; maintenance
+  silences it.
+- **Upkeep:** Proxmox VE snapshots older than 14 days (`backups.snapshots`), "full in N days"
+  on storages filling within 60 days, and on PBS: datastores with PBS's own full-date estimate,
+  failed verify jobs and days since the last garbage collection.
 - **Docker** source (`LABHUD_DOCKER_URL`, one engine or several, through a docker-socket-proxy):
   running, unhealthy, restarting and crashed containers, problems first. Containers can list
   themselves with labels (`labhud.enable`, `labhud.name`, `labhud.group`, `labhud.url`), so a new

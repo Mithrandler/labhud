@@ -320,7 +320,12 @@ class SmallSources(SourceTest):
     def test_pbs(self):
         self.env(PBS_URL="https://backup.example.test:8007", PBS_TOKEN_ID="audit@pbs!wall", PBS_TOKEN_SECRET="x")
         http = self.serve(pbs, fixture("pbs"))
-        self.assertEqual(pbs.pbs(), {"used_percent": 25.0, "used": 250, "total": 1000, "failed": 2})
+        with mock.patch.object(pbs.time, "time", lambda: 2000000000):
+            got = pbs.pbs()
+        self.assertEqual(got, {"used_percent": 25.0, "used": 250, "total": 1000, "failed": 2,
+                               "verify_failed": 1, "gc_age_days": 3, "full_days": 20,
+                               "datastores": [{"name": "main", "value": "25% · full in 20d", "bad": True},
+                                              {"name": "spare", "value": "?", "bad": False}]})
         self.assertEqual(http.calls[0]["headers"], {"Authorization": "PBSAPIToken=audit@pbs!wall:x"})
 
     def test_seerr(self):

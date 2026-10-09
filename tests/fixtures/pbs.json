@@ -4,7 +4,8 @@
    {
     "store": "main",
     "used": 250,
-    "total": 1000
+    "total": 1000,
+    "estimated-full-date": 2001728000
    },
    {
     "store": "spare",
@@ -22,6 +23,27 @@
    {
     "upid": "y",
     "status": "error"
+   }
+  ]
+ },
+ "/nodes/localhost/tasks?since": {
+  "data": [
+   {
+    "upid": "v",
+    "worker_type": "verificationjob",
+    "status": "verification failed",
+    "endtime": 1999990000
+   },
+   {
+    "upid": "g",
+    "worker_type": "garbage_collection",
+    "status": "OK",
+    "endtime": 1999740800
+   },
+   {
+    "upid": "r",
+    "worker_type": "verificationjob",
+    "status": "running"
    }
   ]
  }

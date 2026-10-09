@@ -31,6 +31,7 @@ import mqtt
 import notify
 import sources
 import store
+import thresholds
 from sources import push
 
 PORT = int(os.environ.get("LABHUD_PORT", "8095"))
@@ -174,6 +175,8 @@ EVENTS = events.Log(demo.events() if DEMO else store.load("events", []))
 # added to it in maintenance_now(); both are kept out of the red, the notifications and the focus.
 MAINT = {} if DEMO else {k: v for k, v in store.load("maintenance", {}).items() if v > time.time()}
 _maint_lock = threading.Lock()
+# Numbers past their critical mark for a while: events and notifications (thresholds.py)
+WATCH = thresholds.Watch()
 
 
 # Sparklines: one value a minute for every number in TOPOLOGY["trends"], the last 6 hours, in
@@ -486,6 +489,11 @@ def loop():
                 before = _data.get(name)
                 _data[name] = result
             _log(events.changes(name, before, result, TOPOLOGY))
+            if not DEMO and "unavailable" not in result:
+                past = WATCH.check([c for cs in TOPOLOGY["cards"].values() for c in cs],
+                                   lambda p: thresholds.lookup(_data, p), name, maintenance_now())
+                if past:
+                    _log(past)
             if signatures.get(name) != sig:
                 signatures[name] = sig
                 _publish({name: result})

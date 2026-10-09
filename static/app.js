@@ -104,8 +104,28 @@ function bad_pressure(g) {
   return (g.pressure || 0) > 10;
 }
 
-/** Colour thresholds: only for the quantities where "high" really means "bad". */
+/** Colour thresholds with hysteresis: a number past a mark keeps its colour until it is clearly
+    back under it (5 points for percentages, 3 °C), so a disk hovering at 80% does not blink
+    between two colours on every poll. thresholds.py does the same on the server for notifications. */
+const LAST_SEV = {};
+const SEV_RANK = { "": 0, warn: 1, crit: 2 };
 function severity(path, fmt, v) {
+  const now = raw_severity(path, fmt, v);
+  const was = LAST_SEV[path] || "";
+  let out = now;
+  if (SEV_RANK[now] < SEV_RANK[was] && ["percent", "used_of", "celsius"].includes(fmt)) {
+    const margin = fmt === "celsius" ? 3 : 5;
+    const bumped = fmt === "used_of" ? (Array.isArray(v) && v[1] ? [(v[0] || 0) + margin / 100 * v[1], v[1]] : v)
+      : typeof v === "number" ? v + margin : v;
+    const near = raw_severity(path, fmt, bumped);
+    if (SEV_RANK[near] > SEV_RANK[now]) out = SEV_RANK[near] >= SEV_RANK[was] ? was : near;
+  }
+  LAST_SEV[path] = out;
+  return out;
+}
+
+/** Colour thresholds: only for the quantities where "high" really means "bad". */
+function raw_severity(path, fmt, v) {
   if (fmt === "used_of" && Array.isArray(v) && v[1] && /\.(mem_used_of|disk_used_of)$/.test(path)) {
     const p = 100 * (v[0] || 0) / v[1];
     return p >= 92 ? "crit" : p >= 80 ? "warn" : "";

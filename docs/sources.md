@@ -76,6 +76,23 @@ metrics = [{ key = "pbs.used_percent", label = "Used", format = "percent" },
            { key = "pbs.failed", label = "Failed 24h", format = "count" }]
 ```
 
+### Upkeep: snapshots, storage running out, PBS verify and GC
+
+- `backups.snapshots` lists every Proxmox VE snapshot older than 14 days (red past 30;
+  `backups.old_snapshots` counts those): `list = "backups.snapshots"`.
+- Each storage row in `proxmox.<node>.storage` says `full in Nd` when, at the pace of the last
+  days, it fills within 60 days (red under 14). labhud samples once an hour and needs 12 hours
+  before it estimates; a restart starts over.
+- PBS: `pbs.datastores` (one row per datastore, with PBS's own "full in" estimate),
+  `pbs.full_days`, `pbs.verify_failed` (failed verify jobs in 7 days) and `pbs.gc_age_days`.
+
+```toml
+metrics = [{ key = "pbs.used_percent", label = "Used", format = "percent" },
+           { key = "pbs.verify_failed", label = "Verify failed", format = "count" },
+           { key = "pbs.gc_age_days", label = "GC days ago", format = "count" }]
+list = "pbs.datastores"
+```
+
 ## OPNsense
 
 *System > Access > Users*: a user of its own, with exactly two privileges,

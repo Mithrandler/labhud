@@ -73,6 +73,30 @@ def _vm_disk(url, header, node, vmid):
     return val
 
 
+# Storage growth, for "full in N days": one sample an hour per storage, the last 7 days, kept in
+# memory (a restart starts over; the estimate appears once 12 hours are known).
+_GROWTH = {}
+GROWTH_STEP = 3600
+GROWTH_KEEP = 7 * 86400
+GROWTH_MIN = 12 * 3600
+
+
+def full_in(key, used, total, now=None):
+    """Days until the storage is full at the pace of the samples kept, or None (not growing, or
+    not enough known yet)."""
+    now = time.time() if now is None else now
+    samples = _GROWTH.setdefault(key, [])
+    if not samples or now - samples[-1][0] >= GROWTH_STEP:
+        samples.append((now, used))
+    while samples and now - samples[0][0] > GROWTH_KEEP:
+        samples.pop(0)
+    t0, u0 = samples[0]
+    if now - t0 < GROWTH_MIN or used <= u0:
+        return None
+    per_day = (used - u0) / ((now - t0) / 86400)
+    return int((total - used) / per_day)
+
+
 def _node(node, url, header):
     status = request(f"{url}/api2/json/nodes/{node}/status", header, timeout=10).get("data") or {}
     resources = request(f"{url}/api2/json/cluster/resources?type=vm", header, timeout=10).get("data") or []
@@ -129,10 +153,13 @@ def _node(node, url, header):
         for st in request(f"{url}/api2/json/nodes/{node}/storage", header, timeout=10).get("data") or []:
             if st.get("active") and st.get("total") and st.get("type") != "pbs":
                 p = round(100 * (st.get("used") or 0) / st["total"])
+                days = full_in((node, st["storage"]), st.get("used") or 0, st["total"])
+                soon = days is not None and days < 60
                 storage.append({"name": st["storage"], "type": st.get("type"),
-                                "used": st.get("used"), "total": st["total"],
-                                "value": f"{fmt_bytes(st.get('used'))}/{fmt_bytes(st['total'])} {p}%",
-                                "bad": p >= 90})
+                                "used": st.get("used"), "total": st["total"], "full_days": days,
+                                "value": f"{fmt_bytes(st.get('used'))}/{fmt_bytes(st['total'])} {p}%"
+                                + (f" · full in {days}d" if soon else ""),
+                                "bad": p >= 90 or (days is not None and days < 14)})
     except (OSError, ValueError, KeyError):
         pass
 
@@ -212,6 +239,34 @@ def _node_backups(node, url, header):
     return {vmid: dict(per.get(vmid, {}), name=name, excluded=vmid in excluded) for vmid, name in guests.items()}
 
 
+# Snapshots are meant to be short-lived; one forgotten for weeks keeps growing and pins old data.
+SNAPSHOT_OLD_DAYS = 14
+
+
+def _node_snapshots(node, url, header, now):
+    """[(guest name, snapshot name, age in days)] for every snapshot older than SNAPSHOT_OLD_DAYS."""
+    out = []
+    resources = request(f"{url}/api2/json/cluster/resources?type=vm", header, timeout=10).get("data") or []
+    for r in resources:
+        if r.get("node") != node or r.get("template"):
+            continue
+        kind = "lxc" if r.get("type") == "lxc" else "qemu"
+        try:
+            snaps = request(f"{url}/api2/json/nodes/{node}/{kind}/{r['vmid']}/snapshot", header, timeout=8).get("data") or []
+        except (OSError, ValueError):
+            continue
+        for sn in snaps:
+            if sn.get("name") == "current" or not sn.get("snaptime"):
+                continue
+            days = int((now - sn["snaptime"]) // 86400)
+            if days >= SNAPSHOT_OLD_DAYS:
+                out.append((r.get("name") or str(r["vmid"]), sn["name"], days))
+    return out
+
+
+_snapshot_cache = {}
+
+
 @source("backups", every=1800, env=("PROXMOX_NODES",),
          title="Proxmox backups", about="Backup jobs and their last runs, from the same Proxmox token.")
 def backups():
@@ -243,5 +298,17 @@ def backups():
                              "bad": not g["ok"] or age > 8 * 86400, "order": age})
     # the oldest (and the failed) first; the excluded ones last
     rows.sort(key=lambda r: (not r.get("bad"), -r["order"]))
+    snaps = []
+    for node, url, header in _nodes():
+        try:
+            if header:
+                _snapshot_cache[node] = _node_snapshots(node, url, header, now)
+        except (OSError, ValueError, RuntimeError, KeyError):
+            pass
+        snaps += _snapshot_cache.get(node, [])
+    snaps.sort(key=lambda x: -x[2])
     return {"nodes": out, "display": [{k: v for k, v in r.items() if k != "order"} for r in rows],
-            "stale": sum(1 for r in rows if r.get("bad"))}
+            "stale": sum(1 for r in rows if r.get("bad")),
+            "old_snapshots": sum(1 for x in snaps if x[2] >= 30),
+            "snapshots": [{"name": f"{g} · {n}", "value": f"{d}d", "bad": d >= 30} for g, n, d in snaps]
+            or [{"name": f"no snapshot older than {SNAPSHOT_OLD_DAYS} days", "value": "—"}]}
