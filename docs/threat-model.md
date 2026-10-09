@@ -48,6 +48,20 @@ Each line: what happens, what stops it today, and what is left.
 | `docker inspect` or `/proc/<pid>/environ` on labhud's host | `LABHUD_*_FILE`: keys read from files (Compose secrets) | keys set directly in `.env` are still in the environment |
 | **A machine in the middle on the LAN** (ARP spoofing, a rogue DNS answer) | `LABHUD_PINS` (the exact certificate) or `LABHUD_VERIFY=on`: the connection is dropped before the key is sent | **by default certificates are not checked**: it can pose as Proxmox or OPNsense and receive the key. The log and `/status` name every unchecked host |
 
+### The setup page
+
+Served only while there is no `config.toml`, and the only place where labhud receives keys over
+HTTP (`setupmode.py`).
+
+| attack | stopped by | left over |
+|---|---|---|
+| Someone on the network sets labhud up first, with their own sources | every call needs the setup code, printed only in labhud's log; 10 wrong codes lock it for a minute | whoever reads the log (the Docker host) can do it, as they could edit the files |
+| A web page in the same browser posts to the setup page | Origin must equal Host, the body must be JSON, the code goes in a header a page cannot guess | none known |
+| Keys read back from the setup page | it never returns a key: not from the environment, not one typed earlier (fields come back empty, "kept") | the config preview shows addresses |
+| Keys sniffed while typed | HTTPS on the port (`LABHUD_TLS_CERT`) | over plain HTTP the Proxmox secret crosses the network once: run setup from the host itself (`localhost`) or a trusted segment, or use `init.py` |
+| Making labhud ask an address of the attacker's choice ("Try") | the code | with the code, labhud can be made to request any URL once per try, like any monitoring tool |
+| The page reopened later | it is not served once `config.toml` exists; `LABHUD_SETUP=off` disables it entirely | deleting `config.toml` brings it back, with a new code |
+
 ### Forging data
 
 | attack | stopped by | left over |

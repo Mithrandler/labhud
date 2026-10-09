@@ -255,7 +255,19 @@ def load(path=None):
         raise ConfigError(path, ["file not found (copy config.example.toml to start)"]) from None
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(path, [f"not valid TOML: {e}"]) from None
+    return _validate(raw, path)
 
+
+def loads(text, path="config.toml"):
+    """load() for a text not yet written anywhere (the setup page checks what it will write)."""
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(path, [f"not valid TOML: {e}"]) from None
+    return _validate(raw, path)
+
+
+def _validate(raw, path):
     ck = _Checker()
     ck.unknown("top level", raw, TOP_KEYS)
     title = ck.opt("top level", raw, "title", str, "a string")

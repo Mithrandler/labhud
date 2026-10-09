@@ -20,7 +20,31 @@ On another port or address, add the name to `LABHUD_HOSTS`, for example
 
 ## 2. Describe your screen
 
-**The quick way, if you have Proxmox VE:** let labhud write a first config for you. It asks for
+**The easiest way: the setup page.** Start labhud on an empty folder; with no `config.toml` it
+serves a setup page instead of the display, and prints a link with a one-time code in its log:
+
+```sh
+mkdir labhud && sudo chown 10001 labhud   # the image runs as uid 10001 and writes here
+curl -fsSL https://raw.githubusercontent.com/Mithrandler/labhud/main/compose.example.yaml -o compose.yaml
+# in compose.yaml: the "setup page" variant of volumes (./labhud:/config) and LABHUD_CONFIG
+docker compose up -d && docker compose logs labhud
+```
+
+```
+SETUP MODE: there is no /config/config.toml yet.
+Open http://<this machine>:8095/#ABCD-EFGH
+```
+
+The page walks through Proxmox VE (address, a read-only token, which nodes and guests get a
+card; it says so if the token can do more than read, and offers to pin the certificate), every
+other source (a form each, with where to find the key, tried on the spot and kept only if it
+answers), the weather and the names the display uses. At the end it writes `config.toml` and
+`.env` (mode 600) into that folder and starts again as the display. Edit both files by hand
+afterwards for everything else. See [threat-model.md](threat-model.md#the-setup-page) for why
+only the code from the log opens it; over plain HTTP, open it from the host itself or a network
+you trust, since the keys you type cross it once.
+
+**In a terminal, if you have Proxmox VE:** let labhud write a first config for you. It asks for
 the Proxmox address and an API token (role `PVEAuditor`), checks that the token works and can
 only read, finds your nodes and guests, and writes `config.toml` and `.env` in the current folder
 (next to existing files as `.new`, never over them):

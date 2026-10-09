@@ -115,6 +115,13 @@ def _apply(topology):
         topology, active, inactive, every, targets, source_host)
 
 
+# First start, no config.toml yet: the setup page instead (setupmode.py), which writes the files and
+# starts this process again as the display.
+if __name__ == "__main__" and not DEMO and not os.path.exists(CONFIG_PATH):
+    import setupmode
+    if setupmode.enabled():
+        setupmode.run(PORT, CONFIG_PATH, (TLS_CERT, TLS_KEY))
+
 _apply(config.load(CONFIG_PATH))
 
 _data = {}
@@ -787,6 +794,8 @@ if __name__ == "__main__":
           + f"sources: {', '.join(sorted(ACTIVE)) or 'none'}; not configured: {', '.join(sorted(INACTIVE)) or 'none'}",
           flush=True)
     print(f"answering to: {', '.join(sorted(ALLOWED_HOSTS))} (LABHUD_HOSTS)", flush=True)
+    if envfiles.FROM_DOTENV:
+        print(f"read from {envfiles.DOTENV}: {len(envfiles.FROM_DOTENV)} setting(s)", flush=True)
     if envfiles.LOADED:
         print(f"read from files: {', '.join(envfiles.LOADED)}", flush=True)
     if not DEMO:

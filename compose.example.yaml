@@ -20,7 +20,12 @@ services:
     # replacing the file leaves the container on the old one. Mounting the folder avoids that:
     #   - ./labhud:/app/conf:ro   plus   LABHUD_CONFIG: /app/conf/config.toml
     volumes:
+      # Either your own config.toml (read-only):
       - ./config.toml:/app/config.toml:ro
+      # or, for the setup page (docs/install.md), a folder labhud writes config.toml and .env into
+      # (mkdir labhud && sudo chown 10001 labhud), plus LABHUD_CONFIG: /config/config.toml above
+      # and no env_file:
+      # - ./labhud:/config
       # Optional: history and maintenance kept across restarts (with LABHUD_DATA=/data in .env).
       # mkdir data && sudo chown 10001 data
       # - ./data:/data

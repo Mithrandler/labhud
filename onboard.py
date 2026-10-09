@@ -38,14 +38,17 @@ def get(url, header=None, timeout=10):
 
 def discover(url, token_id, secret):
     """{"version", "nodes": [name], "guests": {node: [(vmid, name, type)]}, "extra": [privilege],
-    "addresses": {node: ip, or "" for the node at `url`}}."""
+    "addresses": {node: ip, or "" for the node at `url`}, "running": [[node, vmid]]}."""
     header = {"Authorization": f"PVEAPIToken={token_id}={secret}"}
     version = get(f"{url}/api2/json/version", header).get("data", {}).get("version", "?")
     nodes = sorted(n["node"] for n in get(f"{url}/api2/json/nodes", header).get("data", []))
     guests = {n: [] for n in nodes}
+    running = []
     for r in get(f"{url}/api2/json/cluster/resources?type=vm", header).get("data", []):
         if r.get("node") in guests and not r.get("template"):
             guests[r["node"]].append((int(r["vmid"]), r.get("name") or str(r["vmid"]), r.get("type", "qemu")))
+            if r.get("status") == "running":
+                running.append([r["node"], int(r["vmid"])])
     for g in guests.values():
         g.sort()
     extra = beyond_reading(get(f"{url}/api2/json/access/permissions", header).get("data"))
@@ -57,7 +60,8 @@ def discover(url, token_id, secret):
                 addresses[r["name"]] = "" if r.get("local") else r.get("ip", "")
     except Exception:
         pass  # older versions or missing rights: the cards then ping the node names
-    return {"version": version, "nodes": nodes, "guests": guests, "extra": extra, "addresses": addresses}
+    return {"version": version, "nodes": nodes, "guests": guests, "extra": extra, "addresses": addresses,
+            "running": sorted(running)}
 
 
 def geocode(city):
@@ -80,9 +84,53 @@ def q(text):
     return json.dumps(text, ensure_ascii=False)
 
 
-def build_config(found, host, weather=None, title="LABHUD", include=None):
-    """The text of config.toml for what discover() found. `host` is what the node cards ping;
-    `include`, a set of (node, vmid), limits the guest cards to those (None: every guest)."""
+# A first card for each source set up on the setup page: (metrics, extra lines). Edit freely
+# afterwards; config.example.toml has every option.
+CARDS = {
+    "synology": ([("used_percent", "Used", "percent"), ("cpu", "CPU", "percent"), ("mem", "RAM", "percent")], {}),
+    "pbs": ([("used_percent", "Used", "percent"), ("failed", "Failed 24h", "count")], {}),
+    "opnsense": ([("cpu", "CPU", "percent"), ("mem", "RAM", "percent"), ("wan_dn", "WAN ↓", "rate"),
+                  ("wan_up", "WAN ↑", "rate")], {"panel": "network:traffic"}),
+    "qbt": ([("active", "Active", "count"), ("dl", "↓", "rate"), ("ul", "↑", "rate")],
+            {"torrents": "qbt.torrents", "panel": "media:torrents"}),
+    "sonarr": ([("series", "Series", "count"), ("wanted", "Missing", "count"), ("queued", "Queued", "count")],
+               {"panel": "media:sonarr"}),
+    "radarr": ([("movies", "Movies", "count"), ("wanted", "Missing", "count"), ("queued", "Queued", "count")],
+               {"panel": "media:radarr"}),
+    "jellyfin": ([("MovieCount", "Movies", "count"), ("SeriesCount", "Series", "count"),
+                  ("streams", "Watching", "count")], {"list": "jellyfin.now", "panel": "media:jellyfin"}),
+    "navidrome": ([("songs", "Songs", "count"), ("listening", "Listening", "count")], {"list": "navidrome.now"}),
+    "seerr": ([("pending", "Pending", "count"), ("total", "Requests", "count")], {"list": "seerr.waiting"}),
+    "prowlarr": ([("numberOfGrabs", "Grabs", "count"), ("numberOfFailGrabs", "Failed", "count")], {}),
+    "healthchecks": ([("up", "Up", "count"), ("down", "Down", "count")], {"list": "healthchecks.checks"}),
+    "uptimekuma": ([("up", "Up", "count"), ("down", "Down", "count")], {"list": "uptimekuma.monitors"}),
+    "scrutiny": ([("failed", "Failed", "count"), ("hottest", "Hottest", "celsius")], {"list": "scrutiny.disks"}),
+}
+
+
+def source_cards(names):
+    """config.toml lines: a SERVICES group with one card per source in `names` that has one."""
+    chosen = [n for n in names if n in CARDS]
+    if not chosen:
+        return []
+    out = ["", "  [[page.group]]", '  id = "services"', '  title = "SERVICES"']
+    for name in chosen:
+        metrics, extra = CARDS[name]
+        title = REGISTRY[name].title if name in REGISTRY else name
+        out += ["", "    [[page.group.card]]", f'    id = "src-{ident(name)}"', f"    name = {q(title)}"]
+        if metrics:
+            out.append("    metrics = [")
+            out += [f'      {{ key = "{name}.{k}", label = {q(label)}, format = "{fmt}" }},' for k, label, fmt in metrics]
+            out.append("    ]")
+        out += [f"    {k} = {q(v)}" for k, v in extra.items()]
+    return out
+
+
+def build_config(found, host, weather=None, title="LABHUD", include=None, services=()):
+    """The text of config.toml for what discover() found (None: no Proxmox). `host` is what the
+    node cards ping; `include`, a set of (node, vmid), limits the guest cards to those (None:
+    every guest); `services` adds a card for each of those sources (CARDS)."""
+    found = found or {"nodes": [], "guests": {}}
     out = [
         "# Made by labhud init. Every option is explained in config.example.toml; check this",
         "# file after an edit with: python3 config.py config.toml",
@@ -112,6 +160,7 @@ def build_config(found, host, weather=None, title="LABHUD", include=None):
             out += ["", "    [[page.group.card]]", f'    id = "vm-{nid}-{vmid}"', f"    name = {q(name)}",
                     f'    proxmox = "{node}/{vmid}"']
         strip.append((node.upper()[:4], node, f"host-{nid}"))
+    out += source_cards(services)
     for code, name, card in strip:
         out += ["", "[[strip]]", f"code = {q(code)}", f"name = {q(name)}", f"card = {q(card)}"]
     if weather:
@@ -131,6 +180,8 @@ def build_env(found, url, token_id, secret, hosts, pin=None):
     if pin:
         out += ["# The certificate Proxmox presented during init: anything else is refused (docs/security.md).",
                 f"LABHUD_PINS={pin[0]}={pin[1]}", ""]
+    if not found:  # no Proxmox
+        return "\n".join(out) + "\n"
     out += [f"LABHUD_PROXMOX_NODES={','.join(found['nodes'])}"]
     for node in found["nodes"]:
         key = env_name(node)

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>labhud setup</title>
+<link rel="stylesheet" href="/setup.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>LABHUD <span>setup</span></h1>
+    <ol id="steps">
+      <li data-step="code">Code</li>
+      <li data-step="proxmox">Proxmox</li>
+      <li data-step="guests">Guests</li>
+      <li data-step="services">Services</li>
+      <li data-step="display">Display</li>
+      <li data-step="review">Write</li>
+    </ol>
+  </header>
+
+  <section id="code" hidden>
+    <h2>Setup code</h2>
+    <p>labhud printed it in its log when it started:
+      <code>docker logs labhud</code> (or the terminal you started it in). Only someone who can read
+      that log can set labhud up.</p>
+    <form id="code-form">
+      <input id="code-input" autocomplete="off" autocapitalize="characters" spellcheck="false"
+             placeholder="ABCD-EFGH" maxlength="9" required>
+      <button>Continue</button>
+    </form>
+    <p class="msg" id="code-msg"></p>
+  </section>
+
+  <section id="proxmox" hidden>
+    <h2>Proxmox VE</h2>
+    <p>labhud reads Proxmox with an API token that can only read. Create one on any node's shell:</p>
+    <pre>pveum user add labhud@pve
+pveum aclmod / -user labhud@pve -role PVEAuditor
+pveum user token add labhud@pve wall --privsep 0</pre>
+    <p class="small">Or in the web UI: Datacenter › Permissions › API Tokens › Add, then give the token the
+      role <b>PVEAuditor</b> on <b>/</b>.</p>
+    <form id="pve-form">
+      <label>Address <input id="pve-url" placeholder="https://192.0.2.10:8006" required></label>
+      <label>Token ID <input id="pve-id" placeholder="labhud@pve!wall" autocomplete="off" required></label>
+      <label>Secret <input id="pve-secret" type="password" autocomplete="off" required></label>
+      <div class="row"><button>Connect</button><button type="button" class="ghost" id="pve-skip">No Proxmox, skip</button></div>
+    </form>
+    <div id="pve-result" class="msg"></div>
+    <label id="pve-pin-row" class="check" hidden><input type="checkbox" id="pve-pin" checked>
+      Pin this certificate: labhud then talks only to it. Compare with Node › System › Certificates.
+      <code id="pve-fp"></code></label>
+    <div class="row"><button id="pve-next" hidden>Next</button></div>
+  </section>
+
+  <section id="guests" hidden>
+    <h2>What to show</h2>
+    <p>Every node gets a card with its CPU, RAM and disk. Choose the guests that get a card of their own.</p>
+    <div class="row"><button type="button" class="ghost" id="g-all">All</button>
+      <button type="button" class="ghost" id="g-none">None</button>
+      <button type="button" class="ghost" id="g-running">Only running ones</button></div>
+    <div id="guest-list"></div>
+    <div class="row"><button id="guests-next">Next</button></div>
+  </section>
+
+  <section id="services" hidden>
+    <h2>Other services</h2>
+    <p>Open one, fill it in and press <b>Try</b>: labhud asks the service once with those values, and keeps
+      them only if that works. Each one becomes a card on the first page.</p>
+    <div id="catalog"></div>
+    <div class="row"><button id="services-next">Next</button></div>
+  </section>
+
+  <section id="display" hidden>
+    <h2>The display</h2>
+    <form id="display-form">
+      <label>Title <input id="d-title" value="LABHUD" maxlength="40"></label>
+      <label>Names the display opens labhud under, comma separated
+        <input id="d-hosts" required></label>
+      <p class="small">Exactly as typed in its browser, with the port. Anything else gets 421: this stops a web
+        page in the display's browser from reading labhud through a name of its own (DNS rebinding).</p>
+      <label>City for the weather (empty: none)
+        <span class="row"><input id="d-city"><button type="button" class="ghost" id="d-find">Find</button></span></label>
+      <p class="msg" id="d-weather"></p>
+      <div class="row"><button>Review</button></div>
+    </form>
+  </section>
+
+  <section id="review" hidden>
+    <h2>Review</h2>
+    <p id="r-where"></p>
+    <ul id="r-problems" class="bad"></ul>
+    <h3>config.toml</h3>
+    <pre id="r-config"></pre>
+    <h3>.env <span class="small">(names only; the values are keys, readable only by labhud)</span></h3>
+    <pre id="r-env"></pre>
+    <div class="row"><button id="r-write">Write and start</button></div>
+    <p class="msg" id="r-msg"></p>
+  </section>
+</main>
+<script src="/setup.js"></script>
+</body>
+</html>
