@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.61] - 2026-10-09
+
 ### Changed
 - Beszel's list shows each system's fullest of CPU, RAM and disk ("disk 79%") instead of all
   three, which left no room for the name on a wall's column.
@@ -248,7 +250,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.61...HEAD
+[0.1.61]: https://github.com/Mithrandler/labhud/compare/v0.1.6...v0.1.61
 [0.1.6]: https://github.com/Mithrandler/labhud/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Mithrandler/labhud/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/Mithrandler/labhud/compare/v0.1.3...v0.1.4
