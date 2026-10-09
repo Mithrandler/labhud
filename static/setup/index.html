@@ -69,6 +69,17 @@ pveum user token add labhud@pve wall --privsep 0</pre>
     <h2>Other services</h2>
     <p>Open one, fill it in and press <b>Try</b>: labhud asks the service once with those values, and keeps
       them only if that works. Each one becomes a card on the first page.</p>
+    <details id="find" class="svc">
+      <summary><b>Find services</b><span class="about">Optional: labhud asks the hosts you list on the
+        usual ports of the services below, and recognises each by its answer.</span></summary>
+      <form id="find-form">
+        <label>Hosts, comma separated (names or addresses, at most 32, no ranges)
+          <input id="find-hosts" autocomplete="off"></label>
+        <div class="row"><button>Look</button></div>
+        <p class="msg" id="find-msg"></p>
+        <div id="find-list"></div>
+      </form>
+    </details>
     <div id="catalog"></div>
     <div class="row"><button id="services-next">Next</button></div>
   </section>

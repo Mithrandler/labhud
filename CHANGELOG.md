@@ -21,6 +21,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   the same process starts again as the display. Code required on every call, Origin = Host, JSON
   only, ten wrong codes lock it for a minute, no key is ever sent back; `LABHUD_SETUP=off`
   disables it. See docs/install.md and docs/threat-model.md.
+- Setup page, **Find services**: on the hosts you list (at most 32, no ranges), labhud tries the
+  usual ports of the services it knows and recognises each by its answer, not by an open port;
+  "Use" fills that service's form.
 - labhud reads a `.env` itself: `LABHUD_ENV_FILE`, or `.env` next to the config file. Its values
   only fill variables the environment leaves unset.
 - `config.loads(text)`: validation of a config not written yet.

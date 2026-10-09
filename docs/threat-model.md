@@ -60,6 +60,7 @@ HTTP (`setupmode.py`).
 | Keys read back from the setup page | it never returns a key: not from the environment, not one typed earlier (fields come back empty, "kept") | the config preview shows addresses |
 | Keys sniffed while typed | HTTPS on the port (`LABHUD_TLS_CERT`) | over plain HTTP the Proxmox secret crosses the network once: run setup from the host itself (`localhost`) or a trusted segment, or use `init.py` |
 | Making labhud ask an address of the attacker's choice ("Try") | the code | with the code, labhud can be made to request any URL once per try, like any monitoring tool |
+| "Find services" used to scan a network | the code; at most 32 hosts typed one by one, no ranges, only the listed ports | with the code, a few requests to each host listed |
 | The page reopened later | it is not served once `config.toml` exists; `LABHUD_SETUP=off` disables it entirely | deleting `config.toml` brings it back, with a new code |
 
 ### Forging data

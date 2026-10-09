@@ -105,3 +105,34 @@ class Selection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Suggest(unittest.TestCase):
+    def test_found_by_its_answer_not_its_port(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                b = b'{"ProductName":"Jellyfin Server"}' if self.path.startswith("/System") else b"other"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        port = srv.server_address[1]
+        known = [("jellyfin", port, "http", "/System/Info/Public", "jellyfin"),
+                 ("sonarr", port, "http", "/", "sonarr")]  # same port, wrong answer: not found
+        with mock.patch.object(onboard, "KNOWN", known):
+            self.assertEqual(onboard.suggest(["127.0.0.1", "127.0.0.1"]),
+                             [{"source": "jellyfin", "url": f"http://127.0.0.1:{port}"}])
+
+    def test_only_hosts(self):
+        for bad in (["192.0.2.0/24"], ["a b"], ["h"] * 33):
+            with self.assertRaises(ValueError):
+                onboard.suggest(bad)

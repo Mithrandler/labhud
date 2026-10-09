@@ -146,6 +146,16 @@ class State:
             self.sources[name] = {k: v.strip() for k, v in values.items() if k in fields and v.strip()}
         return got
 
+    def suggest(self, body):
+        """Known services on the hosts typed in (at most 32 names or addresses, no ranges)."""
+        hosts = body.get("hosts") if isinstance(body.get("hosts"), list) else []
+        try:
+            found = onboard.suggest([str(h) for h in hosts])
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        print(f"setup: looked for services on {len(hosts)} host(s), found {len(found)}", flush=True)
+        return {"ok": True, "found": found}
+
     def forget_source(self, body):
         self.sources.pop(str(body.get("name") or ""), None)
         return {"ok": True}
@@ -229,7 +239,7 @@ def _write(path, text, mode):
 
 
 STEPS = {"hello": None, "proxmox": "set_proxmox", "forget-proxmox": "forget_proxmox", "weather": "weather",
-         "try": "try_source", "forget": "forget_source", "preview": "preview", "finish": "finish"}
+         "try": "try_source", "forget": "forget_source", "suggest": "suggest", "preview": "preview", "finish": "finish"}
 
 
 def handler_for(state):

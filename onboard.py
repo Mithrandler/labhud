@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -333,3 +334,69 @@ def _write_file(path, text, mode):
         f.write(text)
     if mode is not None:
         os.chmod(path, mode)
+
+
+# ---------------------------------------------------------------------------------------------
+# Finding services on given hosts (the setup page's "Find services", only when asked)
+# ---------------------------------------------------------------------------------------------
+
+# source -> (port, scheme, path, marker): the service is taken as found only when the answer at
+# that path contains the marker, not because a port is open.
+KNOWN = [
+    ("jellyfin", 8096, "http", "/System/Info/Public", "jellyfin"),
+    ("sonarr", 8989, "http", "/", "sonarr"),
+    ("radarr", 7878, "http", "/", "radarr"),
+    ("prowlarr", 9696, "http", "/", "prowlarr"),
+    ("bazarr", 6767, "http", "/", "bazarr"),
+    ("seerr", 5055, "http", "/api/v1/status", "committag"),
+    ("navidrome", 4533, "http", "/app/", "navidrome"),
+    ("qbt", 8080, "http", "/", "qbittorrent"),
+    ("uptimekuma", 3001, "http", "/", "uptime kuma"),
+    ("scrutiny", 8080, "http", "/web/", "scrutiny"),
+    ("healthchecks", 8000, "http", "/", "healthchecks"),
+    ("pbs", 8007, "https", "/", "proxmox backup server"),
+    ("synology", 5000, "http", "/", "synology"),
+    ("opnsense", 443, "https", "/", "opnsense"),
+    ("docker", 2375, "http", "/version", "apiversion"),
+]
+MAX_HOSTS = 32
+_HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$|^[0-9A-Fa-f:]{2,45}$")
+
+
+def _probe(host, port, scheme, path, marker):
+    import socket
+    try:
+        socket.create_connection((host, port), timeout=0.6).close()
+    except OSError:
+        return False
+    netloc = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+    try:
+        req = urllib.request.Request(f"{scheme}://{netloc}{path}", headers={"User-Agent": "labhud-setup"})
+        with urllib.request.urlopen(req, timeout=3, context=_NO_VERIFY) as r:
+            body = r.read(65536)
+    except urllib.error.HTTPError as e:  # some answer 401 with their name in the page
+        body = e.read(65536) if hasattr(e, "read") else b""
+    except Exception:
+        return False
+    return marker in body.decode("utf-8", "replace").lower()
+
+
+def suggest(hosts):
+    """[{"source", "url"}] for the known services found on `hosts` (names or IPs, at most
+    MAX_HOSTS). Raises ValueError for anything that is not a host name or address (no ranges)."""
+    import concurrent.futures
+    hosts = [h.strip() for h in hosts if h and h.strip()]
+    if len(hosts) > MAX_HOSTS:
+        raise ValueError(f"at most {MAX_HOSTS} hosts at once")
+    bad = [h for h in hosts if not _HOST.match(h)]
+    if bad:
+        raise ValueError("not a host name or address: " + ", ".join(bad[:5]))
+    jobs = [(h, k) for h in dict.fromkeys(hosts) for k in KNOWN]
+    found = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
+        for (h, (name, port, scheme, path, marker)), ok in zip(
+                jobs, pool.map(lambda j: _probe(j[0], *j[1][1:]), jobs)):
+            if ok:
+                netloc = f"[{h}]:{port}" if ":" in h else f"{h}:{port}"
+                found.append({"source": name, "url": f"{scheme}://{netloc}"})
+    return found

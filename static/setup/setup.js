@@ -78,6 +78,7 @@ async function start() {
   S.writable = r.writable;
   S.folder = r.folder;
   $("d-hosts").value = defaultHosts();
+  $("find-hosts").value = location.hostname;
   renderCatalog();
   if (r.proxmox) { S.pve = r.proxmox; showPve(); }
   show(S.jump || "proxmox");
@@ -119,6 +120,7 @@ function showPve() {
   $("pve-pin-row").hidden = !r.fingerprint;
   $("pve-fp").textContent = r.fingerprint ? r.fingerprint.toUpperCase().match(/../g).join(":") : "";
   $("pve-next").hidden = false;
+  try { $("find-hosts").value = [...new Set([new URL(r.url).hostname, location.hostname])].join(","); } catch (e) { /* keep */ }
   if (!S.include.size) S.include = new Set(Object.entries(r.guests).flatMap(([n, gs]) => gs.map((g) => n + "/" + g[0])));
   renderGuests();
 }
@@ -209,7 +211,7 @@ function renderCatalog() {
       msg(out, "removed");
       setState();
     });
-    box.append(el("details", { class: "svc" },
+    box.append(el("details", { class: "svc", "data-source": src.name },
       el("summary", {}, el("b", { text: src.title }), el("span", { class: "about", text: src.about }), state), form));
   }
   if (derived.length) {
@@ -218,6 +220,29 @@ function renderCatalog() {
   }
 }
 $("services-next").addEventListener("click", () => show("display"));
+
+$("find-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const hosts = $("find-hosts").value.split(",").map((h) => h.trim()).filter(Boolean);
+  msg($("find-msg"), "looking…");
+  $("find-list").replaceChildren();
+  const r = await busy(ev.submitter || $("find-form").querySelector("button"), () => api("suggest", { hosts }));
+  if (!r.ok) return msg($("find-msg"), r.error, "bad");
+  msg($("find-msg"), r.found.length ? `Found ${r.found.length}:` : "Nothing known found on those hosts.", r.found.length ? "ok" : "warn");
+  for (const f of r.found) {
+    const src = S.catalog.find((c) => c.name === f.source);
+    const use = el("button", { type: "button", class: "ghost", text: "Use" });
+    use.addEventListener("click", () => {
+      const box = document.querySelector(`#catalog details[data-source="${f.source}"]`);
+      if (!box) return;
+      box.open = true;
+      const url = box.querySelector("input[name$='_URL']");
+      if (url) { url.value = f.url; url.focus(); }
+      box.scrollIntoView({ block: "start" });
+    });
+    $("find-list").append(el("div", { class: "row" }, el("span", { text: `${src ? src.title : f.source} at ${f.url}` }), use));
+  }
+});
 
 // -- 5. display -----------------------------------------------------------------------------
 
