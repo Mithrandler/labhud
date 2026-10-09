@@ -104,6 +104,8 @@ CARDS = {
     "prowlarr": ([("numberOfGrabs", "Grabs", "count"), ("numberOfFailGrabs", "Failed", "count")], {}),
     "healthchecks": ([("up", "Up", "count"), ("down", "Down", "count")], {"list": "healthchecks.checks"}),
     "uptimekuma": ([("up", "Up", "count"), ("down", "Down", "count")], {"list": "uptimekuma.monitors"}),
+    "docker": ([("running", "Up", "count"), ("unhealthy", "Unhealthy", "count"), ("restarting", "Restarting", "count")],
+               {"list": "docker.containers"}),
     "scrutiny": ([("failed", "Failed", "count"), ("hottest", "Hottest", "celsius")], {"list": "scrutiny.disks"}),
 }
 

@@ -63,6 +63,41 @@ LABHUD_UPTIMEKUMA_KEY=<Settings > API Keys > Add>
 | `uptimekuma.total`, `.up`, `.down`, `.pending`, `.maintenance` | counts |
 | `uptimekuma.monitors` | a list, down first: the name and "48 ms", or the state |
 
+## Docker
+
+Every container's state, from one or more Docker engines: running, unhealthy (its healthcheck
+fails), restarting (a crash loop), exited with an error. Give labhud a read-only
+[docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) with only `CONTAINERS=1`,
+never the socket itself: the socket is root on that host.
+
+```yaml
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment: { CONTAINERS: 1 }
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+```
+
+```sh
+LABHUD_DOCKER_URL=http://socket-proxy:2375
+# several engines: LABHUD_DOCKER_URL=nas=http://192.0.2.30:2375,vps=http://192.0.2.80:2375
+```
+
+Containers can put themselves on the display with labels, without a line in `config.toml`:
+
+```yaml
+    labels:
+      labhud.enable: "true"            # listed in docker.labelled
+      labhud.name: "Jellyfin"          # the name shown (default: the container's)
+      labhud.group: "media"            # also listed in docker.group.media
+      labhud.url: "http://192.0.2.5:8096"   # OPEN in the list view
+```
+
+```toml
+metrics = [{ key = "docker.running", label = "Up", format = "count" },
+           { key = "docker.unhealthy", label = "Unhealthy", format = "count" }]
+list = "docker.labelled"        # or docker.containers, docker.group.media, docker.nas.containers
+```
+
 ## MQTT and Home Assistant
 
 labhud can publish every card's state and every line of its history to an MQTT broker.

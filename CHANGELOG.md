@@ -32,6 +32,10 @@ still change in a minor version; such changes are listed under **Changed** with 
   prints `curl -fsSL http://labhud:8095/agent/install.sh | sudo sh -s -- <name> <url>`. labhud
   serves the installer and the agent at `/agent/`; the installer checks the agent's checksum,
   asks for the key, and sets up a sandboxed systemd service that pushes and opens no port.
+- **Docker** source (`LABHUD_DOCKER_URL`, one engine or several, through a docker-socket-proxy):
+  running, unhealthy, restarting and crashed containers, problems first. Containers can list
+  themselves with labels (`labhud.enable`, `labhud.name`, `labhud.group`, `labhud.url`), so a new
+  container appears on the display without editing `config.toml`.
 - labhud-agent pushes CPU, RAM, disk, load and uptime too (`cpu`, `mem`, `mem_used_of`, `disk`,
   `disk_used_of`, `load1`, `uptime`), so a machine without Proxmox gets a full card.
 
