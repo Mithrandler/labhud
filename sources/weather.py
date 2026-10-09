@@ -11,7 +11,8 @@ import urllib.parse
 from ._common import request, source
 
 
-@source("weather", every=900, section="weather")
+@source("weather", every=900, section="weather",
+         title="Weather", about="Open-Meteo, free and keyless; set by city on the setup page.")
 def weather(cfg):
     qs = urllib.parse.urlencode({
         "latitude": cfg["latitude"], "longitude": cfg["longitude"],

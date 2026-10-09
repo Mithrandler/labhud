@@ -23,7 +23,9 @@ def _rest(path, **params):
     return answer
 
 
-@source("navidrome", every=300, env=("NAVIDROME_URL", "NAVIDROME_USER", "NAVIDROME_PASS"))
+@source("navidrome", every=300, env=("NAVIDROME_URL", "NAVIDROME_USER", "NAVIDROME_PASS"),
+         title="Navidrome", about="Music library counts, through the Subsonic API (keep it on the LAN).",
+         hints={"NAVIDROME_URL": "http://host:4533", "NAVIDROME_USER": "a dedicated account with no admin rights"})
 def navidrome():
     playing = (_rest("getNowPlaying.view").get("nowPlaying") or {}).get("entry") or []
     sessions = [{"user": e.get("username"), "title": f"{e.get('artist', '?')} – {e.get('title', '?')}",

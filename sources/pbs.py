@@ -17,7 +17,9 @@ def _rights():
     return [("pbs", beyond_reading(perms))]
 
 
-@source("pbs", every=60, env=("PBS_URL", "PBS_TOKEN_ID", "PBS_TOKEN_SECRET"))
+@source("pbs", every=60, env=("PBS_URL", "PBS_TOKEN_ID", "PBS_TOKEN_SECRET"),
+         title="Proxmox Backup Server", about="Datastores, last tasks, and whether backups are recent.",
+         hints={"PBS_URL": "https://host:8007", "PBS_TOKEN_ID": "user@realm!tokenname, with the Audit role"})
 def pbs():
     header = {"Authorization": f"PBSAPIToken={env('PBS_TOKEN_ID')}:{env('PBS_TOKEN_SECRET')}"}
     url = env("PBS_URL").rstrip("/")

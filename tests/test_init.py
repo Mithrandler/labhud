@@ -7,6 +7,7 @@ from unittest import mock
 
 import config
 import init
+import onboard
 
 ANSWERS = {
     "/version": {"data": {"version": "9.0.3"}},
@@ -30,7 +31,7 @@ def fake_get(url, header=None, timeout=10):
 
 class Init(unittest.TestCase):
     def setUp(self):
-        patcher = mock.patch.object(init, "get", fake_get)
+        patcher = mock.patch.object(onboard, "get", fake_get)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.found = init.discover("https://192.0.2.10:8006", "reader@pve!labhud", "not-a-secret")

@@ -32,7 +32,9 @@ def parse(text):
     return out
 
 
-@source("uptimekuma", every=30, env=("UPTIMEKUMA_URL", "UPTIMEKUMA_KEY"))
+@source("uptimekuma", every=30, env=("UPTIMEKUMA_URL", "UPTIMEKUMA_KEY"),
+         title="Uptime Kuma", about="Every monitor you already have there, down ones first.",
+         hints={"UPTIMEKUMA_URL": "http://host:3001", "UPTIMEKUMA_KEY": "Settings > API Keys > Add (it only reads /metrics)"})
 def uptimekuma():
     text = request(env("UPTIMEKUMA_URL").rstrip("/") + "/metrics",
                    {"Authorization": basic("", env("UPTIMEKUMA_KEY"))}, timeout=10, raw=True)

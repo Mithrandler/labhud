@@ -20,7 +20,9 @@ def _client(app, version="v3"):
     return lambda path: request(f"{url}/api/{version}{path}", {"X-Api-Key": key}, timeout=12)
 
 
-@source("sonarr", every=300, env=SONARR)
+@source("sonarr", every=300, env=SONARR,
+         title="Sonarr", about="Series: queue, missing episodes.",
+         hints={"SONARR_URL": "http://host:8989", "SONARR_KEY": "Settings > General > API Key"})
 def sonarr():
     c = _client("SONARR")
     series = c("/series")
@@ -37,7 +39,9 @@ def sonarr():
     }
 
 
-@source("radarr", every=300, env=RADARR)
+@source("radarr", every=300, env=RADARR,
+         title="Radarr", about="Movies: queue, missing films.",
+         hints={"RADARR_URL": "http://host:7878", "RADARR_KEY": "Settings > General > API Key"})
 def radarr():
     c = _client("RADARR")
     movies = c("/movie")
@@ -50,7 +54,9 @@ def radarr():
     }
 
 
-@source("prowlarr", every=300, env=("PROWLARR_URL", "PROWLARR_KEY"))
+@source("prowlarr", every=300, env=("PROWLARR_URL", "PROWLARR_KEY"),
+         title="Prowlarr", about="Indexers and which of them fail.",
+         hints={"PROWLARR_URL": "http://host:9696", "PROWLARR_KEY": "Settings > General > API Key"})
 def prowlarr():
     c = _client("PROWLARR", "v1")
     st = c("/indexerstats") or {}
@@ -65,7 +71,9 @@ def prowlarr():
     }
 
 
-@source("bazarr", every=300, env=("BAZARR_URL", "BAZARR_KEY"))
+@source("bazarr", every=300, env=("BAZARR_URL", "BAZARR_KEY"),
+         title="Bazarr", about="Missing subtitles.",
+         hints={"BAZARR_URL": "http://host:6767", "BAZARR_KEY": "Settings > General > API Key"})
 def bazarr():
     header = {"X-API-KEY": env("BAZARR_KEY")}
     base = env("BAZARR_URL").rstrip("/")
@@ -74,7 +82,8 @@ def bazarr():
     return {"missingEpisodes": ep.get("total", 0), "missingMovies": mv.get("total", 0)}
 
 
-@source("recent", every=300, any_of=(SONARR, RADARR))
+@source("recent", every=300, any_of=(SONARR, RADARR),
+         title="Recently added", about="Last imports and the queue, from Sonarr and Radarr together.")
 def recent():
     """The last 5 imported movies/series (Radarr + Sonarr history) and what is downloading now."""
     imported, queue = [], []
@@ -119,7 +128,8 @@ def recent():
     return {"added": result[:5], "queue": queue[:4] or [{"name": "queue empty", "value": "—"}]}
 
 
-@source("calendar", every=600, any_of=(SONARR, RADARR))
+@source("calendar", every=600, any_of=(SONARR, RADARR),
+         title="Calendar", about="What comes next, from Sonarr and Radarr together.")
 def calendar():
     """The next 5 movies/episodes, from the Radarr and Sonarr calendars, merged and sorted by date.
 

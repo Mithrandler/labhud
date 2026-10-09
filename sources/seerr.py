@@ -6,7 +6,9 @@
 from ._common import env, request, source
 
 
-@source("seerr", every=300, env=("SEERR_URL", "SEERR_KEY"))
+@source("seerr", every=300, env=("SEERR_URL", "SEERR_KEY"),
+         title="Jellyseerr / Overseerr", about="Request counters and titles waiting for approval.",
+         hints={"SEERR_URL": "http://host:5055", "SEERR_KEY": "Settings > General > API Key"})
 def seerr():
     header = {"X-Api-Key": env("SEERR_KEY")}
     base = env("SEERR_URL").rstrip("/") + "/api/v1"

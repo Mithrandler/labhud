@@ -45,7 +45,9 @@ def _call(api, method, version, extra=""):
     return {}
 
 
-@source("synology", every=15, env=("SYNOLOGY_URL", "SYNOLOGY_USER", "SYNOLOGY_PASS"))
+@source("synology", every=15, env=("SYNOLOGY_URL", "SYNOLOGY_USER", "SYNOLOGY_PASS"),
+         title="Synology DSM", about="NAS CPU, RAM, volumes and disks.",
+         hints={"SYNOLOGY_URL": "http://nas:5000", "SYNOLOGY_USER": "an account allowed to read utilisation and storage"})
 def synology():
     util = _call("SYNO.Core.System.Utilization", "get", "1")
     cpu = util.get("cpu") or {}

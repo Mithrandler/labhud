@@ -9,7 +9,9 @@
 from ._common import env, fmt_bytes, request, source
 
 
-@source("scrutiny", every=300, env=("SCRUTINY_URL",))
+@source("scrutiny", every=300, env=("SCRUTINY_URL",),
+         title="Scrutiny", about="S.M.A.R.T. health of every disk (no key: keep it on a private network).",
+         hints={"SCRUTINY_URL": "http://host:8080, the web/API container"})
 def scrutiny():
     data = request(env("SCRUTINY_URL").rstrip("/") + "/api/summary", timeout=15)
     summary = ((data.get("data") or {}).get("summary")) or {}

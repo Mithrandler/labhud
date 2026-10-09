@@ -6,7 +6,9 @@
 from ._common import env, request, source
 
 
-@source("jellyfin", every=300, env=("JELLYFIN_URL", "JELLYFIN_KEY"))
+@source("jellyfin", every=300, env=("JELLYFIN_URL", "JELLYFIN_KEY"),
+         title="Jellyfin", about="Library counts and who is watching.",
+         hints={"JELLYFIN_URL": "http://host:8096", "JELLYFIN_KEY": "Dashboard > API Keys"})
 def jellyfin():
     # Jellyfin 12 dropped the /emby prefix and the key in the URL: the key goes in the Authorization header.
     header = {"Authorization": f'MediaBrowser Token="{env("JELLYFIN_KEY")}"'}

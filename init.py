@@ -14,27 +14,15 @@ config.example.toml explains every option.
 """
 
 import getpass
-import json
 import os
 import re
 import sys
 import urllib.parse
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config  # noqa: E402
-from sources._common import _NO_VERIFY, beyond_reading, env_name  # noqa: E402
-
-
-def fingerprint(url):
-    """The SHA-256 of the certificate a service presents, as LABHUD_PINS wants it. Compare it with
-    what the service itself shows (Proxmox: Node > System > Certificates) before you trust it."""
-    import hashlib
-    import ssl
-    u = urllib.parse.urlsplit(url if "://" in url else "https://" + url)
-    pem = ssl.get_server_certificate((u.hostname, u.port or 443), timeout=10)
-    return f"{u.hostname}:{u.port or 443}", hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+from onboard import build_config, build_env, discover, fingerprint, geocode, write  # noqa: E402,F401
 
 
 def ask(question, default="", secret=False, optional=False):
@@ -43,122 +31,6 @@ def ask(question, default="", secret=False, optional=False):
         answer = (getpass.getpass if secret else input)(f"{question}{shown}: ").strip()
         if answer or default or optional:
             return answer or default
-
-
-def get(url, header=None, timeout=10):
-    req = urllib.request.Request(url, headers=header or {})
-    with urllib.request.urlopen(req, timeout=timeout, context=_NO_VERIFY) as r:
-        return json.loads(r.read() or b"{}")
-
-
-def discover(url, token_id, secret):
-    """{"version", "nodes": [name], "guests": {node: [(vmid, name, type)]}, "extra": [privilege],
-    "addresses": {node: ip, or "" for the node at `url`}}."""
-    header = {"Authorization": f"PVEAPIToken={token_id}={secret}"}
-    version = get(f"{url}/api2/json/version", header).get("data", {}).get("version", "?")
-    nodes = sorted(n["node"] for n in get(f"{url}/api2/json/nodes", header).get("data", []))
-    guests = {n: [] for n in nodes}
-    for r in get(f"{url}/api2/json/cluster/resources?type=vm", header).get("data", []):
-        if r.get("node") in guests and not r.get("template"):
-            guests[r["node"]].append((int(r["vmid"]), r.get("name") or str(r["vmid"]), r.get("type", "qemu")))
-    for g in guests.values():
-        g.sort()
-    extra = beyond_reading(get(f"{url}/api2/json/access/permissions", header).get("data"))
-    # what each node card pings: the address given for the node that answered, the others' own IPs
-    addresses = {}
-    try:
-        for r in get(f"{url}/api2/json/cluster/status", header).get("data", []):
-            if r.get("type") == "node" and r.get("name") in guests:
-                addresses[r["name"]] = "" if r.get("local") else r.get("ip", "")
-    except Exception:
-        pass  # older versions or missing rights: the cards then ping the node names
-    return {"version": version, "nodes": nodes, "guests": guests, "extra": extra, "addresses": addresses}
-
-
-def geocode(city):
-    """(latitude, longitude, timezone, name) from Open-Meteo's free geocoding, or None."""
-    q = urllib.parse.urlencode({"name": city, "count": 1})
-    found = get(f"https://geocoding-api.open-meteo.com/v1/search?{q}").get("results") or []
-    if not found:
-        return None
-    r = found[0]
-    return round(r["latitude"], 2), round(r["longitude"], 2), r.get("timezone", ""), r.get("name", city)
-
-
-def ident(text):
-    """A config id from any name: "My Node" -> "my-node"."""
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
-
-
-def q(text):
-    """A TOML string (JSON's escaping is valid TOML for a basic string)."""
-    return json.dumps(text, ensure_ascii=False)
-
-
-def build_config(found, host, weather=None, title="LABHUD"):
-    """The text of config.toml for what discover() found. `host` is what the node cards ping."""
-    out = [
-        "# Made by labhud init. Every option is explained in config.example.toml; check this",
-        "# file after an edit with: python3 config.py config.toml",
-        "",
-        f"title = {q(title)}",
-        "",
-        "[[page]]",
-        'id = "general"',
-        'title = "GENERAL"',
-    ]
-    strip = []
-    for node in found["nodes"]:
-        nid = ident(node)
-        out += ["", "  [[page.group]]", f'  id = "node-{nid}"', f"  title = {q(node.upper())}", "",
-                "    [[page.group.card]]", f'    id = "host-{nid}"', f"    name = {q(node.upper())}"]
-        # the node that answered is pinged at the address given; the others at their own IP
-        addr = found.get("addresses", {}).get(node)
-        out.append(f"    ping = {q(host if addr == '' or len(found['nodes']) == 1 else addr or node)}")
-        out += ["    large = true", "    metrics = ["]
-        for key, label, fmt in (("vms", "VM", "count"), ("lxc", "LXC", "count"), ("cpu", "CPU", "percent"),
-                                ("mem_used_of", "RAM", "used_of"), ("disk_used_of", "Disk", "used_of")):
-            out.append(f'      {{ key = "proxmox.{node}.{key}", label = "{label}", format = "{fmt}" }},')
-        out += ["    ]", f"    panel = {q('host:' + node)}"]
-        for vmid, name, _ in found["guests"][node]:
-            out += ["", "    [[page.group.card]]", f'    id = "vm-{nid}-{vmid}"', f"    name = {q(name)}",
-                    f'    proxmox = "{node}/{vmid}"']
-        strip.append((node.upper()[:4], node, f"host-{nid}"))
-    for code, name, card in strip:
-        out += ["", "[[strip]]", f"code = {q(code)}", f"name = {q(name)}", f"card = {q(card)}"]
-    if weather:
-        lat, lon, tz, city = weather
-        out += ["", "[weather]", f"latitude = {lat}", f"longitude = {lon}"]
-        if tz:
-            out.append(f"timezone = {q(tz)}")
-        out.append(f"city = {q(city)}")
-    return "\n".join(out) + "\n"
-
-
-def build_env(found, url, token_id, secret, hosts, pin=None):
-    out = ["# Made by labhud init. Keep this file readable only by you (chmod 600).",
-           "# Every other source and setting: .env.example.",
-           f"LABHUD_HOSTS={','.join(hosts)}",
-           ""]
-    if pin:
-        out += ["# The certificate Proxmox presented during init: anything else is refused (docs/security.md).",
-                f"LABHUD_PINS={pin[0]}={pin[1]}", ""]
-    out += [f"LABHUD_PROXMOX_NODES={','.join(found['nodes'])}"]
-    for node in found["nodes"]:
-        key = env_name(node)
-        out += [f"LABHUD_PROXMOX_{key}_URL={url}", f"LABHUD_PROXMOX_{key}_TOKEN_ID={token_id}",
-                f"LABHUD_PROXMOX_{key}_TOKEN_SECRET={secret}"]
-    return "\n".join(out) + "\n"
-
-
-def write(folder, name, text, mode):
-    path = os.path.join(folder, name)
-    if os.path.exists(path):
-        path += ".new"
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.chmod(path, mode)
-    return path
 
 
 def main():

@@ -6,6 +6,14 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- `onboard.py`: what setting labhud up needs, shared by `init.py` and the coming setup page.
+  `catalog()` lists every source with a form (title, one line, and per variable a label, a hint
+  and whether it is secret; never a value), `try_source()` runs a source once with proposed
+  values in place of the environment, for the calling thread only, and `merge_env()` sets values
+  in an existing `.env` without disturbing the rest. `build_config()` takes the guests to show.
+- `@source(..., title=, about=, hints=)`: every built-in source now describes itself.
+
 ## [0.1.5] - 2026-10-08
 
 ### Added

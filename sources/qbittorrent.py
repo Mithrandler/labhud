@@ -48,7 +48,9 @@ def _call(path):
     return {}
 
 
-@source("qbt", every=10, env=("QBITTORRENT_URL", "QBITTORRENT_USER", "QBITTORRENT_PASS"))
+@source("qbt", every=10, env=("QBITTORRENT_URL", "QBITTORRENT_USER", "QBITTORRENT_PASS"),
+         title="qBittorrent", about="Transfer speeds and active torrents (Web UI login).",
+         hints={"QBITTORRENT_URL": "http://host:8080"})
 def qbittorrent():
     transfer = _call("/api/v2/transfer/info")
     items = _call("/api/v2/torrents/info?filter=downloading&sort=progress&reverse=true&limit=8")

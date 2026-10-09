@@ -12,7 +12,10 @@ from ._common import env, request, source
 ORDER = {"down": 0, "grace": 1, "new": 2, "started": 3, "up": 4, "paused": 5}
 
 
-@source("healthchecks", every=60, env=("HEALTHCHECKS_URL", "HEALTHCHECKS_KEY"))
+@source("healthchecks", every=60, env=("HEALTHCHECKS_URL", "HEALTHCHECKS_KEY"),
+         title="Healthchecks", about="Cron jobs and backups that ping Healthchecks, late ones first.",
+         hints={"HEALTHCHECKS_URL": "https://healthchecks.io, or your own instance",
+                "HEALTHCHECKS_KEY": "Project Settings > API Access: the read-only key is enough"})
 def healthchecks():
     data = request(env("HEALTHCHECKS_URL").rstrip("/") + "/api/v3/checks/",
                    {"X-Api-Key": env("HEALTHCHECKS_KEY")}, timeout=10)

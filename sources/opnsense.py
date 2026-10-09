@@ -55,7 +55,10 @@ def _activity(url, header):
 _previous_traffic = {}
 
 
-@source("opnsense", every=5, env=("OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET"))
+@source("opnsense", every=5, env=("OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET"),
+         title="OPNsense", about="Router CPU, RAM and traffic.",
+         hints={"OPNSENSE_URL": "https://router",
+                "OPNSENSE_KEY": "API key of a user with only page-diagnostics-system-activity and page-status-trafficgraph"})
 def opnsense():
     url = env("OPNSENSE_URL").rstrip("/")
     header = {"Authorization": basic(env("OPNSENSE_KEY"), env("OPNSENSE_SECRET"))}

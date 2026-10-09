@@ -151,7 +151,8 @@ def _node(node, url, header):
     }
 
 
-@source("proxmox", every=10, env=("PROXMOX_NODES",))
+@source("proxmox", every=10, env=("PROXMOX_NODES",),
+         title="Proxmox VE", about="Nodes and every guest; set up on the setup page's first step.")
 def proxmox():
     out = {}
     nodes = _nodes()
@@ -208,7 +209,8 @@ def _node_backups(node, url, header):
     return {vmid: dict(per.get(vmid, {}), name=name, excluded=vmid in excluded) for vmid, name in guests.items()}
 
 
-@source("backups", every=1800, env=("PROXMOX_NODES",))
+@source("backups", every=1800, env=("PROXMOX_NODES",),
+         title="Proxmox backups", about="Backup jobs and their last runs, from the same Proxmox token.")
 def backups():
     out = {}
     for node, url, header in _nodes():

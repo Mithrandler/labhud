@@ -8,6 +8,8 @@ for it once, and the card says "not configured".
 Adding a source: a new module in this package with a function decorated with
 @source("name", every=<seconds>, env=("NAME_URL", "NAME_KEY")). Its data is then addressable from
 config.toml as "name.<key>". Modules whose name starts with "_" are helpers, not sources.
+Give it title=, about= and hints={"NAME_URL": "http://host:port", ...} too: the setup page builds
+the source's form from them (onboard.catalog()).
 """
 
 import importlib

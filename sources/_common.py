@@ -138,6 +138,20 @@ class Source:
     env: tuple = ()       # one or more groups of variables (without LABHUD_); active if any group is complete
     section: str = None   # a config.toml table the source needs, passed to fetch()
     backoff: bool = True  # polled less often while failing (not a pushed source: it is only read)
+    title: str = ""       # the service's name, for the setup page
+    about: str = ""       # one line: what the source shows and where its key comes from
+    hints: dict = None    # variable (without LABHUD_) -> what to put there, for the setup page
+
+    def fields(self):
+        """[{"name", "label", "secret", "hint"}] for every variable the source can use, in order."""
+        seen, out = set(), []
+        for group in self.env:
+            for n in group:
+                if n not in seen:
+                    seen.add(n)
+                    out.append({"name": PREFIX + n, "label": field_label(n), "secret": is_secret(n),
+                                "hint": (self.hints or {}).get(n, "")})
+        return out
 
     def missing(self, topology):
         """None if the source can run, otherwise the list of what is missing (names only, never values)."""
@@ -181,17 +195,54 @@ def beyond_reading(permissions):
                    for p in privs if not READ_ONLY.search(p)})
 
 
-def source(name, every, env=(), any_of=(), section=None, backoff=True):
+def source(name, every, env=(), any_of=(), section=None, backoff=True, title="", about="", hints=None):
     """Registers a fetch function. `env` is the list of variables it needs, all of them;
-    `any_of` is several such lists, of which one complete is enough."""
+    `any_of` is several such lists, of which one complete is enough. `title`, `about` and `hints`
+    ({variable: text}) describe it on the setup page."""
     def wrap(fn):
         groups = tuple(tuple(g) for g in any_of) if any_of else ((tuple(env),) if env else ())
-        REGISTRY[name] = Source(name, fn, every, groups, section, backoff)
+        REGISTRY[name] = Source(name, fn, every, groups, section, backoff, title or name, about, hints)
         return fn
     return wrap
 
 
+def is_secret(name):
+    """Is variable `name` (with or without LABHUD_) a key or a password, never shown back?"""
+    return name.endswith(("_KEY", "_SECRET", "_PASS", "_TOKEN", "_AUTH"))
+
+
+def field_label(name):
+    """"HEALTHCHECKS_URL" -> "URL", "PBS_TOKEN_ID" -> "Token ID": the part after the service."""
+    words = name.split("_")[1:] or [name]
+    label = " ".join({"PASS": "password", "KEY": "API key"}.get(w, w.lower()) for w in words)
+    label = label[0].upper() + label[1:]
+    return re.sub(r"\bUrl\b|\burl\b", "URL", re.sub(r"\b[Ii]d\b", "ID", label))
+
+
+# Values being tried on the setup page, for the current thread only: a source tested there reads
+# them instead of the environment, and the running sources never see them.
+_TRYING = threading.local()
+
+
+def trying(values):
+    """Context manager: env() in this thread reads `values` ({"LABHUD_X": "..."}) first."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def ctx():
+        old = getattr(_TRYING, "values", None)
+        _TRYING.values = dict(values)
+        try:
+            yield
+        finally:
+            _TRYING.values = old
+    return ctx()
+
+
 def env(name, default=""):
+    overlay = getattr(_TRYING, "values", None)
+    if overlay and overlay.get(PREFIX + name):
+        return overlay[PREFIX + name]
     return os.environ.get(PREFIX + name, default)
 
 
@@ -244,7 +295,8 @@ _SECRET_VARS = ("_KEY", "_SECRET", "_PASS", "_USER", "_TOKEN_ID", "_AUTH")
 
 def scrub(text):
     text = _SECRETS.sub(r"\1=<hidden>", str(text))
-    for name, value in os.environ.items():
+    trying_now = getattr(_TRYING, "values", None) or {}
+    for name, value in list(os.environ.items()) + list(trying_now.items()):
         if name.startswith(PREFIX) and name.endswith(_SECRET_VARS) and len(value) >= 8:
             text = text.replace(value, "<hidden>")
     return text
