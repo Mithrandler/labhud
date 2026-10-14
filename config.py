@@ -37,7 +37,7 @@ CHECKS = ("ping", "tcp", "proxmox")
 PAGE_KEYS = {"id", "title", "group", "games"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
-             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url"}
+             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age"}
 METRIC_KEYS = {"key", "label", "format"}
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
 QUIET_KEYS = {"from", "to", "sources"}
@@ -181,7 +181,10 @@ def _card(ck, where, c):
                            ("limit", int, "a whole number"),
                            ("torrents", str, "a dotted path into the data"),
                            ("panel", str, "a string"),
-                           ("sensors", str, "a dotted path into the data")):
+                           ("sensors", str, "a dotted path into the data"),
+                           # age: a Unix time in the data saying when the card's numbers were made,
+                           # for data refreshed rarely (an hourly check): shown as "as of 40m ago"
+                           ("age", str, "a dotted path into the data")):
         if (v := ck.opt(where, c, key, typ, what)) is not None:
             out[key] = v
     # url: the service's own page, offered as OPEN in the panel of the list view (?view=list)

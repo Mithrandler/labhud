@@ -6,6 +6,19 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.64] - 2026-10-14
+
+### Added
+- The mark next to the clock says exactly what is wrong: for each source that stopped answering,
+  its name, every card and page it shows on, its host and whether that host is up, the problem in
+  plain words, since when, its last good answer and the next try (`where` in `/api/status`).
+- A card's `age = "<path>"` shows how old its numbers are ("as of 40m ago"), for data refreshed
+  rarely, such as an hourly check.
+
+### Changed
+- Numbers that are not live are dimmed: the card's host is off or down, or its source kept the
+  last answer after a failed poll — then the card also says "not updated since 14:32".
+
 ### Fixed
 - A slow source that fails once no longer leaves its corner empty for ten minutes: a failed
   source is retried within a minute (then backing off as before), and a slow one keeps its last
@@ -301,7 +314,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.63...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.64...HEAD
+[0.1.64]: https://github.com/Mithrandler/labhud/compare/v0.1.63...v0.1.64
 [0.1.63]: https://github.com/Mithrandler/labhud/compare/v0.1.62...v0.1.63
 [0.1.62]: https://github.com/Mithrandler/labhud/compare/v0.1.61...v0.1.62
 [0.1.61]: https://github.com/Mithrandler/labhud/compare/v0.1.6...v0.1.61

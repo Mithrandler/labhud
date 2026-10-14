@@ -681,6 +681,8 @@ function make_card(c, merged = false) {
   if (c.list) n.appendChild(make_list(c.list, c.limit || 6));
   if (c.torrents) n.appendChild(make_torrents(c.torrents));
 
+  let age = null;
+  if (c.age) { age = el("div", "age"); n.appendChild(age); }
   if (c.metrics) {
     const err = el("div", "error");
     err.hidden = true;
@@ -693,6 +695,24 @@ function make_card(c, merged = false) {
       // If the host is visibly down (or off on schedule), the source's error adds nothing:
       // it is the consequence, not a second problem. PBS, for example, is normally off.
       const st = card_status(c);
+      // numbers that are not live any more — the host is off or down, or the source kept its last
+      // answer after a failed poll — are dimmed, so an old value never passes for a current one
+      // ("live.x" is part of the live agent: when the whole agent is kept stale, so is x)
+      const root = source.split(".")[0];
+      const kept = get(source + ".stale") || (root !== source && get(root + ".stale"));
+      cls(n, "frozen", st === false || quiet_off(st) || !!kept);
+      if (age) {
+        const t = get(c.age);
+        put(age, typeof t === "number" ? "as of " + duration(Math.max(1, Math.round(Date.now() / 1000 - t))) + " ago" : "");
+      }
+      if (kept && st !== false && !quiet_off(st)) {
+        err.hidden = false;
+        cls(err, "scheduled", false);
+        const since = get(source + "._t") || get(root + "._t");
+        // short on the card; the why is in the panel of the mark next to the clock
+        put(err, "not updated" + (since ? " since " + clock(since) : ""));
+        return;
+      }
       if (st === false || quiet_off(st)) {
         err.hidden = st === false;
         if (st !== false) {
@@ -1202,6 +1222,23 @@ function check_health() {
   }).catch(() => {});  // the stream's own mark already says when the server is gone
 }
 
+/** The error in words: "Host is unreachable" -> "the machine does not answer on the network". */
+function plain_error(err) {
+  const e = String(err || "").toLowerCase();
+  for (const [needle, words] of [
+    ["timed out", "no answer in time (overloaded, or the machine is off)"],
+    ["unreachable", "the machine does not answer on the network (off, or a cable/route problem)"],
+    ["refused", "the machine is up but the service is not running (connection refused)"],
+    ["name or service", "the name does not resolve (DNS)"], ["certificate", "its HTTPS certificate is not accepted"],
+    ["401", "the key was refused (401): wrong or expired"], ["403", "the key may not read this (403)"],
+    ["404", "the address is wrong (404)"], ["502", "a proxy in front of it gets no answer (502)"],
+    ["503", "the service says it is unavailable (503), usually for a short while"],
+    ["500", "the service fails on its side (500)"], ["reset", "the connection was cut"]]) {
+    if (e.includes(needle)) return words;
+  }
+  return err || "unknown";
+}
+
 /** The panel for the mark: which sources, since when, and what they answered. Opened here and
     not as /status, so the wall never navigates away from itself. */
 function open_health_panel() {
@@ -1212,11 +1249,17 @@ function open_health_panel() {
   const now = HEALTH.now;
   for (const name of HEALTH.problems) {
     const h = HEALTH.sources[name];
-    section(body, name, [
-      ["error", h.error, true],
-      ["failing for", duration(now - h.failing_since)],
-      ["last answer", h.last_ok ? duration(now - h.last_ok) + " ago" : "never"],
-    ]);
+    const w = (HEALTH.where || {})[name] || {};
+    const rows = [["what", `${w.title || name} (${name})`]];
+    for (const s of w.shown || []) rows.push(["shown in", s]);
+    if (!(w.shown || []).length) rows.push(["shown in", "no card (only /status)"]);
+    if (w.host) rows.push([`host ${w.host}`, w.host_state, w.host_state === "down"]);
+    rows.push(["problem", plain_error(h.error), true]);
+    rows.push(["failing for", duration(now - h.failing_since)]);
+    rows.push(["last good answer", h.last_ok ? clock(h.last_ok) + " · " + duration(now - h.last_ok) + " ago" : "never since labhud started"]);
+    if (h.next_at) rows.push(["next try", h.next_at > now ? "in " + duration(h.next_at - now) : "now"]);
+    rows.push(["raw error", h.error]);
+    section(body, w.title || name, rows);
   }
   body.appendChild(el("p", "hint", "Every source, with details: " + location.origin + "/status"));
   $("#panel-actions").textContent = "";

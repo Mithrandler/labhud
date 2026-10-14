@@ -159,6 +159,11 @@ class InvalidFiles(unittest.TestCase):
         problems = self.problems(text)
         self.assertIn(expected, problems, "\n".join(problems))
 
+    def test_age_is_a_data_path(self):
+        card = load_text(MINIMAL.replace('name = "NAS"', 'name = "NAS"\nage = "live.fleet.generated"', 1))["cards"]["hosts"][0]
+        self.assertEqual(card["age"], "live.fleet.generated")
+        self.assertTrue(any("age" in p for p in self.problems(MINIMAL.replace('name = "NAS"', 'name = "NAS"\nage = 5', 1))))
+
     def test_bad_url(self):
         text = MINIMAL.replace('name = "NAS"', 'name = "NAS"\nurl = "ftp://x"', 1)
         self.assertTrue(any("url must start with http:// or https://" in p for p in self.problems(text)))

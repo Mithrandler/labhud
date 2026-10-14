@@ -520,3 +520,7 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 /* with lines under it, the clock gives up some height so the whole box stays on screen */
 #calm.extras-on .time { font-size: min(22vw, 30vh); }
 #calm.extras-on .state { margin-top: .5em; }
+/* numbers that are not live: the host is off/down or the source missed polls (see make_card) */
+.card.frozen .metric .vl { color: var(--muted); }
+.card.frozen .metric svg.spark { opacity: .3; }
+.card .age { font-size: 9px; color: var(--muted); margin-top: 2px; }

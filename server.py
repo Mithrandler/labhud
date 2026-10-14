@@ -820,6 +820,29 @@ def adoption():
     return {"new": new, "gone": gone}
 
 
+def where_shown(name):
+    """For a source that stopped answering: what it is and where it shows, so the display can say
+    "NAS (Synology DSM) · GENERAL › Storage › NAS · host NAS is up" instead of a bare "synology"."""
+    src = ACTIVE.get(name)
+    pages = {g["id"]: p["title"] for p in TOPOLOGY["pages"] for g in p["groups"]}
+    groups = {g["id"]: g["title"] for p in TOPOLOGY["pages"] for g in p["groups"]}
+    shown = []
+    for gid, cards in TOPOLOGY["cards"].items():
+        for c in cards:
+            paths = [m[0] for m in c.get("metrics", [])] + [c[k] for k in ("list", "torrents", "sensors", "panel") if c.get(k)]
+            roots = {p.split(":", 1)[-1].split(".")[0] for p in paths}
+            subs = {".".join(p.split(":", 1)[-1].split(".")[:2]) for p in paths}
+            if name in roots or name in subs:
+                shown.append(f"{pages.get(gid, '?')} › {groups.get(gid, gid)} › {c.get('name', c['id'])}")
+    host = SOURCE_HOST.get(name)
+    with _lock:
+        state = _data.get("status", {}).get(host) if host else None
+    return {"title": getattr(src, "title", name) or name, "shown": shown,
+            "host": CARD_NAMES.get(host, host) if host else None,
+            "host_state": {True: "up", False: "down", "scheduled": "off on schedule"}.get(state, "unknown") if host else None,
+            "every": SOURCES.get(name)}
+
+
 def health():
     """What /status shows: how each source is doing, never its data or its settings' values."""
     now = int(time.time())
@@ -853,6 +876,7 @@ def health():
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
+        "where": {n: where_shown(n) for n, h in result.items() if h.get("alarm")},
         "checklist": [] if DEMO else checklist(result),
         "adoption": adoption(),
         "sources": result,
