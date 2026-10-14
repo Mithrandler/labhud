@@ -6,6 +6,27 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.65] - 2026-10-14
+
+### Added
+- An action is followed to the end: a bar under the top bar, on every page, says "sending…",
+  then "✓ accepted · starting… 0:42" with a filling bar, then "✓ Valheim running" — or, if the
+  state has not changed after 5 minutes, "no change after 5 min" in red. The result stays a few
+  seconds (a failure 30 s, or until tapped). Game servers, Proxmox guests, Wake-on-LAN and shut
+  downs are watched; other actions end at "accepted".
+- Every action step also goes to the day's timeline (`POST /api/action-log/<action>`: only
+  actions the config offers, from labhud's own page; the text is written by the server).
+- The last 7 days under TODAY: for each host that went down, how many times, for how long, and its
+  uptime over the history kept. Host events now carry their card and state.
+- A card's `links = [{ label, url }]`: buttons at the top of its panel (its UI, its logs...); a
+  card's `url` shows there as "Web UI" too.
+
+### Security
+- The display's pages now send a Content-Security-Policy (own scripts, styles, fonts and media
+  only, no frames, connections only to labhud and the action agent), `nosniff`,
+  `Referrer-Policy: no-referrer` and a Permissions-Policy. The status page's script moved to
+  `status.js` for that.
+
 ## [0.1.64] - 2026-10-14
 
 ### Added
@@ -314,7 +335,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.64...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.65...HEAD
+[0.1.65]: https://github.com/Mithrandler/labhud/compare/v0.1.64...v0.1.65
 [0.1.64]: https://github.com/Mithrandler/labhud/compare/v0.1.63...v0.1.64
 [0.1.63]: https://github.com/Mithrandler/labhud/compare/v0.1.62...v0.1.63
 [0.1.62]: https://github.com/Mithrandler/labhud/compare/v0.1.61...v0.1.62

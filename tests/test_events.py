@@ -19,10 +19,10 @@ class Changes(unittest.TestCase):
 
     def test_host_down_and_up(self):
         self.assertEqual(events.changes("status", {"nas": True}, {"nas": False}, TOPOLOGY), [("NAS down", True, ("status", "nas"))])
-        self.assertEqual(events.changes("status", {"nas": False}, {"nas": True}, TOPOLOGY), [("NAS up", False)])
+        self.assertEqual(events.changes("status", {"nas": False}, {"nas": True}, TOPOLOGY), [("NAS up", False, ("up", "nas"))])
 
     def test_on_demand_host_off_is_not_bad(self):
-        self.assertEqual(events.changes("status", {"pbs": True}, {"pbs": False}, TOPOLOGY), [("BACKUP off", False)])
+        self.assertEqual(events.changes("status", {"pbs": True}, {"pbs": False}, TOPOLOGY), [("BACKUP off", False, ("off", "pbs"))])
 
     def test_scheduled_and_unchanged_say_nothing(self):
         self.assertEqual(events.changes("status", {"nas": True}, {"nas": "scheduled"}, TOPOLOGY), [])
@@ -58,6 +58,13 @@ class Log(unittest.TestCase):
         self.assertEqual(len(log.snapshot()["recent"]), events.SHOWN)
         last = events.MAX_EVENTS + 4
         self.assertEqual(rows[0], {"name": f"e{last}", "t": 10 + last, "bad": False})
+
+    def test_host_transition_keeps_card_and_state(self):
+        log = events.Log()
+        log.add("NAS down", True, t=5, card="nas", state="down")
+        log.add("note", t=6)
+        self.assertEqual(log.all(), [{"name": "note", "t": 6, "bad": False},
+                                     {"name": "NAS down", "t": 5, "bad": True, "card": "nas", "state": "down"}])
 
     def test_seed(self):
         log = events.Log([{"name": "x", "t": 5, "bad": True}])

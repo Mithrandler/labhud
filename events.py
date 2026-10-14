@@ -27,9 +27,14 @@ class Log:
         self._rows = collections.deque(seed, maxlen=MAX_EVENTS)
         self._lock = threading.Lock()
 
-    def add(self, text, bad=False, t=None):
+    def add(self, text, bad=False, t=None, card=None, state=None):
+        """`card` + `state` (up / down / off / maintenance) mark a host's transition, so the display
+        can count outages and their length over the kept history (the 7-day view behind the clock)."""
+        row = {"name": text, "t": int(t or time.time()), "bad": bool(bad)}
+        if card:
+            row.update(card=card, state=state)
         with self._lock:
-            self._rows.appendleft({"name": text, "t": int(t or time.time()), "bad": bool(bad)})
+            self._rows.appendleft(row)
 
     def snapshot(self):
         with self._lock:
@@ -73,11 +78,11 @@ def _hosts(old, new, topology):
         card = cards.get(cid, {})
         label = card.get("name", cid)
         if now is True:
-            out.append((f"{label} up", False))
+            out.append((f"{label} up", False, ("up", cid)))
         elif now is False:
             # a host that is off by design (on_demand) going off is not bad news
             if card.get("on_demand"):
-                out.append((f"{label} off", False))
+                out.append((f"{label} off", False, ("off", cid)))
             else:
                 out.append((f"{label} down", True, ("status", cid)))
     return out

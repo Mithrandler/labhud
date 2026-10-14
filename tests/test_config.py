@@ -164,6 +164,14 @@ class InvalidFiles(unittest.TestCase):
         self.assertEqual(card["age"], "live.fleet.generated")
         self.assertTrue(any("age" in p for p in self.problems(MINIMAL.replace('name = "NAS"', 'name = "NAS"\nage = 5', 1))))
 
+    def test_links(self):
+        text = MINIMAL.replace('name = "NAS"', 'name = "NAS"\nlinks = [{ label = "Logs", url = "https://logs.lan/nas" }]', 1)
+        self.assertEqual(load_text(text)["cards"]["hosts"][0]["links"], [{"label": "Logs", "url": "https://logs.lan/nas"}])
+        bad = MINIMAL.replace('name = "NAS"', 'name = "NAS"\nlinks = [{ label = "Logs", url = "ftp://x", icon = "y" }]', 1)
+        problems = "\n".join(self.problems(bad))
+        self.assertIn("unknown key(s) icon", problems)
+        self.assertIn("each needs a label and an http:// or https:// url", problems)
+
     def test_bad_url(self):
         text = MINIMAL.replace('name = "NAS"', 'name = "NAS"\nurl = "ftp://x"', 1)
         self.assertTrue(any("url must start with http:// or https://" in p for p in self.problems(text)))

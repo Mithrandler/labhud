@@ -89,6 +89,37 @@ class DemoServer(unittest.TestCase):
         conn.close()
         return r.status, r.getheader("Content-Type"), body
 
+    def post_json(self, path, body, origin=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Host": self.host, "Content-Type": "application/json"}
+        if origin:
+            headers["Origin"] = origin
+        conn.request("POST", path, body=json.dumps(body), headers=headers)
+        r = conn.getresponse()
+        data = r.read()
+        conn.close()
+        return r.status, data
+
+    def test_action_log(self):
+        ok_origin = f"http://{self.host}"
+        self.assertEqual(self.post_json("/api/action-log/game-start-x1", {"result": "accepted"})[0], 403)   # no Origin
+        self.assertEqual(self.post_json("/api/action-log/game-start-x1", {"result": "hacked"}, ok_origin)[0], 403)
+        self.assertEqual(self.post_json("/api/action-log/not-offered", {"result": "done"}, ok_origin)[0], 403)
+        self.assertEqual(self.post_json("/api/action-log/game-start-x1", {"result": "done", "took": 75}, ok_origin)[0], 200)
+        names = [e["name"] for e in json.loads(self.get("/api/events")[2])["events"]]
+        self.assertTrue(any(n.endswith("· START: done in 1m 15s") for n in names), names[:3])
+
+    def test_security_headers(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/", headers={"Host": self.host})
+        r = conn.getresponse()
+        r.read()
+        conn.close()
+        csp = r.getheader("Content-Security-Policy") or ""
+        self.assertIn("script-src 'self'", csp)
+        self.assertIn("frame-ancestors 'none'", csp)
+        self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
+
     def test_page(self):
         status, ctype, body = self.get("/")
         self.assertEqual(status, 200)
@@ -132,7 +163,8 @@ class DemoServer(unittest.TestCase):
     def test_status(self):
         status, ctype, body = self.get("/status")
         self.assertEqual(status, 200)
-        self.assertIn(b"/api/status", body)
+        self.assertIn(b"/status.js", body)   # its script is a file: the CSP allows no inline script
+        self.assertIn(b"/api/status", self.get("/status.js")[2])
         deadline = time.monotonic() + 20
         while True:
             st = json.loads(self.get("/api/status")[2])

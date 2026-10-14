@@ -232,6 +232,7 @@ function update() {
     render_weather();
     mark_menu_alerts();
     if (panelCard) fill_panel();   // an open panel refreshes with the new data
+    if (TRACKS.length) check_tracks();
     watch_problems();
     render_calm();
   });
@@ -398,6 +399,38 @@ function open_today() {
     TODAY_EVENTS = d.events || [];
     open_panel({ id: "_today", name: "TODAY", panel: "today" });
   }).catch(() => show_message("could not read the events"));
+}
+
+/** Outages per host over the last `span` seconds, from the kept events that carry a card and a
+    state (down / up / off / maintenance): how many times it went down, for how long in total, and
+    the uptime of the part of the window the history covers. A host still down counts until now. */
+function outages(events, span) {
+  const now = Date.now() / 1000, from = now - span;
+  const rows = [...events].filter((e) => e.card).sort((a, b) => a.t - b.t);
+  const since = events.length ? Math.max(from, Math.min(...events.map((e) => e.t))) : null;
+  const per = {};
+  for (const e of rows) {
+    const p = per[e.card] = per[e.card] || { n: 0, down: 0, at: null };
+    if (e.state === "down") { if (p.at === null) { p.at = e.t; if (e.t >= from) p.n++; } }
+    else if (p.at !== null) { p.down += Math.max(0, e.t - Math.max(p.at, from)); p.at = null; }
+  }
+  const out = [];
+  for (const [cid, p] of Object.entries(per)) {
+    if (p.at !== null) p.down += now - Math.max(p.at, from);
+    if (!p.n && !p.down) continue;
+    const covered = Math.max(1, now - (since || from));
+    const up = Math.max(0, 100 * (1 - p.down / covered));
+    const name = (CARD_BY_ID[cid] && CARD_BY_ID[cid].name) || cid;
+    out.push({ d: p.down, row: [name, `${p.n}× · ${duration(Math.round(p.down))} down · ${up.toFixed(up >= 99.9 ? 2 : 1)}%`, p.at !== null] });
+  }
+  out.sort((a, b) => b.d - a.d);
+  return { since, rows: out.map((x) => x.row) };
+}
+
+/** "14 Oct" for a Unix time. */
+function day_month(t) {
+  const d = new Date(t * 1000);
+  return d.getDate() + " " + MONTHS[d.getMonth()];
 }
 
 /** "Thu" for "2026-10-15" (noon, so no time zone moves it to another day). */
@@ -660,7 +693,7 @@ function is_guest(c) {
     `c.subtitle` alone does NOT count: it is already on the card's face, so repeating it in the
     panel is not detail (see mikrotik/openwrt — only spec + status, nothing more). */
 function has_details(c) {
-  return !!(c.metrics || c.list || c.torrents || c.panel ||
+  return !!(c.metrics || c.list || c.torrents || c.panel || (c.links && c.links.length) ||
     (c.actions && c.actions.length) || (c.check && c.check[0] === "proxmox"));
 }
 
@@ -1352,8 +1385,8 @@ function ask_confirmation(c, action) {
   const own = (CFG.actions || {})[action];
   put($("#confirm-text"), (own && own.confirm) || `${action_label(action)} ${c.name}?`);
   const choices = own && own.choices;
-  ask(choices ? choices.map((ch) => [ch.label, () => send_action(ch.action), /shutdown|stop/.test(ch.action)])
-    : [["YES", () => send_action(action), true]]);
+  ask(choices ? choices.map((ch) => [ch.label, () => send_action(ch.action, c), /shutdown|stop/.test(ch.action)])
+    : [["YES", () => send_action(action, c), true]]);
 }
 
 /** The dialog's buttons: [[label, run, danger?]], plus NO/CANCEL first. The text is set by the caller. */
@@ -1388,11 +1421,120 @@ function ask_maintenance(c) {
   ask([["1 HOUR", set(60)], ["4 HOURS", set(240)], ["1 DAY", set(1440)]].concat(until ? [["END", set(0)]] : []));
 }
 
-function send_action(name) {
+// ---------------------------------------------------------------------------------------------
+// An action, followed to the end: a bar under the top bar, on every page, until the thing really
+// changed state (or 5 minutes passed). Each step also goes to the day's timeline (TODAY).
+// ---------------------------------------------------------------------------------------------
+
+const ACTION_TIMEOUT = 300;   // seconds: past this, "no change" is reported in red
+let TRACKS = [];               // [{name, label, verb, want(), started, phase, end, took, error}]
+let trackTimer = null;
+
+function send_action(name, c) {
+  const t = { name, label: track_label(name, c), started: Date.now(), phase: "sending", ...track_goal(name, c) };
+  TRACKS = [t, ...TRACKS.filter((x) => x.name !== name)].slice(0, 3);
+  render_tracks();
   fetch(CFG.action_url + encodeURIComponent(name), { method: "POST", mode: "cors" })
     .then((r) => r.json().catch(() => ({ ok: r.ok })))
-    .then((r) => show_message(r.ok ? "✓ " + (r.action || name) : "✕ " + (r.error || "failed")))
-    .catch(() => show_message("✕ could not send the action"));
+    .then((r) => {
+      if (!r.ok) return finish(t, "refused", r.error || "refused");
+      log_action(name, "accepted");
+      t.phase = t.want ? "waiting" : "done";
+      if (!t.want) finish(t, "done");
+      render_tracks();
+    })
+    .catch(() => finish(t, "refused", "could not reach the action agent"));
+}
+
+/** "Valheim", "web01": what the action is about, as the screen names it. */
+function track_label(name, c) {
+  if (c && c.game) return c.game.game || c.game.name || c.name;
+  const m = /^vm-([A-Za-z0-9]+)-(\d+)-/.exec(name);
+  if (m) { const g = get(`proxmox.${m[1]}.guests.${m[2]}`); if (g && g.name) return g.name; }
+  return (c && c.name) || name;
+}
+
+/** What "done" looks like for an action: {verb, want()} — want() is true once it really happened.
+    A report or an update has no state to watch: done when the agent accepts it. */
+function track_goal(name, c) {
+  let m = /^game-(start|stop|restart)-(.+)$/.exec(name);
+  if (m) {
+    const id = m[2];
+    const server = () => { const p = CFG.pages.find((x) => x.games); return ((p && get(p.games)) || []).find((sv) => String(sv.id) === id); };
+    const since = Date.now() / 1000;
+    if (m[1] === "start") return { verb: "starting", doneText: "running", want: () => (server() || {}).state === "running" };
+    if (m[1] === "stop") return { verb: "stopping", doneText: "stopped", want: () => { const sv = server(); return !!sv && sv.state !== "running" && sv.state !== "starting"; } };
+    return { verb: "restarting", doneText: "running again", want: () => { const sv = server(); return !!sv && sv.state === "running" && (sv.uptime_s || 0) < Date.now() / 1000 - since; } };
+  }
+  m = /^vm-([A-Za-z0-9]+)-(\d+)-(start|shutdown|reboot)$/.exec(name);
+  if (m) {
+    const g = () => get(`proxmox.${m[1]}.guests.${m[2]}`) || {};
+    const since = Date.now() / 1000;
+    if (m[3] === "start") return { verb: "starting", doneText: "running", want: () => g().running === true };
+    if (m[3] === "shutdown") return { verb: "shutting down", doneText: "off", want: () => g().running === false };
+    return { verb: "rebooting", doneText: "back up", want: () => g().running === true && (g().uptime || 1e9) < Date.now() / 1000 - since };
+  }
+  if (/^wol-/.test(name) && c) return { verb: "waking up", doneText: "up", want: () => card_status(c) === true };
+  if (/^shutdown-/.test(name) && c) return { verb: "shutting down", doneText: "off", want: () => card_status(c) === false || quiet_off(card_status(c)) };
+  return { verb: "", doneText: "accepted", want: null };
+}
+
+function finish(t, how, error) {
+  if (t.end) return;
+  t.end = Date.now();
+  t.phase = how;
+  t.error = error || "";
+  t.took = Math.round((t.end - t.started) / 1000);
+  log_action(t.name, how === "done" ? "done" : how === "timeout" ? "failed" : "refused", t.took);
+  render_tracks();
+}
+
+/** The step, for the timeline on the server (it writes the text itself; see /api/action-log). */
+function log_action(name, result, took) {
+  fetch("/api/action-log/" + encodeURIComponent(name), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result, took: took || 0 }),
+  }).catch(() => {});
+}
+
+/** Checked on every data update and every second while something is followed. */
+function check_tracks() {
+  for (const t of TRACKS) {
+    if (t.end || t.phase !== "waiting") continue;
+    if (t.want()) finish(t, "done");
+    else if (Date.now() - t.started > ACTION_TIMEOUT * 1000) finish(t, "timeout");
+  }
+}
+
+function render_tracks() {
+  const bar = $("#actions-bar");
+  const now = Date.now();
+  // a finished one stays 10 s (a failure 30 s, or until tapped): that is the toast at the end
+  TRACKS = TRACKS.filter((t) => !t.end || now - t.end < (t.phase === "done" ? 10000 : 30000));
+  bar.hidden = !TRACKS.length;
+  cls(document.body, "with-actions", TRACKS.length > 0);
+  bar.textContent = "";
+  for (const t of TRACKS) {
+    const row = el("div", "track " + t.phase);
+    const secs = Math.round(((t.end || now) - t.started) / 1000);
+    const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+    let text;
+    if (t.phase === "sending") text = `${t.label} · sending…`;
+    else if (t.phase === "waiting") text = `${t.label} · ✓ accepted · ${t.verb}… ${time}`;
+    else if (t.phase === "done") text = `✓ ${t.label} ${t.doneText} · ${time}`;
+    else if (t.phase === "timeout") text = `✕ ${t.label}: no change after ${ACTION_TIMEOUT / 60} min — check the server`;
+    else text = `✕ ${t.label}: ${t.error}`;
+    row.appendChild(el("span", "txt", text));
+    // the bar fills over the expected time and waits near the end: progress, not a promise
+    const fill = el("i");
+    const part = t.end ? 1 : t.phase === "sending" ? 0.05 : Math.min(0.95, 0.1 + secs / 120);
+    fill.style.width = (100 * part).toFixed(1) + "%";
+    row.appendChild(fill);
+    row.addEventListener("click", () => { if (t.end) { TRACKS = TRACKS.filter((x) => x !== t); render_tracks(); } });
+    bar.appendChild(row);
+  }
+  const active = TRACKS.length > 0;   // a finished one still needs the clock to expire
+  if (active && !trackTimer) trackTimer = setInterval(() => { check_tracks(); render_tracks(); }, 1000);
+  if (!active && trackTimer) { clearInterval(trackTimer); trackTimer = null; }
 }
 
 let messageTimer = null;
@@ -1457,6 +1599,17 @@ function fill_panel() {
     const label = alive === true ? "running" : alive === false ? "DOWN" : off_label(c, alive);
     section(body, "status", [["status", label, alive === false]]);
   }
+  // the card's own pages (its UI, its logs...): small buttons at the top, opened in a new tab
+  const links = [...(c.url && !LIST_VIEW ? [{ label: "Web UI", url: c.url }] : []), ...(c.links || [])];
+  if (links.length) {
+    const row = el("div", "panel-links");
+    for (const x of links) {
+      const a = el("a", null, x.label + " ↗");
+      a.href = x.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      row.appendChild(a);
+    }
+    body.appendChild(row);
+  }
   const afterStatus = body.children.length;
 
   // ---- Proxmox guest: its numbers, plus the Docker containers on it ----
@@ -1516,6 +1669,9 @@ function fill_panel() {
     const bad = today.filter((e) => e.bad).length;
     section(body, today.length ? `${today.length} changes · ${bad} bad` : "today",
       today.length ? today.map((e) => [e.name, clock(e.t), e.bad]) : [["nothing changed since midnight", ""]]);
+    const week = outages(TODAY_EVENTS || [], 7 * 86400);
+    section(body, `last 7 days · outages${week.since ? " (history from " + day_month(week.since) + ")" : ""}`,
+      week.rows.length ? week.rows : [["no host went down", ""]]);
   }
 
   // ---- the weather: a tap on the corner ----
@@ -1607,7 +1763,7 @@ function fill_panel() {
 
   panel_charts(body, c);
   render_actions(c);
-  return body.children.length > afterStatus || !$("#panel-actions").hidden;
+  return body.children.length > afterStatus || links.length > 0 || !$("#panel-actions").hidden;
 }
 
 // ---------------------------------------------------------------------------------------------

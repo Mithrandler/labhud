@@ -524,3 +524,20 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 .card.frozen .metric .vl { color: var(--muted); }
 .card.frozen .metric svg.spark { opacity: .3; }
 .card .age { font-size: 9px; color: var(--muted); margin-top: 2px; }
+.panel-links { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.panel-links a { color: var(--title); text-decoration: none; font-size: 12px; font-weight: 500; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--block); }
+/* Actions being followed: floats under the top bar (and the alert), over the page and the panel,
+   for as long as an action runs plus a few seconds at the end. Tapping a finished one closes it. */
+#actions-bar { position: fixed; left: 8px; right: 8px; top: calc(var(--topbar) + var(--alert) + 4px); z-index: 60;
+  display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+#actions-bar .track { position: relative; overflow: hidden; pointer-events: auto; border-radius: 8px; padding: 7px 10px;
+  background: var(--card); border: 1px solid var(--title); font-size: 13px; font-weight: 500; color: var(--text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .6); }
+#actions-bar .track .txt { position: relative; z-index: 1; }
+#actions-bar .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--title); opacity: .18;
+  transition: width 1s linear; }
+#actions-bar .track.done { border-color: var(--green); }
+#actions-bar .track.done i { background: var(--green); }
+#actions-bar .track.timeout, #actions-bar .track.refused { border-color: var(--red); color: #ffd9e2; }
+#actions-bar .track.timeout i, #actions-bar .track.refused i { background: var(--red); }

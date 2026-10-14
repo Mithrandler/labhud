@@ -317,6 +317,37 @@ def _action_allowed(name):
                for ch in TOPOLOGY["actions"].get(a, {}).get("choices", ()))
 
 
+ACTION_RESULTS = {"accepted": "sent", "done": "done", "failed": "no change after 5 min", "refused": "refused"}
+
+
+def action_text(name):
+    """An action in words, for the timeline: "Valheim · START", "web01 · SHUT DOWN"."""
+    with _lock:
+        data = dict(_data)
+    m = re.fullmatch(r"game-(start|stop|restart)-(.+)", name)
+    if m:
+        servers = []
+        for p in TOPOLOGY["pages"]:
+            if p.get("games"):
+                node = data
+                for part in p["games"].split("."):
+                    node = node.get(part) if isinstance(node, dict) else None
+                servers += node if isinstance(node, list) else []
+        game = next((sv.get("game") or sv.get("name") for sv in servers if str(sv.get("id")) == m.group(2)), m.group(2))
+        return f"{game} · {m.group(1).upper()}"
+    m = re.fullmatch(r"vm-([A-Za-z0-9]+)-(\d+)-(start|shutdown|reboot)", name)
+    if m:
+        guest = ((data.get("proxmox") or {}).get(m.group(1)) or {}).get("guests", {}).get(m.group(2)) or {}
+        verb = {"start": "START", "shutdown": "SHUT DOWN", "reboot": "REBOOT"}[m.group(3)]
+        return f"{guest.get('name') or m.group(2)} · {verb}"
+    for cards in TOPOLOGY["cards"].values():
+        for c in cards:
+            if name in c.get("actions", ()):
+                label = (TOPOLOGY["actions"].get(name) or {}).get("label") or name
+                return f"{c.get('name', c['id'])} · {label}"
+    return name
+
+
 def maintenance_now(now=None):
     """{card id: until} for every card in maintenance right now, from config.toml and the display."""
     now = now or time.time()
@@ -495,15 +526,17 @@ def _log(found):
     maint = maintenance_now() if found else {}
     for text, bad, *ref in found:
         still_true = None
-        if ref and ref[0][0] == "status":
-            card = ref[0][1]
+        # ("status" = went down | "up" | "off", card id): a host's transition, kept with the event
+        kind, card = ref[0] if ref else (None, None)
+        state = {"status": "down", "up": "up", "off": "off"}.get(kind)
+        if kind == "status":
             if card in maint:
-                EVENTS.add(text + " (maintenance)", False)
+                EVENTS.add(text + " (maintenance)", False, card=card, state="maintenance")
                 mqtt.event(text + " (maintenance)", False)
                 continue
             still_true = lambda card=card: (_data.get("status", {}).get(card) is False  # noqa: E731
                                             and card not in maintenance_now())
-        EVENTS.add(text, bad)
+        EVENTS.add(text, bad, card=card, state=state)
         mqtt.event(text, bad)
         if bad:
             screen.wake()
@@ -887,6 +920,18 @@ def health():
 # The server: static files + the SSE stream + the topology.
 # ---------------------------------------------------------------------------------------------
 
+def _csp():
+    action = ""
+    if ACTION_URL and not ACTION_SECRET:   # signed actions go through labhud itself
+        m = re.match(r"^(https?://[^/]+)", ACTION_URL)
+        action = " " + m.group(1) if m else ""
+    return ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            f"font-src 'self'; media-src 'self'; connect-src 'self'{action}; frame-ancestors 'none'; "
+            "base-uri 'none'; form-action 'self'; object-src 'none'")
+
+
+CSP = _csp()
+
 TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8", ".woff2": "font/woff2",
@@ -911,6 +956,12 @@ class Handler(BaseHTTPRequestHandler):
     def _headers(self, code, ctype, length=None, cache=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        # Only this server's own scripts, styles, fonts and media; no frames around it; the
+        # browser talks to this server and, for direct actions, to LABHUD_ACTION_URL's origin.
+        self.send_header("Content-Security-Policy", CSP)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
         if length is not None:
             self.send_header("Content-Length", str(length))
         if cache:
@@ -970,6 +1021,9 @@ class Handler(BaseHTTPRequestHandler):
         mt = re.fullmatch(r"/api/maintenance/([A-Za-z0-9_.-]{1,64})", self.path)
         if mt:
             return self._maintenance(mt.group(1))
+        al = re.fullmatch(r"/api/action-log/([a-z0-9-]{1,64})", self.path)
+        if al:
+            return self._action_log(al.group(1))
         m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
@@ -1039,6 +1093,24 @@ class Handler(BaseHTTPRequestHandler):
         set_maintenance(card, minutes)
         print(f"maintenance {card}: {f'{minutes} min' if minutes else 'ended'} from {self.client_address[0]}", flush=True)
         self._json({"ok": True, "until": maintenance_now().get(card)})
+
+    def _action_log(self, name):
+        """The display reports how an action it sent went ({"result": accepted|done|failed|refused,
+        "took": seconds}), for the day's timeline. Only an action the config offers, from labhud's
+        own page; the text is written here from the action's name, never taken from the request."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) if 0 < length <= 512 else b"{}")
+            result, took = body.get("result"), int(body.get("took") or 0)
+        except (ValueError, AttributeError, TypeError):
+            result, took = None, 0
+        if not (result in ACTION_RESULTS and _action_allowed(name) and self._same_page()):
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        text = f"{action_text(name)}: {ACTION_RESULTS[result]}"
+        if result == "done" and 0 < took < 86400:
+            text += f" in {took // 60}m {took % 60:02d}s" if took >= 60 else f" in {took}s"
+        _log([(text, result in ("failed", "refused"))])
+        self._json({"ok": True})
 
     def _push(self, name):
         """An agent's data (sources/push.py). Not behind LABHUD_HOSTS: the signature is the check,

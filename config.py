@@ -37,7 +37,7 @@ CHECKS = ("ping", "tcp", "proxmox")
 PAGE_KEYS = {"id", "title", "group", "games"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
-             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age"}
+             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links"}
 METRIC_KEYS = {"key", "label", "format"}
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
 QUIET_KEYS = {"from", "to", "sources"}
@@ -192,6 +192,21 @@ def _card(ck, where, c):
         if not re.match(r"^https?://", url):
             ck.err(where, f"url must start with http:// or https://, got {url!r}")
         out["url"] = url
+    # links: buttons at the top of the card's panel that open other pages (logs, the host's UI)
+    if "links" in c:
+        links = c["links"]
+        if not isinstance(links, list) or not all(isinstance(x, dict) for x in links):
+            ck.err(where, 'links must be a list of { label = "...", url = "https://..." }')
+        else:
+            out["links"] = []
+            for x in links:
+                unknown = set(x) - {"label", "url"}
+                if unknown:
+                    ck.err(where, f"links: unknown key(s) {', '.join(sorted(unknown))}")
+                if not isinstance(x.get("label"), str) or not re.match(r"^https?://", str(x.get("url", ""))):
+                    ck.err(where, f"links: each needs a label and an http:// or https:// url, got {x!r}")
+                else:
+                    out["links"].append({"label": x["label"], "url": x["url"]})
     if isinstance(out.get("limit"), int):
         if not 1 <= out["limit"] <= 50:
             ck.err(where, "limit must be between 1 and 50")
