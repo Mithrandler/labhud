@@ -22,6 +22,9 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **Made for a wall.** Problems take the screen; numbers past a mark notify after 5 minutes, not
   on every spike; a calm mode shows only the clock when all is well; Fully Kiosk's screen goes
   off at night; a separate public status page shows names and states only.
+- **Each screen its own look.** The ⚙ next to the clock sets, for that screen only: OLED black or
+  dark grey, an accent colour, the font (Roboto, Inter, JetBrains Mono) and text size, which pages
+  rotate and how fast, and its own night and calm hours. Nothing changes on the server.
 - **One config file** (TOML) describing your pages and cards, reloaded on save.
 - **Demo mode** with made-up data, so you can try it without touching your lab.
 

@@ -17,7 +17,6 @@
 // /api/config, from LABHUD_ACTION_URL) because that agent's allowlist is on the display's own IP.
 
 const $ = (s, r) => (r || document).querySelector(s);
-const PERIOD = 20000;   // how long a page stays in the rotation
 const PAUSE = 60000;    // how long the rotation holds after a touch
 // ?view=list: the phone in your hand, not the wall. One scrolling list, problems first, links out.
 const LIST_VIEW = new URLSearchParams(location.search).get("view") === "list";
@@ -28,6 +27,7 @@ let D = {};               // the latest snapshot
 let page = 0;             // index of the current page
 let updaters = [];        // the functions that rewrite values in the mounted page
 let pausedUntil = 0;
+let turnedAt = 0;         // when the current page was shown (the rotation counts from there)
 
 // ---------------------------------------------------------------------------------------------
 // Tools
@@ -255,6 +255,7 @@ function render_menu() {
 
 function go(i) {
   page = (i + CFG.pages.length) % CFG.pages.length;
+  turnedAt = Date.now();
   document.body.className = document.body.className.replace(/\bp-\w+\b/g, "").trim();
   document.body.classList.add("p-" + CFG.pages[page].id);
   for (const b of $("#menu").children) cls(b, "active", Number(b.dataset.page) === page);
@@ -319,18 +320,19 @@ function apply_focus() {
   if (n) n.classList.add("focus");
 }
 
-/** [calm]: after CFG.calm.after seconds with nothing red and no alert, only the clock shows.
+/** [calm] (or this screen's ⚙ setting): after calm.after seconds with nothing red and no alert, only the clock shows.
     Anything red, an alert, a focus, a touch or an open panel brings the cards back at once. */
 let calmSince = Date.now();
 let calmSpot = 0;
 function render_calm() {
-  if (!CFG || !CFG.calm || LIST_VIEW) return;
+  const calm = CFG && calm_cfg();
+  if (!calm || LIST_VIEW) { if (!$("#calm").hidden) $("#calm").hidden = true; return; }
   const now = Date.now();
   const anyBad = Object.values(CARD_BY_ID).some((c) => card_bad(c) === true);
   const alerting = !$("#alerts").hidden;
   const busy = anyBad || alerting || focusCard || now < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden;
   if (busy) calmSince = now;
-  const on = location.search.includes("calm") || now - calmSince >= CFG.calm.after * 1000;
+  const on = location.search.includes("calm") || now - calmSince >= calm.after * 1000;
   const box = $("#calm");
   if (box.hidden === !on) {
     if (on) render_calm_text();
@@ -358,7 +360,7 @@ function render_calm_text() {
 }
 
 function night_now() {
-  const n = CFG.night;
+  const n = night_cfg();
   if (!n) return false;
   if (location.search.includes("night")) return true;   // check screenshots: ?static&night
   const h = new Date().getHours();
@@ -367,7 +369,8 @@ function night_now() {
 
 function render_night() {
   const now = Date.now();
-  cls(document.body, "night", night_now() && now >= wakeUntil && now >= focusUntil);
+  // ⚙ "stays dim": a new problem still takes the screen, but does not light it up
+  cls(document.body, "night", night_now() && now >= wakeUntil && (now >= focusUntil || !S.wake));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -507,7 +510,7 @@ function layout() {
     };
 
     let best = null;
-    for (const zoom of [1, 0.92, 0.85, 0.78, 0.72, 0.66, 0.6]) {
+    for (const zoom of zoom_steps()) {
       best = plan(zoom);
       if (best.fits) break;
     }
@@ -517,7 +520,7 @@ function layout() {
   // A page with few groups would fill only the left part of the screen: then it is laid out again
   // with as many columns as it really uses, each one wider, so the page spans the whole width.
   let best = solve(maxCols);
-  if (best.fits && best.zoom === 1 && best.used < maxCols) {
+  if (best.fits && best.zoom === ui_scale() && best.used < maxCols) {
     const wider = solve(best.used);
     if (wider.fits) best = wider;
   }
@@ -534,6 +537,15 @@ function layout() {
     host.appendChild(col);
   }
   layoutSign = layout_sign();
+}
+
+/** The zooms layout() tries, largest first: from this screen's text size (⚙, settings.js) down in
+    ~8% steps to 60%, so a bigger text is used where the page has room and shrinks where it has not. */
+function zoom_steps() {
+  const steps = [];
+  for (let z = ui_scale(); z > 0.6; z *= 0.92) steps.push(Math.round(z * 1000) / 1000);
+  steps.push(0.6);
+  return steps;
 }
 
 /** Until when (Unix seconds) the card is in maintenance, or 0. */
@@ -1202,7 +1214,7 @@ function render_weather() {
 function touched() {
   pausedUntil = Math.max(pausedUntil, Date.now() + PAUSE);
   calmSince = Date.now();
-  if (CFG && CFG.calm && !$("#calm").hidden) { $("#calm").hidden = true; }
+  if (CFG && !$("#calm").hidden) { $("#calm").hidden = true; }
   wakeUntil = Date.now() + PAUSE;   // a touch lights a dimmed screen up for the same minute
   if (CFG) render_night();
 }
@@ -1614,7 +1626,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   CFG.pages.forEach((p, i) => {
     for (const g of p.groups) for (const c of CFG.cards[g.id] || []) PAGE_OF_CARD[c.id] = i;
   });
-  if (CFG.night) document.documentElement.style.setProperty("--shade", String(1 - CFG.night.dim / 100));
+  apply_night();
   from_address();
   render_menu();
   build_strip();
@@ -1626,7 +1638,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   tick(render_clock, 10000);
   render_night();
   tick(render_night, 10000);
-  if (CFG.calm && !LIST_VIEW) {
+  if (!LIST_VIEW) {   // calm may be switched on from ⚙ at any time, so it is always watched
     $("#calm").addEventListener("click", touched);
     tick(render_calm, 10000);
   }
@@ -1641,5 +1653,14 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   if (!location.search.includes("static")) tick(check_health, 60000);
   $("#health").addEventListener("click", open_health_panel);
   start_tour();
-  if (!LIST_VIEW) tick(() => { if (Date.now() >= pausedUntil && $("#panel").hidden && $("#confirm").hidden) go(page + 1); }, PERIOD);
+  $("#gear").addEventListener("click", open_settings);
+  $("#settings-x").addEventListener("click", close_settings);
+  // The rotation: checked every second against this screen's period and pages (⚙, settings.js).
+  if (!LIST_VIEW) tick(() => {
+    if (!S.rotate || Date.now() - turnedAt < S.period * 1000) return;
+    if (Date.now() < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden || !$("#settings").hidden) return;
+    const pages = rotation_pages();
+    if (!pages.length) return;
+    go(pages.find((i) => i > page) ?? pages[0]);
+  }, 1000);
 });

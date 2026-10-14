@@ -94,7 +94,7 @@ class DemoServer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(ctype.startswith("text/html"))
         self.assertIn(b"app.js", body)
-        for asset in ("/app.js", "/app.css"):
+        for asset in ("/app.js", "/settings.js", "/app.css"):
             self.assertEqual(self.get(asset)[0], 200, asset)
 
     def test_config(self):

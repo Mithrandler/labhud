@@ -15,7 +15,7 @@
     <div id="weather" class="empty"><span class="ic"></span><span class="t"></span><span class="city"></span></div>
     <div id="brand" aria-hidden="true">Lab<b>HUD</b></div>
     <nav id="menu" aria-label="Pages"></nav>
-    <div id="clock"><button id="health" type="button" hidden></button><span class="time"></span><span class="date"></span></div>
+    <div id="clock"><button id="health" type="button" hidden></button><button id="gear" type="button" title="Settings of this screen" aria-label="Settings">⚙</button><span class="time"></span><span class="date"></span></div>
   </header>
 
   <!-- The alert banner: sits over the content, does not push the grid. -->
@@ -36,6 +36,12 @@
     <div id="panel-actions"></div>
   </div>
 
+  <!-- ⚙: this screen's own settings (theme, text, rotation, night), see settings.js. -->
+  <div id="settings" hidden>
+    <div id="settings-bar"><span>SETTINGS · THIS SCREEN</span><button id="settings-x" type="button">✕</button></div>
+    <div id="settings-body"></div>
+  </div>
+
   <div id="confirm" hidden>
     <div class="box"><p id="confirm-text"></p><div class="buttons"></div></div>
   </div>
@@ -53,6 +59,7 @@
   <div id="night-shade"></div>
 
   <div id="stream-state" title="link to the aggregator"></div>
+<script src="/settings.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

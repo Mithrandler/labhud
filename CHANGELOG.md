@@ -6,6 +6,14 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- Settings of a screen, behind a ⚙ next to the clock and kept in that browser only: OLED black or
+  dark grey, eight accent colours or any other, the font (Roboto, Inter, JetBrains Mono, the
+  system's) and text size (85–130%; a page that does not fit still shrinks), page rotation (on or
+  off, 10–60 s, which pages), and night and calm hours that override `[night]`/`[calm]` for that
+  screen — including whether a new problem lights a dimmed screen. Inter and JetBrains Mono are
+  bundled (OFL 1.1) and downloaded only by a screen that picks them.
+
 ### Changed
 - A machine that is off on purpose is grey everywhere, not red: a stopped Proxmox guest that does
   not start at boot (read from its config, only for stopped guests, cached 10 minutes; the token
