@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.62] - 2026-10-14
+
 ### Added
 - Settings of a screen, behind a ⚙ next to the clock and kept in that browser only: OLED black or
   dark grey, eight accent colours or any other, the font (Roboto, Inter, JetBrains Mono, the
@@ -273,7 +275,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.61...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.62...HEAD
+[0.1.62]: https://github.com/Mithrandler/labhud/compare/v0.1.61...v0.1.62
 [0.1.61]: https://github.com/Mithrandler/labhud/compare/v0.1.6...v0.1.61
 [0.1.6]: https://github.com/Mithrandler/labhud/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Mithrandler/labhud/compare/v0.1.4...v0.1.5
