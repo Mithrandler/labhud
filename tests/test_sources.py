@@ -358,7 +358,11 @@ class SmallSources(SourceTest):
     def test_weather(self):
         http = self.serve(weather, fixture("weather"))
         out = weather.weather({"latitude": 52.5, "longitude": 13.4})
+        days = out.pop("days")
         self.assertEqual(out, {"temp": 12.5, "code": 3, "max": 15.1, "min": 6.2})
+        self.assertEqual(len(days), 4)
+        self.assertEqual(days[1], {"date": "2026-10-15", "max": 13.0, "min": 5.0, "code": 61, "rain": 80})
+        self.assertIn("forecast_days=4", http.calls[0]["url"])
         self.assertIn("latitude=52.5", http.calls[0]["url"])
         self.assertIn("timezone=auto", http.calls[0]["url"])
 

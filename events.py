@@ -18,7 +18,8 @@ import collections
 import threading
 import time
 
-MAX_EVENTS = 50
+MAX_EVENTS = 400   # enough for a day's timeline (/api/events, the panel behind the clock)
+SHOWN = 30         # what travels in the snapshot, for the cards that list events
 
 
 class Log:
@@ -32,7 +33,11 @@ class Log:
 
     def snapshot(self):
         with self._lock:
-            return {"recent": list(self._rows)}
+            return {"recent": list(self._rows)[:SHOWN]}
+
+    def all(self):
+        with self._lock:
+            return list(self._rows)
 
 
 def changes(name, old, new, topology):

@@ -271,6 +271,7 @@ function go(i) {
 const FOCUS = 180000;    // how long a new problem holds its page (and keeps a dimmed screen lit)
 const WARMUP = Date.now() + 60000;   // the first minute only learns what is already wrong
 let PAGE_OF_CARD = {};   // card id -> page index
+let GROUP_OF_CARD = {};  // card id -> group id
 let lastBad = {};         // card id -> true (red) / false (fine), last time its state was known
 let focusCard = null, focusUntil = 0, wakeUntil = 0;
 
@@ -295,15 +296,22 @@ function watch_problems() {
   for (const c of Object.values(CARD_BY_ID)) {
     const bad = card_bad(c);
     if (bad === null) continue;   // unknown: keep what was last known
-    if (bad && lastBad[c.id] === false && !warm && !fresh && PAGE_OF_CARD[c.id] !== undefined) fresh = c.id;
+    if (bad && lastBad[c.id] === false && !warm && !fresh && PAGE_OF_CARD[c.id] !== undefined && !hidden_card(c.id)) fresh = c.id;
     lastBad[c.id] = bad;
   }
   if (fresh) focus_on(fresh);
   else if (focusCard && Date.now() >= focusUntil) { focusCard = null; apply_focus(); render_night(); }
 }
 
+/** A card this screen hides (⚙): its new problem neither takes the screen nor signals. */
+function hidden_card(id) {
+  const g = GROUP_OF_CARD[id];
+  return g !== undefined && is_hidden(g, id);
+}
+
 function focus_on(id) {
   if (LIST_VIEW) return;   // the list already puts problems first
+  if (!location.search.includes("static")) signal_problem();
   focusCard = id;
   focusUntil = Date.now() + FOCUS;
   pausedUntil = Math.max(pausedUntil, focusUntil);
@@ -349,14 +357,52 @@ function render_calm_text() {
   put($(".date", box), DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()]);
   const cards = Object.values(CARD_BY_ID).filter((c) => card_bad(c) === false);
   put($(".facts", box), cards.length + " checked, none red");
-  // a new spot every 5 minutes, inside the middle of the screen
+  render_calm_extras($(".extras", box));
+  // a new spot every 5 minutes, inside the middle of the screen — but never so near an edge that
+  // the box (taller with lines under the clock) leaves the screen
   const spot = Math.floor(Date.now() / 300000);
-  if (spot !== calmSpot) {
+  const b = $(".box", box), r = (n) => 35 + ((spot * n) % 31);   // 35..65 %, deterministic, no Math.random
+  const fit = (pct, size, room) => Math.min(Math.max(pct * room / 100, size / 2 + 4), room - size / 2 - 4);
+  const rect = b.getBoundingClientRect();
+  if (spot !== calmSpot || rect.top < 0 || rect.bottom > innerHeight) {
     calmSpot = spot;
-    const r = (n) => 35 + ((spot * n) % 31);   // 35..65 %, deterministic, no Math.random
-    $(".box", box).style.left = r(7) + "%";
-    $(".box", box).style.top = r(13) + "%";
+    b.style.left = fit(r(7), rect.width, innerWidth) + "px";
+    b.style.top = fit(r(13), rect.height, innerHeight) + "px";
   }
+}
+
+/** The lines under the calm clock, chosen per screen in ⚙: the forecast, and the first row of
+    any card's list (the next film, the latest download, who is playing...). */
+function render_calm_extras(host) {
+  const lines = [];
+  for (const id of S.calm_show || []) {
+    if (id === "weather") {
+      const days = (get("weather.days") || []).slice(1, 3);
+      if (days.length) lines.push(days.map((d) => `${day_name(d.date)} ${icon(d.code)} ${Math.round(d.min)}°/${Math.round(d.max)}°`).join("   "));
+      continue;
+    }
+    const c = CARD_BY_ID[id];
+    const first = c && c.list && (get(c.list) || [])[0];
+    if (first) lines.push(`${c.name}: ${detail_row(first).slice(0, 2).filter(Boolean).join(" · ")}`);
+  }
+  const text = lines.join("\n");
+  if (host.textContent !== text) host.textContent = text;
+  cls($("#calm"), "extras-on", lines.length > 0);
+}
+
+/** The day's timeline behind the clock: every change the server kept (/api/events), since midnight
+    on this screen's clock. Fetched on opening, not streamed: up to 400 rows nobody needs every 5 s. */
+let TODAY_EVENTS = null;
+function open_today() {
+  fetch("/api/events").then((r) => r.json()).then((d) => {
+    TODAY_EVENTS = d.events || [];
+    open_panel({ id: "_today", name: "TODAY", panel: "today" });
+  }).catch(() => show_message("could not read the events"));
+}
+
+/** "Thu" for "2026-10-15" (noon, so no time zone moves it to another day). */
+function day_name(date) {
+  return DAYS[new Date(date + "T12:00:00").getDay()].slice(0, 3);
 }
 
 function night_now() {
@@ -391,7 +437,8 @@ function mount() {
   if (CFG.pages[page].games) { mount_games(host, CFG.pages[page].games); update(); return; }
 
   for (const g of CFG.pages[page].groups) {
-    const cards = CFG.cards[g.id] || [];
+    // left off this screen from ⚙ (settings.js): the group, or some of its cards
+    const cards = (CFG.cards[g.id] || []).filter((c) => !is_hidden(g.id, c.id));
     if (!cards.length) continue;
     // A group is a framed box: its title is the big heading, its cards sit inside with smaller
     // names. A card named like its group (PVE in group PVE) would only repeat the title, so it
@@ -1419,6 +1466,22 @@ function fill_panel() {
         : "stopped", !g.running]));
   }
 
+  // ---- the day's timeline: a tap on the clock ----
+  if (c.panel === "today") {
+    const midnight = new Date().setHours(0, 0, 0, 0) / 1000;
+    const today = (TODAY_EVENTS || []).filter((e) => e.t >= midnight);
+    const bad = today.filter((e) => e.bad).length;
+    section(body, today.length ? `${today.length} changes · ${bad} bad` : "today",
+      today.length ? today.map((e) => [e.name, clock(e.t), e.bad]) : [["nothing changed since midnight", ""]]);
+  }
+
+  // ---- the weather: a tap on the corner ----
+  if (c.panel === "weather") {
+    section(body, "forecast", (get("weather.days") || []).map((d, i) => [
+      `${i === 0 ? "Today" : day_name(d.date)}  ${icon(d.code)}`,
+      `${Math.round(d.min)}° / ${Math.round(d.max)}°` + (d.rain != null ? ` · rain ${d.rain}%` : "")]));
+  }
+
   // ---- game server ----
   if (c.panel === "game" && c.game) {
     const q = c.game.query || {};
@@ -1499,8 +1562,87 @@ function fill_panel() {
     }
   }
 
+  panel_charts(body, c);
   render_actions(c);
   return body.children.length > afterStatus || !$("#panel-actions").hidden;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Charts in a card's panel: its numbers that have a history, over 6 hours, 24 hours or 7 days
+// ---------------------------------------------------------------------------------------------
+
+const RANGES = [["6h", 6 * 3600], ["24h", 86400], ["7d", 7 * 86400]];
+let chartRange = "6h";
+let LONG_HIST = null, longAt = 0;
+
+/** The long series (15-minute points, /api/history?long), asked when a 24h/7d chart is shown and
+    at most every 5 minutes after that; the panel redraws itself when it arrives. */
+function load_long() {
+  if (Date.now() - longAt < 300000) return;
+  longAt = Date.now();
+  fetch("/api/history?long").then((r) => r.json()).then((d) => { LONG_HIST = d; if (panelCard) fill_panel(); })
+    .catch(() => { longAt = 0; });
+}
+
+function panel_charts(body, c) {
+  const specs = (c.metrics || []).filter(([path]) => CFG.trends && CFG.trends.includes(path));
+  if (!specs.length) return;
+  const head = el("div", "chart-head");
+  head.appendChild(el("h3", null, "history"));
+  for (const [name] of RANGES) {
+    const b = el("button", "range" + (name === chartRange ? " on" : ""), name);
+    b.type = "button";
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); chartRange = name; fill_panel(); });
+    head.appendChild(b);
+  }
+  body.appendChild(head);
+  const seconds = RANGES.find(([n]) => n === chartRange)[1];
+  let source = HIST, step = 60;
+  if (chartRange !== "6h") {
+    load_long();
+    if (!LONG_HIST) { body.appendChild(el("p", "panel-spec", "loading…")); return; }
+    source = LONG_HIST.series; step = LONG_HIST.step;
+  }
+  const grid = el("div", "charts");
+  for (const [path, label, fmt] of specs) {
+    const series = (source[path] || []).slice(-Math.round(seconds / step));
+    grid.appendChild(chart(label, series, fmt, seconds));
+  }
+  body.appendChild(grid);
+}
+
+/** One chart: the line, its lowest and highest value, the latest, and how far back it goes. */
+function chart(label, series, fmt, seconds) {
+  const box = el("div", "chart");
+  const nums = series.filter((v) => typeof v === "number");
+  const top = el("div", "chart-top");
+  top.append(el("span", "lbl", label), el("span", "now", nums.length ? format(nums[nums.length - 1], fmt) : "—"));
+  box.appendChild(top);
+  if (nums.length < 2) { box.appendChild(el("div", "chart-empty", "not enough history yet")); return box; }
+  let lo = Math.min(...nums), hi = Math.max(...nums);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const W = 300, H = 60, n = Math.max(1, series.length - 1);
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  // a gap in the data (the server was down) breaks the line instead of joining across it
+  const runs = [[]];
+  series.forEach((v, i) => {
+    if (typeof v !== "number") { if (runs[runs.length - 1].length) runs.push([]); return; }
+    runs[runs.length - 1].push(`${(W * i / n).toFixed(1)},${(H - 2 - (H - 4) * (v - lo) / (hi - lo)).toFixed(1)}`);
+  });
+  for (const r of runs) {
+    if (r.length < 2) continue;
+    const line = document.createElementNS(SVG, "polyline");
+    line.setAttribute("points", r.join(" "));
+    svg.appendChild(line);
+  }
+  box.appendChild(svg);
+  const foot = el("div", "chart-foot");
+  const back = seconds >= 86400 ? `${Math.round(seconds / 86400)}d ago` : `${Math.round(seconds / 3600)}h ago`;
+  foot.append(el("span", null, back), el("span", null, `${format(lo, fmt)} – ${format(hi, fmt)}`), el("span", null, "now"));
+  box.appendChild(foot);
+  return box;
 }
 
 /** The action buttons, at the bottom of the panel. One tap on the card gets you here. */
@@ -1624,7 +1766,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   put($("#weather .city"), CFG.city || "");
   for (const items of Object.values(CFG.cards)) for (const c of items) CARD_BY_ID[c.id] = c;
   CFG.pages.forEach((p, i) => {
-    for (const g of p.groups) for (const c of CFG.cards[g.id] || []) PAGE_OF_CARD[c.id] = i;
+    for (const g of p.groups) for (const c of CFG.cards[g.id] || []) { PAGE_OF_CARD[c.id] = i; GROUP_OF_CARD[c.id] = g.id; }
   });
   apply_night();
   from_address();
@@ -1654,6 +1796,11 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   $("#health").addEventListener("click", open_health_panel);
   start_tour();
   $("#gear").addEventListener("click", open_settings);
+  for (const part of ["#clock .time", "#clock .date"]) $(part).addEventListener("click", open_today);
+  $("#weather").addEventListener("click", () => {
+    if (!get("weather.days")) return;
+    open_panel({ id: "_weather", name: "WEATHER" + (CFG.city ? " · " + CFG.city.toUpperCase() : ""), panel: "weather" });
+  });
   $("#settings-x").addEventListener("click", close_settings);
   // The rotation: checked every second against this screen's period and pages (⚙, settings.js).
   if (!LIST_VIEW) tick(() => {

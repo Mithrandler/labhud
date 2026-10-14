@@ -41,6 +41,13 @@ const DEFAULTS = {
   night: null,   // null = as in config.toml; otherwise {on, from, to, dim}
   wake: true,    // a new problem lights a dimmed screen up
   calm: null,    // null = as in config.toml; otherwise {on, after}
+  hidden: [],    // "g:<group id>" / "c:<card id>" left off this screen
+  density: "normal",   // "compact" / "normal" / "airy"
+  awake: false,  // keep the screen on (Wake Lock, or a silent video over plain HTTP)
+  flash: true,   // a new problem flashes a red frame three times
+  sound: false,  // ... and beeps
+  loud_night: false,   // the beep also at night
+  calm_show: ["weather"],   // under the calm clock: "weather" and/or ids of cards with a list
 };
 
 let S = load_settings();
@@ -83,9 +90,91 @@ function apply_look() {
   if (S.font === "roboto") root.removeProperty("--font"); else root.setProperty("--font", font[1]);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = base.vars["--bg"] || "#000000";
+  for (const d of ["compact", "airy"]) document.body.classList.toggle("density-" + d, S.density === d);
+}
+
+/** Left off this screen from ⚙: a whole group, or one card. mount() in app.js skips them, and a
+    hidden card's new problem does not take the screen. */
+function is_hidden(groupId, cardId) {
+  return S.hidden.includes("g:" + groupId) || (cardId != null && S.hidden.includes("c:" + cardId));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Keeping the screen on
+// ---------------------------------------------------------------------------------------------
+
+let wakeLock = null, wakeVideo = null;
+
+/** The browser's Wake Lock where it exists (it needs HTTPS); over plain HTTP, a silent looping
+    video does the same on phones (the NoSleep.js trick, its clips are in static/). Both need the
+    page to be visible, so they are asked again when the screen comes back. */
+async function apply_awake() {
+  if (!S.awake) {
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    if (wakeVideo) { wakeVideo.pause(); wakeVideo.remove(); wakeVideo = null; }
+    return;
+  }
+  if (document.hidden) return;
+  if ("wakeLock" in navigator && window.isSecureContext) {
+    try {
+      if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock.request("screen");
+      return;
+    } catch (e) { /* refused (battery saver): try the video */ }
+  }
+  if (!wakeVideo) {
+    wakeVideo = document.createElement("video");
+    wakeVideo.muted = true; wakeVideo.loop = true; wakeVideo.playsInline = true;
+    wakeVideo.setAttribute("playsinline", "");
+    wakeVideo.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none";
+    for (const [src, type] of [["/keepawake.webm", "video/webm"], ["/keepawake.mp4", "video/mp4"]]) {
+      const so = document.createElement("source"); so.src = src; so.type = type; wakeVideo.appendChild(so);
+    }
+    document.body.appendChild(wakeVideo);
+  }
+  wakeVideo.play().catch(() => { /* needs a touch first: the next one starts it */ });
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) apply_awake(); });
+// a video may only start after a touch: every touch retries while it is not playing
+document.addEventListener("pointerdown", () => { if (S.awake && wakeVideo && wakeVideo.paused) wakeVideo.play().catch(() => {}); }, { passive: true });
+
+// ---------------------------------------------------------------------------------------------
+// The signal of a new problem
+// ---------------------------------------------------------------------------------------------
+
+let audio = null;
+
+/** Called by app.js when a problem is new (focus_on). A red frame flashes three times — bound to
+    that one event, so it is not an endless animation — and, if chosen, two short tones. */
+function signal_problem() {
+  if (S.flash) {
+    document.body.classList.remove("flash");
+    void document.body.offsetWidth;   // restart the animation when two problems come close
+    document.body.classList.add("flash");
+    setTimeout(() => document.body.classList.remove("flash"), 1700);
+  }
+  if (S.sound && (S.loud_night || !night_now())) beep();
+}
+
+function beep() {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    const t = audio.currentTime;
+    for (const [at, hz] of [[0, 880], [0.22, 660]]) {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = hz; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(0.25, t + at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.18);
+      o.connect(g).connect(audio.destination);
+      o.start(t + at); o.stop(t + at + 0.2);
+    }
+  } catch (e) { /* no audio on this device */ }
 }
 
 apply_look();
+apply_awake();
 
 /** The night window in force on this screen: its own, or config.toml's. null = no night. */
 function night_cfg() {
@@ -220,18 +309,76 @@ function open_settings() {
   if (S.calm && S.calm.on) {
     choices(cm, [120, 300, 600, 1800].map((n) => [n, `after ${n / 60} min`]), S.calm.after, (v) => { S.calm.after = v; save_settings(); });
   }
+  cm.appendChild(el("p", "hint", "Under the clock (the first line of each):"));
+  const under = el("div", "choices");
+  const listCards = Object.values(CARD_BY_ID).filter((c) => c.list && !is_guest(c));
+  for (const [id, label] of [["weather", "Forecast"], ...listCards.map((c) => [c.id, c.name])]) {
+    const on = S.calm_show.includes(id);
+    const b = el("button", "choice small" + (on ? " on" : ""), label);
+    b.type = "button";
+    b.addEventListener("click", () => {
+      S.calm_show = on ? S.calm_show.filter((x) => x !== id) : [...S.calm_show, id].slice(-4);
+      save_settings(); open_settings();
+    });
+    under.appendChild(b);
+  }
+  cm.appendChild(under);
+
+  // --- layout of this screen ---
+  const lay = section("Layout");
+  choices(lay, [["compact", "Compact"], ["normal", "Normal"], ["airy", "Airy"]], S.density,
+    (v) => { S.density = v; save_settings(); apply_look(); mount(); });
+  lay.appendChild(el("p", "hint", "Shown on this screen (tap to hide a group or a card):"));
+  for (const p of CFG.pages) {
+    for (const g of p.groups) {
+      const cards = CFG.cards[g.id] || [];
+      if (!cards.length) continue;
+      const row = el("div", "choices hide-row");
+      const gOn = !S.hidden.includes("g:" + g.id);
+      const gb = el("button", "choice group-chip" + (gOn ? " on" : ""), `${p.title} · ${g.title}`);
+      gb.type = "button";
+      gb.addEventListener("click", () => { toggle_hidden("g:" + g.id); });
+      row.appendChild(gb);
+      if (gOn && cards.length > 1) {
+        for (const c of cards) {
+          const on = !S.hidden.includes("c:" + c.id);
+          const cb = el("button", "choice small" + (on ? " on" : ""), c.name);
+          cb.type = "button";
+          cb.addEventListener("click", () => { toggle_hidden("c:" + c.id); });
+          row.appendChild(cb);
+        }
+      }
+      lay.appendChild(row);
+    }
+  }
+
+  // --- screen on, signal ---
+  const scr = section("Screen and signal");
+  choices(scr, [[false, "Screen may sleep"], [true, "Keep the screen on"]], S.awake, (v) => { S.awake = v; save_settings(); apply_awake(); });
+  if (S.awake && !window.isSecureContext) {
+    scr.appendChild(el("p", "hint", "Over plain HTTP this uses a silent video: it starts after the first touch."));
+  }
+  scr.appendChild(el("p", "hint", "When a problem is new:"));
+  choices(scr, [[true, "Flash red"], [false, "No flash"]], S.flash, (v) => { S.flash = v; save_settings(); });
+  choices(scr, [[false, "Silent"], [true, "Beep"]], S.sound, (v) => { S.sound = v; save_settings(); if (v) beep(); });
+  if (S.sound) choices(scr, [[false, "Silent at night"], [true, "Beep at night too"]], S.loud_night, (v) => { S.loud_night = v; save_settings(); });
 
   const reset = el("button", "reset", "Reset this screen to the defaults");
   reset.type = "button";
   reset.addEventListener("click", () => {
     S = { ...DEFAULTS };
     try { localStorage.removeItem(SETTINGS_KEY); } catch (e) { /* nothing kept anyway */ }
-    apply_look(); apply_night(); render_night(); mount(); open_settings();
+    apply_look(); apply_night(); apply_awake(); render_night(); mount(); open_settings();
   });
   body.appendChild(reset);
   body.appendChild(el("p", "hint", "Saved in this browser only: other screens keep their own settings."));
   box.hidden = false;
   body.scrollTop = keep;
+}
+
+function toggle_hidden(key) {
+  S.hidden = S.hidden.includes(key) ? S.hidden.filter((x) => x !== key) : [...S.hidden, key];
+  save_settings(); mount(); open_settings();
 }
 
 function close_settings() { $("#settings").hidden = true; touched(); }

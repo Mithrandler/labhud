@@ -17,15 +17,21 @@ def weather(cfg):
     qs = urllib.parse.urlencode({
         "latitude": cfg["latitude"], "longitude": cfg["longitude"],
         "current": "temperature_2m,weather_code",
-        "daily": "temperature_2m_max,temperature_2m_min", "timezone": cfg.get("timezone", "auto"),
-        "forecast_days": 1,
+        "daily": "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max",
+        "timezone": cfg.get("timezone", "auto"),
+        "forecast_days": 4,   # today + the next three, for the forecast panel and the calm screen
     })
     d = request(f"https://api.open-meteo.com/v1/forecast?{qs}", timeout=15, public=True)
     current = d.get("current") or {}
     day = d.get("daily") or {}
+    col = lambda key: day.get(key) or []
+    days = [{"date": date, "max": hi, "min": lo, "code": code, "rain": rain}
+            for date, hi, lo, code, rain in zip(col("time"), col("temperature_2m_max"), col("temperature_2m_min"),
+                                                col("weather_code"), col("precipitation_probability_max") or [None] * 4)]
     return {
         "temp": current.get("temperature_2m"),
         "code": current.get("weather_code"),
-        "max": (day.get("temperature_2m_max") or [None])[0],
-        "min": (day.get("temperature_2m_min") or [None])[0],
+        "max": (col("temperature_2m_max") or [None])[0],
+        "min": (col("temperature_2m_min") or [None])[0],
+        "days": days,   # [{date "YYYY-MM-DD", max, min, code, rain %}], today first
     }

@@ -6,6 +6,24 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- Charts in a card's panel for every number with a history, over 6 hours, 24 hours or 7 days. The
+  server now also keeps a 15-minute average for 7 days (`/api/history?long`, kept in
+  `LABHUD_DATA` like the rest).
+- TODAY: a tap on the clock lists every change since midnight. Up to 400 events are kept (30 still
+  travel in the snapshot); all of them at `/api/events`.
+- A 3-day forecast: a tap on the weather opens it, with the chance of rain.
+- Under the calm clock, chosen per screen in ⚙: the forecast and the first line of any card's list
+  (the next film, the latest download, who is playing). The clock stays whole on screen.
+- More in ⚙: hide groups or single cards on that screen (a hidden card's problem neither takes
+  the screen nor signals), compact / normal / airy spacing, keep the screen on (Wake Lock over
+  HTTPS, NoSleep.js's silent video over plain HTTP), and a red flash and/or a beep for a new
+  problem, silent at night unless asked.
+- Installable: a web app manifest and icons ("Add to Home screen" opens it full screen over HTTPS).
+
+### Changed
+- The ⚙ is a thin outline in the theme's accent colour.
+
 ## [0.1.62] - 2026-10-14
 
 ### Added

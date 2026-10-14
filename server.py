@@ -211,6 +211,12 @@ WATCH = thresholds.Watch()
 HISTORY_STEP = 60
 HISTORY_POINTS = 360
 _history = {}
+# The long view, for the charts in a card's panel (24 hours, 7 days): the average of every 15
+# minutes, 7 days of them. Kept like the short one (LABHUD_DATA), saved once per new point.
+LONG_STEP = 900
+LONG_POINTS = 7 * 86400 // LONG_STEP
+_long = {}
+_long_pending = {}   # path -> the minute values since the last long point
 
 
 def _value(path, data=None):
@@ -234,18 +240,23 @@ def seed_demo_history():
     rows = demo.history(HISTORY_POINTS, HISTORY_STEP, lambda d: [_value(p, d) for p in paths])
     for i, path in enumerate(paths):
         _history[path] = collections.deque((r[i] for r in rows), maxlen=HISTORY_POINTS)
+    rows = demo.history(LONG_POINTS, LONG_STEP, lambda d: [_value(p, d) for p in paths])
+    for i, path in enumerate(paths):
+        _long[path] = collections.deque((r[i] for r in rows), maxlen=LONG_POINTS)
 
 
 def restore_history():
     """The sparklines kept at the last stop (LABHUD_DATA), with the minutes it was down left empty."""
-    saved = store.load("history")
-    if not saved:
-        return
-    gap = min(HISTORY_POINTS, max(0, int((time.time() - saved.get("t", 0)) // HISTORY_STEP)))
-    for path in TOPOLOGY["trends"]:
-        values = saved.get("series", {}).get(path)
-        if values:
-            _history[path] = collections.deque(values + [None] * gap, maxlen=HISTORY_POINTS)
+    for name, target, step, points in (("history", _history, HISTORY_STEP, HISTORY_POINTS),
+                                       ("history_long", _long, LONG_STEP, LONG_POINTS)):
+        saved = store.load(name)
+        if not saved:
+            continue
+        gap = min(points, max(0, int((time.time() - saved.get("t", 0)) // step)))
+        for path in TOPOLOGY["trends"]:
+            values = saved.get("series", {}).get(path)
+            if values:
+                target[path] = collections.deque(values + [None] * gap, maxlen=points)
 
 
 def sample_history():
@@ -260,13 +271,35 @@ def sample_history():
             for path in set(_history) - set(TOPOLOGY["trends"]):  # gone after a reload
                 del _history[path]
             kept = {p: list(s) for p, s in _history.items()}
+            long_kept = _sample_long()
         if not DEMO:
             store.save("history", {"t": int(time.time()), "series": kept})
+            if long_kept is not None:
+                store.save("history_long", {"t": int(time.time()), "series": long_kept})
         time.sleep(HISTORY_STEP)
 
 
-def history():
+def _sample_long():
+    """Adds the latest minute to the running 15 minutes; on the 15th, appends their average to the
+    long series. Returns the long series when a point was added (to be saved), else None. Under _lock."""
+    for path in TOPOLOGY["trends"]:
+        _long_pending.setdefault(path, []).append(_history[path][-1] if _history.get(path) else None)
+    if len(next(iter(_long_pending.values()), [])) * HISTORY_STEP < LONG_STEP:
+        return None
+    for path in TOPOLOGY["trends"]:
+        values = [v for v in _long_pending.get(path, []) if v is not None]
+        series = _long.setdefault(path, collections.deque(maxlen=LONG_POINTS))
+        series.append(round(sum(values) / len(values), 1) if values else None)
+    for path in set(_long) - set(TOPOLOGY["trends"]):
+        del _long[path]
+    _long_pending.clear()
+    return {p: list(s) for p, s in _long.items()}
+
+
+def history(long=False):
     with _lock:
+        if long:
+            return {"step": LONG_STEP, "series": {p: list(s) for p, s in _long.items()}}
         return {"step": HISTORY_STEP, "series": {p: list(s) for p, s in _history.items()}}
 
 
@@ -476,7 +509,7 @@ def _log(found):
             screen.wake()
         notify.submit(TOPOLOGY["title"], text, bad, still_true)
     if not DEMO:
-        store.save("events", EVENTS.snapshot()["recent"])
+        store.save("events", EVENTS.all())
     result = dict(EVENTS.snapshot(), _t=int(time.time()))
     with _lock:
         _data["events"] = result
@@ -830,6 +863,8 @@ TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8", ".woff2": "font/woff2",
     ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json", ".webm": "video/webm", ".mp4": "video/mp4",
+    ".txt": "text/plain; charset=utf-8",
 }
 
 
@@ -885,8 +920,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(snapshot())
         if path == "/api/status":
             return self._json(health())
-        if path == "/api/history":
-            return self._json(history())
+        if path == "/api/history":   # ?long: 15-minute points over 7 days, for the panel's charts
+            return self._json(history(long="long" in self.path.partition("?")[2]))
+        if path == "/api/events":   # every kept event, newest first: the day's timeline
+            return self._json({"events": EVENTS.all()})
         if path == "/status":
             path = "/status.html"
         if path == "/edit":

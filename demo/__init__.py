@@ -241,7 +241,11 @@ def jellyfin():
 
 
 def weather():
-    return {"temp": round(_wave(14, 4, 86400), 1), "code": 2, "max": 18.0, "min": 9.0}
+    import datetime
+    today = datetime.date.today()
+    days = [{"date": (today + datetime.timedelta(days=i)).isoformat(), "max": hi, "min": lo, "code": code, "rain": rain}
+            for i, (hi, lo, code, rain) in enumerate([(18.0, 9.0, 2, 10), (16.0, 8.0, 61, 70), (12.0, 4.0, 3, 30), (15.0, 6.0, 0, 0)])]
+    return {"temp": round(_wave(14, 4, 86400), 1), "code": 2, "max": 18.0, "min": 9.0, "days": days}
 
 
 FETCHERS = {"proxmox": (proxmox, 10), "temp": (temp, 10), "synology": (synology, 30), "pbs": (pbs, 60),

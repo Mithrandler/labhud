@@ -53,8 +53,9 @@ class Log(unittest.TestCase):
         log.add("one", t=1)
         for i in range(events.MAX_EVENTS + 5):
             log.add(f"e{i}", t=10 + i)
-        rows = log.snapshot()["recent"]
+        rows = log.all()
         self.assertEqual(len(rows), events.MAX_EVENTS)
+        self.assertEqual(len(log.snapshot()["recent"]), events.SHOWN)
         last = events.MAX_EVENTS + 4
         self.assertEqual(rows[0], {"name": f"e{last}", "t": 10 + last, "bad": False})
 
