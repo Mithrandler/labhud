@@ -73,6 +73,29 @@ def _vm_disk(url, header, node, vmid):
     return val
 
 
+# "Start at boot" of a STOPPED guest: one that does not start at boot is off on purpose (woken when
+# needed), so the wall shows it grey instead of red. /cluster/resources does not carry it, so the
+# guest's config is read — only for stopped guests, and remembered for 10 minutes.
+_ONBOOT = {}
+_ONBOOT_TTL = 600
+
+
+def _onboot(url, header, node, kind, vmid):
+    """True/False, or None if the config cannot be read (the token lacks VM.Audit)."""
+    now = time.time()
+    cache = _ONBOOT.get((node, vmid))
+    if cache and now - cache[0] < _ONBOOT_TTL:
+        return cache[1]
+    try:
+        kind = "lxc" if kind == "lxc" else "qemu"
+        cfg = request(f"{url}/api2/json/nodes/{node}/{kind}/{vmid}/config", header, timeout=8).get("data") or {}
+        val = str(cfg.get("onboot", 0)) == "1"
+    except (OSError, ValueError, TypeError, KeyError):
+        val = cache[1] if cache else None
+    _ONBOOT[(node, vmid)] = (now, val)
+    return val
+
+
 # Storage growth, for "full in N days": one sample an hour per storage, the last 7 days, kept in
 # memory (a restart starts over; the estimate appears once 12 hours are known).
 _GROWTH = {}
@@ -121,6 +144,10 @@ def _node(node, url, header):
         }
         if r.get("template"):
             guests[str(vmid)]["template"] = True
+        if not running:
+            onboot = _onboot(url, header, node, r.get("type"), vmid)
+            if onboot is not None:
+                guests[str(vmid)]["onboot"] = onboot
         if running and r.get("type") == "lxc":
             guests[str(vmid)]["disk_used"] = r.get("disk")
             guests[str(vmid)]["disk_total"] = r.get("maxdisk")

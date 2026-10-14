@@ -6,6 +6,21 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- A machine that is off on purpose is grey everywhere, not red: a stopped Proxmox guest that does
+  not start at boot (read from its config, only for stopped guests, cached 10 minutes; the token
+  needs VM.Audit, which PVEAuditor has), an `on_demand` card on the bottom strip, and the same
+  host in another source's list (Beszel's "down" becomes "off").
+- In a card's metrics the boxes of a row share its width, so one left alone on the last row no
+  longer looks forgotten.
+- A guest's RAM stops at 100% (the balloon can report 101%).
+
+### Fixed
+- A list that cannot show every row no longer hides problems without a trace: when a hidden row
+  is bad, the last row says "+N more · M bad". Top-N lists that simply end stay as they were.
+- The log no longer prints a traceback for every client that drops its connection, and lines
+  from two threads no longer end up glued together.
+
 ## [0.1.61] - 2026-10-09
 
 ### Changed

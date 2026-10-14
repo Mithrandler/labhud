@@ -13,6 +13,7 @@
 # checks, so nothing else, not even a container next to this server, can make one. Without a secret
 # the browser talks to the agent directly, and the agent must trust only the display's IP.
 
+import builtins
 import collections
 import hashlib
 import hmac
@@ -35,6 +36,29 @@ import screen
 import store
 import thresholds
 from sources import push
+
+# print() writes the text and the newline separately, so two threads logging at once glued their
+# lines together ("kept across restarts in /datawarning: ..."). One lock around each whole line.
+_print, _print_lock = builtins.print, threading.Lock()
+
+
+def _one_line_print(*args, **kw):
+    with _print_lock:
+        _print(*args, **kw)
+
+
+builtins.print = _one_line_print
+
+
+class Server(ThreadingHTTPServer):
+    # A browser or a phone that drops its connection mid-request (screen off, tab closed, Wi-Fi
+    # switch) is normal: the default printed a full traceback for every one.
+    def handle_error(self, request, client_address):
+        import sys
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
 
 PORT = int(os.environ.get("LABHUD_PORT", "8095"))
 # HTTPS on labhud's own port (PEM files), for a display or agents on a network you do not trust.
@@ -387,7 +411,7 @@ class PublicHandler(BaseHTTPRequestHandler):
 
 
 def start_public(port):
-    httpd = ThreadingHTTPServer(("0.0.0.0", port), PublicHandler)
+    httpd = Server(("0.0.0.0", port), PublicHandler)
     threading.Thread(target=httpd.serve_forever, daemon=True, name="public").start()
     print(f"public status page on :{port}" + ("" if TOPOLOGY.get("public") else " (empty: no [public] in config.toml)"), flush=True)
 
@@ -1083,7 +1107,7 @@ if __name__ == "__main__":
     threading.Thread(target=watch_maintenance, daemon=True, name="maintenance").start()
     if os.environ.get("LABHUD_PUBLIC_PORT"):
         start_public(int(os.environ["LABHUD_PUBLIC_PORT"]))
-    httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    httpd = Server(("0.0.0.0", PORT), Handler)
     if TLS_CERT:
         import ssl
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

@@ -182,7 +182,9 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 
 /* the metric blocks, centred */
 .metrics { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; margin-top: 3px; }
-.metric { position: relative; background: var(--block); border-radius: 4px; padding: 1px 3px; min-width: 36px; }
+/* flex-grow: the boxes of a row share its width, so one left alone on the last row spans it instead
+   of sitting there like it was forgotten (a fifth number under four, in portrait). */
+.metric { position: relative; flex: 1 1 auto; background: var(--block); border-radius: 4px; padding: 1px 3px; min-width: 36px; }
 /* The last hours behind the value: faint, in the lower half, never in the way of the number. */
 .metric svg.spark { position: absolute; left: 0; bottom: 0; width: 100%; height: 60%; border-radius: 0 0 4px 4px; pointer-events: none; }
 .metric svg.spark polygon { fill: var(--accent); opacity: .16; }
@@ -202,6 +204,9 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 .row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }
 .row .v { color: var(--text); font-weight: 700; white-space: nowrap; }
 .row.bad .v { color: var(--red); }
+.row.quiet .v { color: var(--muted); font-weight: 500; }
+.row.more { background: transparent; }
+.row.more .n { color: var(--muted); font-style: italic; }
 
 .torrent { display: flex; flex-direction: column; gap: 2px; padding: 3px 4px; background: var(--block); border-radius: 3px; text-align: left; }
 .torrent .t { font-size: 9px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -245,9 +250,9 @@ body.p-games #content {
 .node .nm { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--muted); }
 .node .nm.up { color: var(--green); }
 .node .nm.down { color: var(--red); }
-/* Off on schedule or by design (a NAS at night, a backup server, a desktop): still off, so still red,
-   but dimmer — to tell them apart from a real outage. */
-.node .nm.scheduled { color: var(--red); opacity: .72; }
+/* Off on schedule or by design (a NAS at night, a backup server, a desktop): grey, like the card's
+   hollow dot. Red is kept for what should be on and is not. */
+.node .nm.scheduled { color: var(--muted); }
 .node .rt { font-size: 10px; color: var(--sub); white-space: nowrap; }
 .node .rt.flowing { color: var(--green); }
 

@@ -67,6 +67,7 @@ class SourceTest(unittest.TestCase):
 class Proxmox(SourceTest):
     def setUp(self):
         proxmox._VM_DISK.clear()
+        proxmox._ONBOOT.clear()
         proxmox._backup_cache.clear()
         self.env(PROXMOX_NODES="alpha, beta", PROXMOX_ALPHA_URL="https://alpha.example.test:8006/",
                  PROXMOX_ALPHA_TOKEN_ID="reader@pve!wall", PROXMOX_ALPHA_TOKEN_SECRET="not-a-real-secret")
@@ -110,6 +111,20 @@ class Proxmox(SourceTest):
         self.assertEqual(self.http.calls[0]["headers"],
                          {"Authorization": "PVEAPIToken=reader@pve!wall=not-a-real-secret"})
         self.assertTrue(all(c["url"].startswith("https://alpha.example.test:8006/api2/json/") for c in self.http.calls))
+
+    def test_onboot_only_for_stopped_guests(self):
+        # no config route: unknown, so the key is left out (the wall keeps it red, as before)
+        self.assertNotIn("onboot", proxmox.proxmox()["alpha"]["guests"]["102"])
+        proxmox._ONBOOT.clear()
+        self.http.routes["/qemu/102/config"] = {"data": {"name": "spare"}}   # onboot unset = 0
+        out = proxmox.proxmox()["alpha"]["guests"]
+        self.assertIs(out["102"]["onboot"], False)
+        self.assertNotIn("onboot", out["100"])                               # running: not asked
+        proxmox._ONBOOT.clear()
+        self.http.routes["/qemu/102/config"] = {"data": {"onboot": 1}}
+        self.assertIs(proxmox.proxmox()["alpha"]["guests"]["102"]["onboot"], True)
+        proxmox.proxmox()
+        self.assertEqual(sum("/config" in c["url"] for c in self.http.calls), 3)  # cached after a read
 
     def test_vm_disk_is_cached(self):
         proxmox.proxmox()

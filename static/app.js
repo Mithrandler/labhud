@@ -219,11 +219,13 @@ function show_config_errors(problems) {
 
 /** A single entry point for any new data, deferred to the next frame. */
 let deferred = false;
+let dataVersion = 0;      // bumped once per redraw: caches derived from D key on it
 function update() {
   if (deferred) return;
   deferred = true;
   requestAnimationFrame(() => {
     deferred = false;
+    dataVersion++;
     for (const fn of updaters) fn();
     render_strip();
     render_alerts();
@@ -563,7 +565,10 @@ function raw_status(c) {
   if (!c || !c.check) return null;
   if (c.check[0] === "proxmox") {
     const g = get("proxmox." + c.check[1] + ".guests." + c.check[2]);
-    return g ? !!g.running : null;
+    if (!g) return null;
+    // Stopped and not started at boot: off on purpose (started when needed), not an outage.
+    if (!g.running && (g.onboot === false || c.on_demand)) return "on-demand";
+    return !!g.running;
   }
   if (c.check[0] === "known") return c.check[1];   // game servers know their own state
   const v = get("status." + c.id);
@@ -676,7 +681,8 @@ function make_guest_card(c) {
     cls(val, "off", !running);
     if (!running) { put(disk, ""); cls(val, "hot", false); return; }
     put(cpu, `${Math.round(g.cpu || 0)}%`);
-    put(mem, `${Math.round(g.mem || 0)}%`);
+    // the balloon can report a little over the maximum (101%): a percentage of a whole stops at 100
+    put(mem, `${Math.min(100, Math.round(g.mem || 0))}%`);
     put(disk, g.disk_used != null ? "Disk " + used_of(g.disk_used, g.disk_total, false) : "");
     // Do NOT colour by percentage: Proxmox computes it as `total - MemFree`, so it counts the page
     // cache too, and any Linux machine that ran for a day reaches ~95% without any problem.
@@ -719,7 +725,7 @@ function make_metrics(specs) {
 function summary(c) {
   if (is_guest(c)) {
     const g = get(`proxmox.${c.check[1]}.guests.${c.check[2]}`);
-    return g && g.running ? `CPU ${Math.round(g.cpu)}% · RAM ${Math.round(g.mem)}%` : "";
+    return g && g.running ? `CPU ${Math.round(g.cpu)}% · RAM ${Math.min(100, Math.round(g.mem))}%` : "";
   }
   if (c.metrics) {
     return c.metrics.slice(0, 3).map(([path, label, fmt]) => `${label} ${format(get(path), fmt)}`).join(" · ");
@@ -871,21 +877,69 @@ function make_list(path, limit) {
     host.appendChild(r);
     rows.push({ r, name, val });
   }
+  // A problem that does not fit must not vanish without a trace (the Pangolin card showed 2 of its 8
+  // failures): then the last row says how many more there are and how many are bad. A top-N list
+  // that simply ends (top blocked domains, the latest logins) stays as it is — "+85 more" under
+  // every list was noise. The whole list is in the card's panel.
+  const more = el("div", "row more");
+  const moreName = el("span", "n"), moreVal = el("span", "v");
+  more.append(moreName, moreVal);
+  more.hidden = true;
+  host.appendChild(more);
   updaters.push(() => {
     const data = get(path);
-    const items = Array.isArray(data) ? data : [];
+    const items = Array.isArray(data) ? data.map(quiet_row) : [];
+    const cut = items.length > limit && items.slice(limit - 1).some(row_bad);
+    const shown = cut ? limit - 1 : limit;
     rows.forEach((x, i) => {
-      const d = items[i];
+      const d = i < shown ? items[i] : null;
       if (!d) { if (!x.r.hidden) x.r.hidden = true; return; }
       if (x.r.hidden) x.r.hidden = false;
       put(x.name, String(d.name ?? d.text ?? ""));
       put(x.val, String(d.value ?? d.label ?? (d.t ? when(d.t) : "")));
-      // `bad: true` comes explicitly from the source; the words remain for lists that do not set it yet
-      cls(x.r, "bad", d.bad === true ||
-        (d.bad !== false && /failed|\bdown\b|missing|expired/i.test(String(d.value ?? ""))));
+      cls(x.r, "bad", row_bad(d));
+      cls(x.r, "quiet", d.quiet === true);
     });
+    more.hidden = !cut;
+    if (cut) {
+      const rest = items.slice(shown);
+      const bad = rest.filter(row_bad).length;
+      put(moreName, `+${rest.length} more`);
+      put(moreVal, bad ? `${bad} bad` : "");
+      cls(more, "bad", bad > 0);
+    }
   });
   return host;
+}
+
+/** `bad: true` comes explicitly from the source; the words remain for lists that do not set it yet. */
+function row_bad(d) {
+  return !d.quiet && (d.bad === true ||
+    (d.bad !== false && /failed|\bdown\b|missing|expired/i.test(String(d.value ?? ""))));
+}
+
+/** A list row "down" for a machine that is off on purpose (a stopped guest that does not start at
+    boot, or an on_demand card) is not a fault: shown grey as "off". Beszel lists such a host as
+    down, while the guest card next to it already says it is simply off. */
+function quiet_row(d) {
+  if (!d || !row_bad(d) || !quiet_names().has(norm(d.name))) return d;
+  return { ...d, value: "off", bad: false, quiet: true };
+}
+
+let quietCache = null, quietFor = -1;
+function quiet_names() {
+  if (quietFor === dataVersion) return quietCache;
+  const names = new Set();
+  for (const node of Object.values(get("proxmox") || {})) {
+    for (const g of Object.values((node && node.guests) || {})) {
+      if (g && !g.running && g.onboot === false && g.name) names.add(norm(g.name));
+    }
+  }
+  for (const c of Object.values(CARD_BY_ID)) {
+    if (c.on_demand && quiet_off(card_status(c))) names.add(norm(c.name));
+  }
+  quietFor = dataVersion; quietCache = names;
+  return names;
 }
 
 function make_torrents(path) {
