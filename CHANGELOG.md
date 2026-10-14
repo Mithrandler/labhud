@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.63] - 2026-10-14
+
 ### Added
 - Charts in a card's panel for every number with a history, over 6 hours, 24 hours or 7 days. The
   server now also keeps a 15-minute average for 7 days (`/api/history?long`, kept in
@@ -293,7 +295,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.62...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.63...HEAD
+[0.1.63]: https://github.com/Mithrandler/labhud/compare/v0.1.62...v0.1.63
 [0.1.62]: https://github.com/Mithrandler/labhud/compare/v0.1.61...v0.1.62
 [0.1.61]: https://github.com/Mithrandler/labhud/compare/v0.1.6...v0.1.61
 [0.1.6]: https://github.com/Mithrandler/labhud/compare/v0.1.5...v0.1.6
