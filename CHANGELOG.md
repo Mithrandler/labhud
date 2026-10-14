@@ -6,6 +6,12 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Fixed
+- A slow source that fails once no longer leaves its corner empty for ten minutes: a failed
+  source is retried within a minute (then backing off as before), and a slow one keeps its last
+  good answer for two of its own intervals. The weather vanished after one passing 503 from
+  Open-Meteo right after a restart.
+
 ## [0.1.63] - 2026-10-14
 
 ### Added

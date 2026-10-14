@@ -27,6 +27,15 @@ class Stale(unittest.TestCase):
         self.state({"x": 1}, time.time() - server.SOURCE_STALE - 5)
         self.assertEqual(server._keep_stale("src", {"unavailable": "down"}), {"unavailable": "down"})
 
+    def test_a_slow_source_keeps_it_for_two_of_its_intervals(self):
+        # the weather, polled every 15 minutes: one passing 503 must not empty the corner
+        self.state({"temp": 10}, time.time() - 1200)
+        with mock.patch.dict(server.SOURCES, {"src": 900}):
+            self.assertEqual(server._keep_stale("src", {"unavailable": "HTTP Error 503"}),
+                             {"temp": 10, "stale": "HTTP Error 503"})
+            self.state({"temp": 10}, time.time() - 1900)
+            self.assertEqual(server._keep_stale("src", {"unavailable": "x"}), {"unavailable": "x"})
+
     def test_nothing_good_yet_gives_the_error(self):
         self.state({"unavailable": "first"}, None)
         self.assertEqual(server._keep_stale("src", {"unavailable": "down"}), {"unavailable": "down"})

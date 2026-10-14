@@ -538,15 +538,17 @@ def _collect(name):
 
 
 def _keep_stale(name, result):
-    """A failed poll within SOURCE_STALE of the last good one: the last good answer, with
-    `stale` = the error. Past that, or with nothing good yet, the failure itself."""
+    """A failed poll within SOURCE_STALE of the last good one — or within two of the source's own
+    intervals, for a slow one like the weather — gives the last good answer, with `stale` = the
+    error. Past that, or with nothing good yet, the failure itself."""
     if "unavailable" not in result or not SOURCE_STALE:
         return result
+    window = max(SOURCE_STALE, 2 * SOURCES.get(name, 0))
     with _lock:
         before = _data.get(name)
         last_ok = _health.get(name, {}).get("last_ok")
     if not isinstance(before, dict) or "unavailable" in before or before.get("scheduled") \
-            or not last_ok or time.time() - last_ok > SOURCE_STALE:
+            or not last_ok or time.time() - last_ok > window:
         return result
     return dict(before, stale=result["unavailable"])
 
@@ -584,12 +586,14 @@ def loop():
             # Progressive backoff on a failed source. Without it, a source that refuses
             # authentication is polled at its normal interval forever — and qBittorrent, for
             # example, bans the IP after too many failed logins, so retrying sustains the very
-            # fault it measures. The first retry at the normal interval, then doubled, up to
-            # 10 minutes; on the first success it returns to its pace.
+            # fault it measures. The first retry at the normal interval but no later than a minute
+            # (a slow source such as the weather, every 15 minutes, would otherwise stay empty for
+            # 10 after one passing 503), then doubled, up to 10 minutes; on the first success it
+            # returns to its pace.
             interval = SOURCES.get(name, 60)
             if "unavailable" in result and getattr(ACTIVE.get(name), "backoff", True):
                 failures[name] = min(failures.get(name, 0) + 1, 6)
-                next_run[name] = time.monotonic() + min(interval * (2 ** (failures[name] - 1)), 600)
+                next_run[name] = time.monotonic() + min(min(interval, 60) * (2 ** (failures[name] - 1)), 600)
             else:
                 failures.pop(name, None)
             _log(_note_health(name, result, took, failures.get(name, 0),
