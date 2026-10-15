@@ -13,6 +13,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 - `metrics[].format` in `/api/v1/state` and `/api/v1/card`, so an app can tell a temperature from
   a share without guessing from the label.
 
+### Fixed
+- ⚙ on a wide screen left a hole under a short section when the one beside it was tall (Screen:
+  Night next to Calm); the sections now flow in columns like the wall's groups.
+
 ### Removed
 - **Direct actions.** Actions now always go through labhud, signed for the agent: both
   `LABHUD_ACTION_URL` and `LABHUD_ACTION_SECRET` are needed, and with the URL alone actions stay
