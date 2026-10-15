@@ -422,7 +422,7 @@ function settings_tabs(current) {
     b.addEventListener("click", () => {
       if (key === S.tab) return;
       S.tab = key; save_settings();
-      $("#settings-body").scrollTop = 0;
+      $("#settings-scroll").scrollTop = 0;
       open_settings();
     });
     bar.appendChild(b);
