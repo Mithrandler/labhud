@@ -6,6 +6,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- The name shows as **LabHUD** everywhere on screen: the top bar (now all in the accent colour, so
+  it no longer reads "labHUD"), the default title, `/status`, the setup page, the config editor and
+  the day's timeline ("LabHUD started"). Commands, the image and the container stay `labhud`.
+
 ## [0.1.66] - 2026-10-15
 
 ### Added

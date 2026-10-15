@@ -41,10 +41,10 @@ class Reload(DemoServer):
             f.write(good + "\n[[page]]\nid = \"Bad Id\"\n")
         status = self.wait_for(lambda s: s["config_errors"])
         self.assertTrue(any("Bad Id" in p for p in status["config_errors"]), status["config_errors"])
-        self.assertEqual(json.loads(self.get("/api/config")[2])["title"], "LABHUD DEMO")  # still the old one
+        self.assertEqual(json.loads(self.get("/api/config")[2])["title"], "LabHUD DEMO")  # still the old one
 
         with open(self.config, "w") as f:
-            f.write(good.replace('title = "LABHUD DEMO"', 'title = "RELOADED"', 1))
+            f.write(good.replace('title = "LabHUD DEMO"', 'title = "RELOADED"', 1))
         status = self.wait_for(lambda s: not s["config_errors"])
         self.assertEqual(status["config_errors"], [])
         self.assertEqual(json.loads(self.get("/api/config")[2])["title"], "RELOADED")

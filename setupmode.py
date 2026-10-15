@@ -163,7 +163,7 @@ class State:
     def build(self, plan):
         """(config text, env text, problems) for the plan the page sends."""
         problems = []
-        title = str(plan.get("title") or "LABHUD").strip()[:40] or "LABHUD"
+        title = str(plan.get("title") or "LabHUD").strip()[:40] or "LabHUD"
         hosts = sorted({h.strip() for h in plan.get("hosts") or [] if isinstance(h, str) and h.strip()})
         bad = [h for h in hosts if not HOST_RE.fullmatch(h)]
         if bad or not hosts:

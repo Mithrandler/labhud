@@ -1291,7 +1291,7 @@ function open_health_panel() {
     if (w.host) rows.push([`host ${w.host}`, w.host_state, w.host_state === "down"]);
     rows.push(["problem", plain_error(h.error), true]);
     rows.push(["failing for", duration(now - h.failing_since)]);
-    rows.push(["last good answer", h.last_ok ? clock(h.last_ok) + " · " + duration(now - h.last_ok) + " ago" : "never since labhud started"]);
+    rows.push(["last good answer", h.last_ok ? clock(h.last_ok) + " · " + duration(now - h.last_ok) + " ago" : "never since LabHUD started"]);
     if (h.next_at) rows.push(["next try", h.next_at > now ? "in " + duration(h.next_at - now) : "now"]);
     rows.push(["raw error", h.error]);
     section(body, w.title || name, rows);
@@ -1419,7 +1419,7 @@ function ask_maintenance(c) {
     method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: JSON.stringify({ minutes }),
   }).then((r) => { lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
     .then((r) => show_message(r.ok ? (minutes ? "✓ maintenance until " + clock(r.until) : "✓ maintenance over") : "✕ " + (r.error || "failed")))
-    .catch(() => show_message("✕ could not reach labhud"));
+    .catch(() => show_message("✕ could not reach LabHUD"));
   ask([["1 HOUR", set(60)], ["4 HOURS", set(240)], ["1 DAY", set(1440)]].concat(until ? [["END", set(0)]] : []));
 }
 
@@ -1965,7 +1965,7 @@ function from_address() {
 
 fetch("/api/config").then((r) => r.json()).then((cfg) => {
   CFG = cfg;
-  document.title = CFG.title || "LABHUD";
+  document.title = CFG.title || "LabHUD";
   lock_state(CFG.lock);
   put($("#weather .city"), CFG.city || "");
   for (const items of Object.values(CFG.cards)) for (const c of items) CARD_BY_ID[c.id] = c;

@@ -142,7 +142,7 @@ def source_cards(names):
     return out
 
 
-def build_config(found, host, weather=None, title="LABHUD", include=None, services=()):
+def build_config(found, host, weather=None, title="LabHUD", include=None, services=()):
     """The text of config.toml for what discover() found (None: no Proxmox). `host` is what the
     node cards ping; `include`, a set of (node, vmid), limits the guest cards to those (None:
     every guest); `services` adds a card for each of those sources (CARDS)."""

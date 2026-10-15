@@ -130,7 +130,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #clock .date { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
 
 /* The project's name, in the free middle of the portrait top bar. Static, like everything else. */
-#brand { display: none; text-align: center; font: 900 17px/1 var(--font); letter-spacing: 1px; color: var(--sub); }
+#brand { display: none; text-align: center; font: 900 17px/1 var(--font); letter-spacing: 1px; color: var(--title); }
 #brand b { font-weight: 900; color: var(--title); }
 
 #menu { display: flex; justify-content: center; gap: 4px; }

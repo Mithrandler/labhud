@@ -76,7 +76,7 @@ class Editor(unittest.TestCase):
         self.assertFalse(d["ok"])
         with open(self.cfg) as f:
             self.assertEqual(f.read(), text)  # a broken file is never written
-        new = text.replace('title = "LABHUD"', 'title = "EDITED"')
+        new = text.replace('title = "LabHUD"', 'title = "EDITED"')
         inode = os.stat(self.cfg).st_ino
         status, d = self.call("save", {"text": new})
         self.assertTrue(d["ok"])

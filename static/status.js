@@ -135,7 +135,7 @@ function load() {
   }).catch((e) => {
     const n = document.getElementById("error");
     n.hidden = false;
-    n.textContent = "labhud does not answer: " + e;
+    n.textContent = "LabHUD does not answer: " + e;
   });
 }
 

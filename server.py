@@ -1258,7 +1258,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     _mark_inactive()
-    _log([("labhud started", False)])
+    _log([("LabHUD started", False)])
     print(("DEMO MODE, made-up data; " if DEMO else "")
           + f"sources: {', '.join(sorted(ACTIVE)) or 'none'}; not configured: {', '.join(sorted(INACTIVE)) or 'none'}",
           flush=True)

@@ -55,7 +55,7 @@ TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alert
             "maintenance", "lock"}
 # The formats whose numbers get a sparkline (the last hours, behind the value)
 TREND_FORMATS = {"percent", "percent1", "celsius", "rate", "used_of"}
-DEFAULT_TITLE = "LABHUD"
+DEFAULT_TITLE = "LabHUD"
 
 
 class ConfigError(Exception):

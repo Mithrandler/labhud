@@ -32,7 +32,7 @@ function lock_headers(headers) {
 function lock_post(step, body) {
   return fetch("/api/lock/" + step, {
     method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: JSON.stringify(body || {}),
-  }).then((r) => r.json().catch(() => ({ ok: r.ok }))).catch(() => ({ ok: false, error: "could not reach labhud" }));
+  }).then((r) => r.json().catch(() => ({ ok: r.ok }))).catch(() => ({ ok: false, error: "could not reach LabHUD" }));
 }
 
 function set_ticket(t) {

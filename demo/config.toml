@@ -2,7 +2,7 @@
 # LABHUD_DEMO=1 and LABHUD_CONFIG is not set; the data comes from demo/__init__.py, not from
 # the network. Addresses are from 192.0.2.0/24, reserved for documentation.
 
-title = "LABHUD DEMO"
+title = "LabHUD DEMO"
 
 [[page]]
 id = "general"

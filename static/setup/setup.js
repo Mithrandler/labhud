@@ -111,7 +111,7 @@ function showPve() {
   let text = `Proxmox ${r.version}: ${r.nodes.length} node(s) (${r.nodes.join(", ")}), ${total} guest(s). `;
   let kind = "ok";
   if (r.extra.length) {
-    text += `Warning: this token can do more than read (${r.extra.join(", ")}). labhud only needs PVEAuditor; a leaked .env could change your lab.`;
+    text += `Warning: this token can do more than read (${r.extra.join(", ")}). LabHUD only needs PVEAuditor; a leaked .env could change your lab.`;
     kind = "warn";
   } else text += "The token can only read. Good.";
   msg($("pve-result"), text, kind);
@@ -269,7 +269,7 @@ $("display-form").addEventListener("submit", async (ev) => {
   if ($("d-city").value.trim() && !S.weather) $("d-find").click();
   const r = await api("preview", plan());
   $("r-where").textContent = S.writable
-    ? `labhud will write config.toml and .env to ${S.folder}, then start as the display.`
+    ? `LabHUD will write config.toml and .env to ${S.folder}, then start as the display.`
     : `${S.folder} is not writable: mount it read-write (docs/install.md), or copy config.toml from below.`;
   $("r-where").className = S.writable ? "" : "warn";
   $("r-problems").replaceChildren(...(r.problems || []).map((p) => el("li", { text: p })));
@@ -287,7 +287,7 @@ $("r-write").addEventListener("click", async (ev) => {
   }
   ev.target.disabled = true;
   try { sessionStorage.removeItem("labhud-setup"); } catch (e) { /* ignore */ }
-  msg($("r-msg"), "Written. labhud is starting as the display…", "ok");
+  msg($("r-msg"), "Written. LabHUD is starting as the display…", "ok");
   for (let i = 0; i < 30; i++) {
     await new Promise((ok) => setTimeout(ok, 1000));
     try {
@@ -295,7 +295,7 @@ $("r-write").addEventListener("click", async (ev) => {
       if (c.ok) { location.href = "/"; return; }
     } catch (e) { /* still restarting */ }
   }
-  msg($("r-msg"), "It did not come back in 30 s: look at labhud's log.", "bad");
+  msg($("r-msg"), "It did not come back in 30 s: look at LabHUD's log.", "bad");
 });
 
 // -- start ----------------------------------------------------------------------------------
