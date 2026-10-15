@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.2.15] - 2026-10-15
+
 ### Added
 - **Uptime per card**: every card with a check is sampled each minute (up, down, off on purpose)
   and kept as 15-minute slices over 7 days, with `LABHUD_DATA` across restarts. The app reads it
@@ -445,7 +447,9 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.2.13...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.2.15...HEAD
+[0.2.15]: https://github.com/Mithrandler/labhud/compare/v0.2.14...v0.2.15
+[0.2.14]: https://github.com/Mithrandler/labhud/compare/v0.2.13...v0.2.14
 [0.2.13]: https://github.com/Mithrandler/labhud/compare/v0.2.2...v0.2.13
 [0.2.2]: https://github.com/Mithrandler/labhud/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Mithrandler/labhud/compare/v0.2.0...v0.2.1
