@@ -62,6 +62,20 @@ For the direct way, leave out both secrets and set on the agent `LABHUD_AGENT_OR
 display's origin exactly as its browser sends it, e.g. `http://192.0.2.5:8095`) and
 `LABHUD_AGENT_ALLOW` = the display device's IP, not labhud's.
 
+### Moving from direct to signed
+
+Only the signed way works from the phone app: the app has no browser origin for an agent to
+check, and the phone is often away from home. To move an install that already works directly:
+
+1. Make the secret on the agent's machine and keep it there in a root-only file (with systemd,
+   `/etc/credstore/<name>` and `ImportCredential=` in the unit; nothing else needs to read it).
+2. Teach the agent to accept the signature *as well as* the origin, from labhud's address only:
+   the signature is the proof, so labhud's host may be allowed even where other containers run.
+3. Copy the secret into labhud's `.env` as `LABHUD_ACTION_SECRET` (straight from one machine to
+   the other, never through a chat or a ticket) and recreate the container. `/api/config` now
+   answers `action_url: "/action/"`: displays send their buttons to labhud, which signs them.
+4. Press a harmless button on a display and in the app, then drop the origin check from the agent.
+
 ## Which buttons show
 
 A card shows only what makes sense for its current state:

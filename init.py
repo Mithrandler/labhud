@@ -202,7 +202,7 @@ def admin_account(args):
             print(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'}), so add this line to .env and recreate the container:")
         return print(admin.env_line(rec))
     store.save(admin.STORE_KEY, rec)
-    print(f"Admin {user!r} set. Sign in on the display (⚙ > Admin) or from the LabHUD app.")
+    print(f"Admin {user!r} set. Sign in on the display (⚙ > Security) or from the LabHUD app.")
 
 
 def main():

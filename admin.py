@@ -1,6 +1,6 @@
 """The admin: one account, with a password and a second factor (TOTP, any authenticator app).
 
-What it guards, once it exists: pairing and removing phones (the display's ⚙ > Phone app, and
+What it guards, once it exists: pairing and removing phones (the display's ⚙ > Phones, and
 pairing from the app by signing in), and opening the config editor from ⚙. Without an admin,
 those work as before (the display's own page, its PIN when one is set), so an install that never
 sets one up changes nothing.

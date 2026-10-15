@@ -497,7 +497,7 @@ function admin_forbidden(show) {
   fetch("/api/config").then((r) => r.json()).then((c) => { if (CFG) CFG.admin = c.admin; }).catch(() => {}).then(() => {
     if (!(CFG && CFG.admin && CFG.admin.on)) { show("Unlock the screen first."); return; }
     set_admin("");
-    show(had ? "Signed out: sign in as the admin again." : "Sign in as the admin first (⚙ > Admin).");
+    show(had ? "Signed out: sign in as the admin again." : "Sign in as the admin first (⚙ > Security).");
     setTimeout(open_settings, 1500);
   });
 }

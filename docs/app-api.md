@@ -10,7 +10,7 @@ another client.
 
 Pairing needs `LABHUD_DATA` (the paired devices are kept there).
 
-1. On the display: ⚙ > **Phone app** > **Pair a phone** shows a QR code. Or, on the machine:
+1. On the display: ⚙ > **Phones** > **Pair a phone** shows a QR code. Or, on the machine:
 
    ```sh
    docker exec -it labhud python3 /app/init.py pair "Pixel 6a"
@@ -23,7 +23,7 @@ The code works once and only for 5 minutes. The phone must reach labhud at the a
 link: the display's own address for ⚙, the first name in `LABHUD_HOSTS` for `init.py pair`
 (or give another: `init.py pair "Pixel 6a" http://10.8.0.1:8095` for a VPN address).
 
-⚙ > **Phone app** lists the paired phones, with when each was last seen, and **Remove** ends one at
+⚙ > **Phones** lists the paired phones, with when each was last seen, and **Remove** ends one at
 once (the display's PIN is asked first when one is set). From the machine: `init.py devices` and
 `init.py unpair "Pixel 6a"`. What a token allows, and why the port must still stay off the internet:
 [security.md](security.md#paired-phones-the-labhud-app).

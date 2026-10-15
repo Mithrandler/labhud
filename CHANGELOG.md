@@ -6,6 +6,21 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.2.14] - 2026-10-15
+
+### Changed
+- ⚙ on the display has four tabs instead of one long list: **Display** (theme, text, layout,
+  rotation), **Screen** (night, calm, flash and beep), **Phones** (pair, remove) and **Security**
+  (the PIN, the admin). The tab last open is remembered with the screen's settings.
+
+### Fixed
+- A display opened before the admin was made said "Unlock the screen first" when pairing a
+  phone, on a screen that was unlocked: it still believed there was no admin. A refusal now reads
+  the admin flag again and says to sign in; ⚙ reads it again each time it opens.
+
+### Docs
+- docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
+
 ## [0.2.13] - 2026-10-15
 
 ### Added

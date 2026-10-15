@@ -139,7 +139,7 @@ display has a PIN (see the lock, below). See
 
 ## The lock (PIN)
 
-A display on a wall is used by whoever walks by. With a PIN set (⚙ > Lock, or `init.py pin`),
+A display on a wall is used by whoever walks by. With a PIN set (⚙ > Security > Lock, or `init.py pin`),
 the screen is only for looking until someone types it; open, it locks again after `[lock] idle`
 minutes without a touch, or at once with the lock left of ⚙.
 
@@ -164,7 +164,7 @@ One account, with a password and a second factor (TOTP: Aegis, 2FAS, Bitwarden, 
 Authenticator...). It is made by the setup page, or by `init.py admin` on an older install; the
 same command replaces it (a forgotten password, a lost authenticator) and `--remove` deletes it.
 
-Once there is an admin, these need it signed in: pairing and removing phones in ⚙ > Phone app,
+Once there is an admin, these need it signed in: pairing and removing phones in ⚙ > Phones,
 opening the config editor from ⚙, and pairing from the app without a QR code (the app signs in
 with the same three). Without an admin they work as before: on the display's own page, behind its
 PIN when one is set.
@@ -182,7 +182,7 @@ PIN when one is set.
 ## Paired phones (the LabHUD app)
 
 The app is not labhud's own page, so it cannot pass the Host and Origin checks. It is paired once
-instead (`init.py pair`, or ⚙ > Phone app > Pair a phone) and then sends a token of its own.
+instead (`init.py pair`, or ⚙ > Phones > Pair a phone) and then sends a token of its own.
 
 - The pairing code is random (144 bits), works once, and only for 5 minutes. It travels in the QR
   code and in the link; whoever scans or copies it first gets the token.
@@ -192,7 +192,7 @@ instead (`init.py pair`, or ⚙ > Phone app > Pair a phone) and then sends a tok
   opens.
 - Only SHA-256 hashes of codes and tokens are kept (in `LABHUD_DATA`); every phone has its own
   token, listed with when it was last seen on `/status` and by `init.py devices`.
-- A lost phone: ⚙ > Phone app > **Remove** on the display, or
+- A lost phone: ⚙ > Phones > **Remove** on the display, or
   `docker exec labhud python3 /app/init.py unpair "<name>"`. Its token stops working at once. A
   phone cannot remove the others with its own token.
 - The app's wall mode loads the wall page with the token as a cookie: that page is a display like
