@@ -99,7 +99,8 @@ function lock_guard(e) {
     return;
   }
   if (!LOCK.on || LOCK_OFF) return;
-  const own = e.target && e.target.closest && e.target.closest("#lock, #lock-btn");
+  // the first-run tour sits above the keypad: it must stay usable, or neither can be closed
+  const own = e.target && e.target.closest && e.target.closest("#lock, #lock-btn, #tour");
   if (!locked()) {
     if (e.type === "pointerdown") lock_used();
     return;
