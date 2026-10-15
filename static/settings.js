@@ -47,7 +47,8 @@ const DEFAULTS = {
   flash: true,   // a new problem flashes a red frame three times
   sound: false,  // ... and beeps
   loud_night: false,   // the beep also at night
-  calm_show: ["weather"],   // under the calm clock: "weather" and/or ids of cards with a list
+  calm_show: ["weather"],
+  tab: "display",   // the ⚙ tab last open   // under the calm clock: "weather" and/or ids of cards with a list
 };
 
 let S = load_settings();
@@ -210,7 +211,15 @@ function open_settings() {
   if (box.hidden) recheck_admin();
   body.textContent = "";
 
-  const section = (title) => { const s = el("section", "set"); s.appendChild(el("h3", null, title)); body.appendChild(s); return s; };
+  const tab = SETTINGS_TABS.some(([k]) => k === S.tab) ? S.tab : "display";
+  settings_tabs(tab);
+  const elsewhere = el("div");   // the other tabs' sections are drawn here and never shown
+  const section = (title, where = "display") => {
+    const s = el("section", "set");
+    s.appendChild(el("h3", null, title));
+    (where === tab ? body : elsewhere).appendChild(s);
+    return s;
+  };
   const choices = (host, options, current, pick) => {
     const row = el("div", "choices");
     for (const [value, label, swatch] of options) {
@@ -252,7 +261,7 @@ function open_settings() {
   type.appendChild(el("p", "hint", "A page that does not fit at this size still shrinks until it does."));
 
   // --- rotation ---
-  const rot = section("Page rotation");
+  const rot = section("Page rotation", "display");
   choices(rot, [[true, "On"], [false, "Off"]], S.rotate, (v) => { S.rotate = v; save_settings(); });
   choices(rot, [10, 20, 30, 60].map((n) => [n, n + " s"]), S.period, (v) => { S.period = v; save_settings(); });
   const pages = el("div", "choices");
@@ -270,7 +279,7 @@ function open_settings() {
   rot.appendChild(pages);
 
   // --- night and calm ---
-  const nt = section("Night");
+  const nt = section("Night", "screen");
   const server = CFG.night;
   const night = night_cfg();
   choices(nt, [["config", server ? `As configured (${server.from}:00–${server.to}:00)` : "As configured (off)"], ["on", "On"], ["off", "Off"]],
@@ -300,7 +309,7 @@ function open_settings() {
   }
   choices(nt, [[true, "A new problem lights it up"], [false, "Stays dim"]], S.wake, (v) => { S.wake = v; save_settings(); });
 
-  const cm = section("Calm (only a clock when nothing is red)");
+  const cm = section("Calm (only a clock when nothing is red)", "screen");
   const calmServer = CFG.calm;
   choices(cm, [["config", calmServer ? `As configured (after ${Math.round(calmServer.after / 60)} min)` : "As configured (off)"], ["on", "On"], ["off", "Off"]],
     S.calm ? (S.calm.on ? "on" : "off") : "config", (v) => {
@@ -326,7 +335,7 @@ function open_settings() {
   cm.appendChild(under);
 
   // --- layout of this screen ---
-  const lay = section("Layout");
+  const lay = section("Layout", "display");
   choices(lay, [["compact", "Compact"], ["normal", "Normal"], ["airy", "Airy"]], S.density,
     (v) => { S.density = v; save_settings(); apply_look(); mount(); });
   lay.appendChild(el("p", "hint", "Shown on this screen (tap to hide a group or a card):"));
@@ -354,7 +363,7 @@ function open_settings() {
   }
 
   // --- screen on, signal ---
-  const scr = section("Screen and signal");
+  const scr = section("Screen and signal", "screen");
   choices(scr, [[false, "Screen may sleep"], [true, "Keep the screen on"]], S.awake, (v) => { S.awake = v; save_settings(); apply_awake(); });
   if (S.awake && !window.isSecureContext) {
     scr.appendChild(el("p", "hint", "Over plain HTTP this uses a silent video: it starts after the first touch."));
@@ -365,15 +374,24 @@ function open_settings() {
   if (S.sound) choices(scr, [[false, "Silent at night"], [true, "Beep at night too"]], S.loud_night, (v) => { S.loud_night = v; save_settings(); });
 
   // --- the lock (lock.js): the PIN is labhud's, the same on every screen ---
-  lock_settings(section);
+  lock_settings((title) => section(title, "security"));
 
   // --- the admin (admin.py): signs in for the phones and the config editor ---
-  admin_settings(section);
+  admin_settings((title) => section(title, "security"));
   const adminOn = CFG && CFG.admin && CFG.admin.on;
 
   // --- the LabHUD app: a one-time QR code that pairs a phone (devices.py) ---
-  if (adminOn && !ADMIN_TICKET) return finish_settings(body, keep, box);
-  const app = section("Phone app");
+  if (tab !== "phones") return finish_settings(body, keep, box, tab);
+  if (adminOn && !ADMIN_TICKET) {
+    const locked = section("Phone app", "phones");
+    locked.appendChild(el("p", "hint", "Pairing and removing phones needs the admin."));
+    const go = el("button", "choice", "Sign in (Security)");
+    go.type = "button";
+    go.addEventListener("click", () => { S.tab = "security"; save_settings(); open_settings(); });
+    locked.appendChild(go);
+    return finish_settings(body, keep, box, tab);
+  }
+  const app = section("Phone app", "phones");
   const show = el("div", "pair-qr");
   const pairButton = el("button", "choice", "Pair a phone");
   pairButton.type = "button";
@@ -386,10 +404,38 @@ function open_settings() {
     + "Remove ends a phone's access at once."));
   load_devices(list);
 
-  finish_settings(body, keep, box);
+  finish_settings(body, keep, box, tab);
 }
 
-function finish_settings(body, keep, box) {
+/** The tabs over the panel: what this screen shows, and what labhud keeps for every screen. */
+const SETTINGS_TABS = [["display", "Display"], ["screen", "Screen"], ["phones", "Phones"], ["security", "Security"]];
+
+function settings_tabs(current) {
+  const bar = $("#settings-tabs");
+  if (!bar) return;
+  bar.textContent = "";
+  for (const [key, label] of SETTINGS_TABS) {
+    const b = el("button", "settings-tab" + (key === current ? " on" : ""), label);
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", key === current ? "true" : "false");
+    b.addEventListener("click", () => {
+      if (key === S.tab) return;
+      S.tab = key; save_settings();
+      $("#settings-body").scrollTop = 0;
+      open_settings();
+    });
+    bar.appendChild(b);
+  }
+}
+
+function finish_settings(body, keep, box, tab) {
+  if (tab === "phones" || tab === "security") {
+    body.appendChild(el("p", "hint", "Kept by LabHUD itself: the same on every screen."));
+    box.hidden = false;
+    body.scrollTop = keep;
+    return;
+  }
   const reset = el("button", "reset", "Reset this screen to the defaults");
   reset.type = "button";
   reset.addEventListener("click", () => {
