@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-15
+
 ### Added
 - ⚙ > Phone app lists the paired phones, with when each was last seen, and removes one
   (asks first; the display's PIN when one is set). `GET /api/v1/devices`, `POST /api/v1/unpair`.
@@ -385,7 +387,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Mithrandler/labhud/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Mithrandler/labhud/compare/v0.1.67...v0.2.0
 [0.1.67]: https://github.com/Mithrandler/labhud/compare/v0.1.66...v0.1.67
 [0.1.66]: https://github.com/Mithrandler/labhud/compare/v0.1.65...v0.1.66
