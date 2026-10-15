@@ -4,34 +4,24 @@ labhud can show buttons in a card's panel (wake a host, start or shut down a VM,
 They are **off by default**. With `LABHUD_ACTION_URL` unset, no button is drawn and nothing can
 be sent.
 
-## Two ways an action travels
-
-**Signed (recommended)**, with `LABHUD_ACTION_SECRET` set:
+## How an action travels
 
 ```
-tap on the display ──POST /action/<name>──▶  labhud  ──POST + signature──▶  your agent  ──▶  the command
-     (browser)          Origin: labhud         (checks)                        (checks)
+tap on a display ──POST /action/<name>──▶  labhud  ──POST + signature──▶  your agent  ──▶  the command
+or in the app         (page or token)      (checks)                        (checks)
 ```
 
-The browser posts to labhud's own page. labhud checks that the request comes from that page
-(`Origin`) and that the action is offered by a card in `config.toml`, then forwards it to the
+A display posts to labhud's own page; the phone app posts with its token. labhud checks where the
+request comes from (`Origin` for a page, the token for an app), that the display's lock allows it,
+and that the action is offered by a card in `config.toml`. Then it forwards the action to the
 agent with a signature: an HMAC-SHA256 of the time, a random nonce and the action's name, made
 with a secret only labhud and the agent know. The agent runs only actions signed with that
 secret, less than 30 seconds old, and never the same signature twice. A copied request cannot
 be replayed, and nothing else on your network can make a valid one, not even another container
-on labhud's host. The agent accepts posts only from labhud's IP.
+on labhud's host. The agent also accepts posts only from labhud's IP.
 
-**Direct**, without a secret:
-
-```
-tap on the display ──POST /action/<name>──▶  your agent  ──▶  the command
-     (browser)          Origin: <display>     (checks)
-```
-
-The browser posts straight to the agent, which checks `Origin` and that the source IP is the
-display device. labhud never touches the action. This works, but `Origin` can be faked outside
-a browser, so the display's IP is the whole protection, and a display on Wi-Fi or behind a VPN
-may not have a fixed one.
+Both `LABHUD_ACTION_URL` and `LABHUD_ACTION_SECRET` are needed. With the URL alone actions stay
+off and the startup log says why.
 
 ## Turning them on
 
@@ -58,23 +48,10 @@ may not have a fixed one.
    actions = ["wol-nas"]
    ```
 
-For the direct way, leave out both secrets and set on the agent `LABHUD_AGENT_ORIGIN` (the
-display's origin exactly as its browser sends it, e.g. `http://192.0.2.5:8095`) and
-`LABHUD_AGENT_ALLOW` = the display device's IP, not labhud's.
-
-### Moving from direct to signed
-
-Only the signed way works from the phone app: the app has no browser origin for an agent to
-check, and the phone is often away from home. To move an install that already works directly:
-
-1. Make the secret on the agent's machine and keep it there in a root-only file (with systemd,
-   `/etc/credstore/<name>` and `ImportCredential=` in the unit; nothing else needs to read it).
-2. Teach the agent to accept the signature *as well as* the origin, from labhud's address only:
-   the signature is the proof, so labhud's host may be allowed even where other containers run.
-3. Copy the secret into labhud's `.env` as `LABHUD_ACTION_SECRET` (straight from one machine to
-   the other, never through a chat or a ticket) and recreate the container. `/api/config` now
-   answers `action_url: "/action/"`: displays send their buttons to labhud, which signs them.
-4. Press a harmless button on a display and in the app, then drop the origin check from the agent.
+Keep the secret in a root-only file on each side: on the agent's machine with systemd,
+`/etc/credstore/<name>` and `ImportCredential=` in the unit; for labhud, `LABHUD_ACTION_SECRET_FILE`
+(see [security.md](security.md)). Copy it from one machine to the other directly, never through
+a chat or a ticket.
 
 ## Which buttons show
 
@@ -110,19 +87,16 @@ choices = [{ label = "NOW", action = "vm-node1-101-reboot" },
            { label = "TONIGHT", action = "vm-node1-101-reboot-tonight" }]
 ```
 
-labhud forwards (in signed mode) only the actions on a card and the choices written here.
+labhud forwards only the actions on a card and the choices written here.
 
 ## The contract, if you write your own agent
 
 - `POST /action/<name>`, empty body. Names are `[a-z0-9-]`.
-- **Signed:** accept it only from labhud's IP, and only if
+- Accept it only from labhud's IP, and only if
   - `X-Labhud-Time` is within 30 seconds of your clock,
   - `X-Labhud-Signature` equals the hex HMAC-SHA256, keyed with the secret, of
     `<X-Labhud-Time>.<X-Labhud-Nonce>.<name>` (compare in constant time),
   - you have not accepted that signature in the last 30 seconds.
-- **Direct:** accept it only if `Origin` equals the display's origin **and** the source IP is
-  on your allowlist, and answer with `Access-Control-Allow-Origin: <display origin>` (without
-  it the browser hides the answer and the display says "could not send the action").
 - Answer JSON `{"ok": true, "action": "<name>"}` or `{"ok": false, "error": "<short text>"}`.
 - Never pass anything from the request to a shell. The name should only select a command you
   wrote down in advance.
@@ -131,7 +105,8 @@ labhud forwards (in signed mode) only the actions on a card and the choices writ
 
 ## Security notes
 
-labhud has no login. Anyone who can open the page can press the buttons; signing proves the
-press came through labhud's page, not who pressed. Put the display behind a VPN or a reverse
-proxy with authentication, and keep destructive actions (shutdown, stop) to what you would be
-fine with a guest pressing.
+Signing proves the press came through labhud, not who pressed. Who may press is labhud's part:
+a display's PIN (`[lock]`, set from ⚙ > Security) gates every button on that display, and an app
+needs a paired token (⚙ > Phones). Keep labhud itself on your LAN or behind a VPN, and keep
+destructive actions (shutdown, stop) to what you would be fine with a guest at the display
+pressing once it is unlocked.

@@ -11,22 +11,15 @@ actions (a Proxmox host, for example).
 Point labhud at it with LABHUD_JSON_<NAME>_URL (sensors; then `sensors = "<name>"` on a host
 card) and LABHUD_ACTION_URL=http://<this host>:9189/action/ (actions).
 
-Actions are OFF unless LABHUD_AGENT_ACTIONS and LABHUD_AGENT_ALLOW are set, plus one of the two
-ways of proving where an action comes from:
+Actions are OFF unless all three are set:
 
     LABHUD_AGENT_ACTIONS   path to a TOML file:  [actions]  wol-nas = ["wakeonlan", "aa:bb:..."]
-    LABHUD_AGENT_SECRET    signed actions (recommended): the same secret as LABHUD_ACTION_SECRET
-                           on the labhud server, which forwards each action with an HMAC of it.
-                           Then LABHUD_AGENT_ALLOW is the labhud server's IP.
-    LABHUD_AGENT_ORIGIN    direct actions: the display's origin exactly as the browser sends it,
-                           e.g. "http://192.0.2.5:8095". Then LABHUD_AGENT_ALLOW is the device the
-                           display runs on (a wall tablet), NOT the labhud server.
-    LABHUD_AGENT_ALLOW     comma-separated IPs allowed to POST.
+    LABHUD_AGENT_SECRET    the same secret as LABHUD_ACTION_SECRET on the labhud server, which
+                           forwards each action with an HMAC of it.
+    LABHUD_AGENT_ALLOW     comma-separated IPs allowed to POST: the labhud server's.
 
-With a secret, a signature older than 30 seconds or seen before is refused, so a copied request
-cannot be replayed. Without one, both checks are needed: Origin stops other web pages from
-posting through a visitor's browser, but anything that is not a browser can fake it; the IP
-allowlist is what stops the rest.
+A signature older than 30 seconds or seen before is refused, so a copied request cannot be
+replayed; the IP allowlist stops anything that is not labhud even before the signature.
 Commands are argument lists, never passed through a shell; nothing from the request reaches
 them except the action's name, which only selects one. See docs/actions.md.
 
@@ -77,7 +70,6 @@ def _from_files():
 _from_files()
 PORT = int(os.environ.get("LABHUD_AGENT_PORT", "9189"))
 TIMEOUT = int(os.environ.get("LABHUD_AGENT_TIMEOUT", "30"))
-ORIGIN = os.environ.get("LABHUD_AGENT_ORIGIN", "")
 ALLOW = {x.strip() for x in os.environ.get("LABHUD_AGENT_ALLOW", "").split(",") if x.strip()}
 SECRET = os.environ.get("LABHUD_AGENT_SECRET", "").encode()
 MAX_AGE = 30  # seconds a signature stays valid
@@ -94,7 +86,7 @@ CACHE_S = 5  # nvidia-smi takes ~100 ms; do not run it on every request
 
 
 def load_actions():
-    if not (ACTIONS_FILE and (SECRET or ORIGIN) and ALLOW):
+    if not (ACTIONS_FILE and SECRET and ALLOW):
         return {}
     with open(ACTIONS_FILE, "rb") as f:
         raw = tomllib.load(f).get("actions", {})
@@ -280,18 +272,15 @@ def signed(name, headers, now=None):
 def allowed(name, headers, ip):
     if name not in ACTIONS or ip not in ALLOW:
         return False
-    return signed(name, headers) if SECRET else headers.get("Origin") == ORIGIN
+    return signed(name, headers)
 
 
 class Handler(BaseHTTPRequestHandler):
-    def _answer(self, code, data, cors=False):
+    def _answer(self, code, data):
         body = json.dumps(data).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        if cors and ORIGIN and not SECRET:
-            self.send_header("Access-Control-Allow-Origin", ORIGIN)
-            self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(body)
 
@@ -314,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
         name = m.group(1)
         code, data = run_action(name)
         print(f"action {name} from {self.client_address[0]}: {'ok' if data['ok'] else data['error']}", flush=True)
-        self._answer(code, data, cors=True)
+        self._answer(code, data)
 
     def log_message(self, *args):
         pass
@@ -388,9 +377,9 @@ if __name__ == "__main__":
         print("not listening (LABHUD_AGENT_PORT=0)", flush=True)
         threading.Event().wait()
     print(f"labhud-agent on :{PORT}; actions: "
-          + (", ".join(sorted(ACTIONS)) + (" (signed" if SECRET else f" (origin {ORIGIN}")
+          + (", ".join(sorted(ACTIONS)) + " (signed"
              + f", from {', '.join(sorted(ALLOW))})" if ACTIONS
-             else "off (needs LABHUD_AGENT_ACTIONS, LABHUD_AGENT_ALLOW and LABHUD_AGENT_SECRET or _ORIGIN)"),
+             else "off (needs LABHUD_AGENT_ACTIONS, LABHUD_AGENT_ALLOW and LABHUD_AGENT_SECRET)"),
           flush=True)
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     if TLS_CERT:

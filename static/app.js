@@ -13,8 +13,7 @@
 //     not visible. With the screen off the phone does nothing.
 //
 // Data comes through a single SSE connection. The browser knows no API key and talks to no service
-// in the fleet — except for actions, which go straight to the action agent (`action_url` in
-// /api/config, from LABHUD_ACTION_URL) because that agent's allowlist is on the display's own IP.
+// in the fleet; actions go to labhud too (`action_url` = /action/), which signs them for the agent.
 
 const $ = (s, r) => (r || document).querySelector(s);
 const PAUSE = 60000;    // how long the rotation holds after a touch
@@ -1436,10 +1435,8 @@ function send_action(name, c) {
   const t = { name, label: track_label(name, c), started: Date.now(), phase: "sending", ...track_goal(name, c) };
   TRACKS = [t, ...TRACKS.filter((x) => x.name !== name)].slice(0, 3);
   render_tracks();
-  // the lock's ticket only to labhud itself (/action/): a header to the agent would need CORS for it
-  const own = CFG.action_url.startsWith("/");
-  fetch(CFG.action_url + encodeURIComponent(name), { method: "POST", mode: "cors", headers: own ? lock_headers() : {} })
-    .then((r) => { if (own) lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
+  fetch(CFG.action_url + encodeURIComponent(name), { method: "POST", headers: lock_headers() })
+    .then((r) => { lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
     .then((r) => {
       if (!r.ok) return finish(t, "refused", r.error || "refused");
       log_action(name, "accepted");

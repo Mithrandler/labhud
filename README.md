@@ -37,9 +37,9 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **Demo mode** with made-up data, so you can try it without touching your lab.
 
 > [!WARNING]
-> labhud has **no login**. The page shows your internal addresses and, if you enable actions,
-> buttons that act on your lab. Keep it behind a firewall rule that lets only the display in, or
-> behind a VPN. See [docs/security.md](docs/security.md).
+> **Looking needs no login.** The page shows your internal addresses and, if you enable actions,
+> buttons that act on your lab (behind the display's PIN, if you set one). Keep it behind a
+> firewall rule that lets only the display in, or behind a VPN. See [docs/security.md](docs/security.md).
 
 ## Try it
 
@@ -70,7 +70,9 @@ In portrait the same page gets two columns, and the project name takes the free 
 - [docs/architecture.md](docs/architecture.md): every connection, its direction, port and key
 - [docs/threat-model.md](docs/threat-model.md): what labhud protects, against whom, and the known gaps
 - [docs/live-agent.md](docs/live-agent.md): your own data (alerts, DNS, logins, game servers) as one JSON document
-- [docs/actions.md](docs/actions.md): buttons that wake hosts or start VMs (off by default)
+- [docs/actions.md](docs/actions.md): buttons that wake hosts or start VMs, signed for the agent (off by default)
+- [docs/app-api.md](docs/app-api.md): the API of the Android app, pairing and phone tokens
+- [docs/agents.md](docs/agents.md): the plan for labhud's own agents (not built yet)
 - [docs/integrations.md](docs/integrations.md): Docker, NUT, certificates, DNS filters, Beszel, Uptime Kuma, Healthchecks, Scrutiny, Traefik, feeds, the screen, the public page, MQTT and Home Assistant
 - [config.example.toml](config.example.toml): every config option, commented
 - [.env.example](.env.example): every source and the variables it reads

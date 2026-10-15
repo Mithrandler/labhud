@@ -68,11 +68,12 @@ sign-in, with `wait` (seconds) once wrong tries are being slowed down. A code wo
 
 | route | answer |
 |---|---|
-| `GET /api/v1/info` | `api`, `version`, `title`, `demo`, `actions` (signed actions on), `maintenance_buttons`, `pairing`, `admin` (signing in to pair works), `trends` (the keys that have history) |
+| `GET /api/v1/info` | `api`, `version`, `title`, `demo`, `actions` (signed actions on), `maintenance_buttons`, `pairing`, `admin` (signing in to pair works), `trends` (the keys that have history), `uptime` (`/api/v1/uptime` answers) |
 | `GET /api/v1/state` | the whole state, below |
 | `GET /api/v1/card/<id>` | one card as in `state`, plus `sections` (its panel) |
 | `GET /api/v1/stream` | SSE: `event: state` with the same document as `/api/v1/state`, at once and on every change (at most once a second), `: ping` every 20 s |
 | `GET /api/v1/history` | `{step, series: {key: [values]}}`: the last hours of every trend, one point per `step` seconds; `?long`: 15-minute points over 7 days |
+| `GET /api/v1/uptime` | `{step, cards: {id: [values]}, percent: {id: 99.4}}`: per card with a check, one value per 15 minutes, oldest first: the share of that time it was up (0..1), `-1` off on purpose (schedule, on demand, maintenance), `null` not known. `?range=24h` (default) or `?range=7d`; `percent` is over the range, leaving out the off and unknown slices |
 | `GET /api/v1/events` | `{events: [{t, name, bad, card?, state?}]}`, newest first |
 | `GET /api/v1/devices` | `{pairing, devices: [{name, paired, seen}]}`: the paired phones |
 
@@ -104,7 +105,9 @@ A card:
   it is known. `problems` lists the red ones in page order.
 - `kind`: `guest` (a Proxmox guest, a small tile), `list` (rows, in `rows`) or `card`.
 - `metrics[].value` is formatted as the display shows it; `sev` is `""`, `warn` or `crit`;
-  `trend` says the key has a history (`/api/v1/history`).
+  `trend` says the key has a history (`/api/v1/history`); `format` is the config's (`percent`,
+  `percent1`, `celsius`, `used_of`, `bytes`, `rate`, `count`…). For `used_of` the history holds
+  the percentage, not the pair.
 - `frozen`: the numbers are not live (host down or off, or the source kept its last answer); dim
   them. `note` says why, `note_kind` is `stale`, `off`, `not_configured`, `error` or `""`.
 - `rows` (lists): `[name, value, bad]`, a fourth `true` for a row grey on purpose (a host off by
@@ -129,5 +132,5 @@ With the token, the display's own routes work from the app:
 | `POST /api/maintenance/<card>` | `{"minutes": n}` (0 ends it) | needs `[maintenance] buttons = true` |
 
 Each is JSON (`Content-Type: application/json`); 403 `{"ok": false, "error": "forbidden"}` for
-every refusal. Actions only exist in signed mode for the app: in direct mode the agent trusts the
-display's IP, which the phone does not have.
+every refusal. Actions need `LABHUD_ACTION_URL` and `LABHUD_ACTION_SECRET` on the server
+(`info.actions`).

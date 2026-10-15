@@ -4,9 +4,9 @@ labhud is one container: a Python server that polls your services and pushes a s
 browser over Server-Sent Events. You need Docker (or Python 3.11+), a config file describing your
 screen, and an `.env` file with the keys for the services you want to show.
 
-> **labhud has no login.** Anyone who can open the page sees your lab's internal addresses, and,
-> if you turn actions on, can press the buttons. Read [security.md](security.md) before you expose
-> the port to anything but the display.
+> **Looking at labhud needs no login.** Anyone who can open the page sees your lab's internal
+> addresses; with actions on, the buttons ask for the display's PIN only if you set one. Read
+> [security.md](security.md) before you expose the port to anything but the display.
 
 ## 1. Try the demo
 

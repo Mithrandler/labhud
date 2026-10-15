@@ -1,77 +1,33 @@
 # Roadmap
 
-1. ~~**Config out of code.**~~ Done: `config.toml`, read and validated by `config.py`
-   (`tomllib`, zero dependencies). Every problem is reported at once, with its location;
-   `python3 config.py config.toml` checks a file. See `config.example.toml`.
-2. ~~**Sources as plugins.**~~ Done: `sources/`, one module per service registered with
-   `@source`; a source runs only when its `LABHUD_*` variables are set (see `.env.example`),
-   otherwise its card says "not configured". Your own JSON endpoints need no code
-   (`LABHUD_JSON_<NAME>_URL`). `server.py` and the frontend (`static/`) are here too; what
-   used to be hard-coded in the frontend (tab title, action labels and confirmations, the host
-   panel's node and sensors, the games page, groups kept in one column) is now in the config.
-3. ~~**Lab-specific parts become optional.**~~ Done: your own data comes from one JSON document
-   ([docs/live-agent.md](live-agent.md)) that also feeds the built-in panels and the alert banner
-   (`[alerts]` in the config). Actions are off unless `LABHUD_ACTION_URL` is set, and are run by
-   an agent you control, never by labhud ([docs/actions.md](actions.md)). `agents/labhud-agent.py`
-   is a complete example: sensors, plus actions from a TOML file behind Origin and IP checks.
-4. ~~**Demo mode**~~ Done: `LABHUD_DEMO=1` runs `demo/config.toml` on made-up data from
-   `demo/__init__.py`, with no network, keys, ping or actions. The screenshots in
-   `docs/screenshots/` come from it.
-5. ~~**English everywhere**~~, including identifiers and comments. Done.
-6. **Packaging.** Done: tests (config loader, every source parser on saved answers, a demo-mode
-   smoke test), CI that runs them and builds a linux/amd64 + linux/arm64 image, semver tags and
-   `CHANGELOG.md`. Install docs: [install.md](install.md). Still to come: publishing on GHCR.
-7. ~~**Security notes.**~~ Done: [security.md](security.md). No built-in auth: host allowlist
-   required, firewall in front, VPN or an authenticating reverse proxy for remote access.
+## Done
 
-## Security, integrations and docs (2026-10-08, all done, not yet in a release)
+Everything below is in a release; [CHANGELOG.md](../CHANGELOG.md) has the details, version by
+version.
 
-Security between machines:
+- **The product:** config in `config.toml` (validated, reloaded on change, `include`), sources as
+  plugins enabled by `LABHUD_*` variables, any JSON API without code, a demo mode, Docker image
+  for amd64 and arm64 on GHCR, tests and CI, a setup page, a config editor and `init.py`.
+- **Sources:** Proxmox VE and PBS (guests that follow Proxmox, snapshots, storage forecast),
+  OPNsense, Synology, OMV, the *arr apps, Jellyfin, Seerr, qBittorrent, Docker (with labels),
+  Beszel, NUT, Healthchecks, Uptime Kuma, Scrutiny, DNS filters, Traefik, Speedtest Tracker,
+  Immich, Home Assistant, game servers, RSS, releases, CalDAV, certificates, pushed agents.
+- **The display:** pages in newspaper columns, panels, sparklines and 7-day charts, the day's
+  timeline, maintenance, night and calm modes, ⚙ settings on the screen (Display, Screen,
+  Phones, Security), a list view, a public status page, Fully Kiosk control.
+- **Security:** pinned or verified certificates, keys from files, a hardened container, signed
+  actions only (HMAC, nonce, 30 s), a PIN lock on the display, one admin with TOTP.
+- **Apps:** `/api/v1` for the [Android app](https://github.com/Mithrandler/labhud-android):
+  pairing by QR code or admin sign-in, a token per phone, each card's state worked out on the
+  server, history and per-card uptime, notifications that open the app.
 
-8. ~~**Push agents.**~~ An agent POSTs its JSON to `/api/push/<name>`, signed with a key of its
-   own (HMAC-SHA256 and a timestamp), and listens on no port ([live-agent.md](live-agent.md)).
-9. ~~**TLS to agents.**~~ HTTPS for labhud (`LABHUD_TLS_CERT`) and the agent
-   (`LABHUD_AGENT_TLS_CERT`), each pinning the other's certificate; a read key for a polled agent.
-10. ~~**Secrets from files.**~~ Any `LABHUD_*` as `LABHUD_*_FILE` (Compose secrets, systemd).
-11. ~~**Hardened container.**~~ uid 10001, read-only, only `NET_RAW`; CI now starts the image
-    that way and fails if it runs as root.
-12. ~~**Verified certificates.**~~ `LABHUD_PINS` (the exact certificate, checked before the key
-    is sent) or `LABHUD_VERIFY`; unchecked hosts are named in the log and on `/status`.
+## Next: labhud agents
 
-Integrations ([integrations.md](integrations.md)):
+One agent per host, added from ⚙ with a pairing code, that controls what runs there through
+local APIs (Proxmox, Docker, systemd, Pterodactyl) instead of scripts. The design and the open
+questions are in [agents.md](agents.md).
 
-13. ~~**Healthchecks**~~ and ~~**Scrutiny**~~ as sources.
-14. ~~**Uptime Kuma**~~ as a source.
-15. ~~**MQTT / Home Assistant.**~~ Card states and history events, with discovery.
+Smaller:
 
-Features:
-
-16. ~~**Intervals and stale state.**~~ `LABHUD_<SOURCE>_EVERY`; a missed poll keeps the last
-    answer, marked stale, for `LABHUD_SOURCE_STALE` seconds (back-off was already there).
-17. ~~**Actions with a question.**~~ `choices` under `[action.<name>]`.
-18. ~~**Maintenance.**~~ `[[maintenance.window]]` and a MAINTENANCE button: grey, silent, no focus.
-19. ~~**History on disk.**~~ `LABHUD_DATA`: events, sparklines and maintenance in SQLite.
-
-Documentation:
-
-20. ~~**Architecture**~~ ([architecture.md](architecture.md)) and ~~**threat model**~~
-    ([threat-model.md](threat-model.md)).
-21. ~~**Per-source recipes**~~ ([sources.md](sources.md)).
-22. ~~**Documentation site**~~: MkDocs on GitHub Pages, live once Pages is set to
-    "GitHub Actions" in the repository settings.
-
-## Setup and what other dashboards have (2026-10-09, done, in 0.1.6)
-
-Ideas from Homarr, Homepage, Glance, Dashy and Pulse, chosen all at once:
-
-23. ~~**Setup page**~~ on first start, ~~**setup checklist**~~ on `/status`, ~~**config editor**~~.
-24. ~~**One-line agents**~~ (`init.py agent`, `/agent/install.sh`), ~~**Docker labels**~~,
-    ~~**guest cards that follow Proxmox**~~ (`guests`, `guests_tag`) and the adoption list,
-    ~~**Find services**~~ on the setup page.
-25. ~~**Upkeep**~~: snapshots, storage forecast, PBS verify/GC; ~~**thresholds with hysteresis**~~.
-26. ~~**Sources**~~: NUT, certificates, Technitium/Pi-hole/AdGuard, Beszel, What's Up Docker,
-    Traefik, Speedtest Tracker, Immich, Home Assistant, game servers, RSS, releases, CalDAV.
-27. ~~**Wall**~~: calm mode, Fully Kiosk screen control, public status page, first-run tour.
-28. ~~**Config**~~: any JSON API without code, `include`, quick search in the list view.
-
-Still open: demo data and screenshots for the new sources.
+- Demo data and screenshots for the newer sources.
+- Per-card uptime on the display too (the app shows it first).

@@ -8,10 +8,9 @@
 # Why SSE and not WebSocket: traffic goes one way, SSE reconnects by itself, works over plain
 # HTTP and needs no library. Standard library only, like the rest of the fleet.
 #
-# Actions are never run here. With LABHUD_ACTION_SECRET, this server checks that a press comes from
-# its own page and forwards it to the agent (LABHUD_ACTION_URL) with an HMAC signature the agent
-# checks, so nothing else, not even a container next to this server, can make one. Without a secret
-# the browser talks to the agent directly, and the agent must trust only the display's IP.
+# Actions are never run here. This server checks that a press comes from its own page (or a paired
+# app) and forwards it to the agent (LABHUD_ACTION_URL) with an HMAC signature (LABHUD_ACTION_SECRET)
+# the agent checks, so nothing else, not even a container next to this server, can make one.
 
 import builtins
 import collections
@@ -80,9 +79,9 @@ ALLOWED_HOSTS = {h.strip().lower() for h in os.environ.get(
     "LABHUD_HOSTS", f"127.0.0.1:{PORT},localhost:{PORT}").split(",") if h.strip()}
 # Where actions go (POST <url><action name>). Empty: action buttons are not shown.
 ACTION_URL = os.environ.get("LABHUD_ACTION_URL", "")
-# Signed actions: with a secret, the browser posts to labhud (/action/<name>) and labhud forwards
-# the action to the agent with an HMAC of it, which the agent checks. Without one, the browser
-# posts to the agent directly (the agent then checks Origin and the display's IP). See docs/actions.md.
+# The secret shared with the agent: the browser posts to labhud (/action/<name>) and labhud forwards
+# the action with an HMAC of it, which the agent checks. Without it there are no actions at all
+# (no buttons), even with LABHUD_ACTION_URL set. See docs/actions.md.
 ACTION_SECRET = os.environ.get("LABHUD_ACTION_SECRET", "").encode()
 ACTION_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 GAME_ACTION_RE = re.compile(r"game-(start|stop|restart)-[a-z0-9-]+")
@@ -260,7 +259,8 @@ def seed_demo_history():
 
 
 def restore_history():
-    """The sparklines kept at the last stop (LABHUD_DATA), with the minutes it was down left empty."""
+    """The sparklines and the uptime kept at the last stop (LABHUD_DATA), with the minutes it was
+    down left empty."""
     for name, target, step, points in (("history", _history, HISTORY_STEP, HISTORY_POINTS),
                                        ("history_long", _long, LONG_STEP, LONG_POINTS)):
         saved = store.load(name)
@@ -271,6 +271,13 @@ def restore_history():
             values = saved.get("series", {}).get(path)
             if values:
                 target[path] = collections.deque(values + [None] * gap, maxlen=points)
+    saved = store.load("uptime")
+    if saved:
+        gap = min(UPTIME_POINTS, max(0, int((time.time() - saved.get("t", 0)) // UPTIME_STEP)))
+        ids = {c["id"] for c in _checked_cards()}
+        for cid, values in (saved.get("series") or {}).items():
+            if cid in ids and values:
+                _uptime[cid] = collections.deque(values + [None] * gap, maxlen=UPTIME_POINTS)
 
 
 def sample_history():
@@ -286,10 +293,13 @@ def sample_history():
                 del _history[path]
             kept = {p: list(s) for p, s in _history.items()}
             long_kept = _sample_long()
+            uptime_kept = _sample_uptime(_data)
         if not DEMO:
             store.save("history", {"t": int(time.time()), "series": kept})
             if long_kept is not None:
                 store.save("history_long", {"t": int(time.time()), "series": long_kept})
+            if uptime_kept is not None:
+                store.save("uptime", {"t": int(time.time()), "series": uptime_kept})
         time.sleep(HISTORY_STEP)
 
 
@@ -308,6 +318,80 @@ def _sample_long():
         del _long[path]
     _long_pending.clear()
     return {p: list(s) for p, s in _long.items()}
+
+
+# Uptime: for every card with a check, each minute up / down / off on purpose, folded every 15
+# minutes into one number like the long sparklines: the share of known minutes it was up (0..1),
+# -1 when it was off on purpose the whole time (schedule, on demand, maintenance), None when
+# nothing was known. 7 days of them, kept like history_long. Sent on request (/api/v1/uptime).
+UPTIME_STEP = LONG_STEP
+UPTIME_POINTS = LONG_POINTS
+_uptime = {}
+_uptime_pending = {}   # card id -> [1 up, 0 down, 2 off on purpose, None unknown] since the last point
+
+
+def _checked_cards():
+    return [c for cs in TOPOLOGY["cards"].values() for c in cs if c.get("check")]
+
+
+def _minute_status(c, data):
+    st = cardstate.card_status(c, data)
+    if cardstate.quiet_off(st):
+        return 2
+    return {True: 1, False: 0}.get(st) if isinstance(st, bool) else None
+
+
+def _fold_uptime(minutes):
+    known = [m for m in minutes if m in (0, 1)]
+    if known:
+        return round(sum(known) / len(known), 3)
+    return -1 if any(m == 2 for m in minutes) else None
+
+
+def _sample_uptime(data):
+    """Under _lock, once a minute. Returns the series when a 15-minute point was added, else None."""
+    cards = _checked_cards()
+    for c in cards:
+        _uptime_pending.setdefault(c["id"], []).append(_minute_status(c, data))
+    if len(next(iter(_uptime_pending.values()), [])) * HISTORY_STEP < UPTIME_STEP:
+        return None
+    ids = {c["id"] for c in cards}
+    for cid in ids:
+        _uptime.setdefault(cid, collections.deque(maxlen=UPTIME_POINTS)).append(_fold_uptime(_uptime_pending.get(cid, [])))
+    for cid in set(_uptime) - ids:   # gone after a reload
+        del _uptime[cid]
+    _uptime_pending.clear()
+    return {k: list(v) for k, v in _uptime.items()}
+
+
+def uptime(span=86400):
+    """{step, cards: {id: [..]}, percent: {id: 99.4}} over the last `span` seconds."""
+    keep = max(1, span // UPTIME_STEP)
+    with _lock:
+        cards = {k: list(v)[-keep:] for k, v in _uptime.items()}
+    percent = {}
+    for k, v in cards.items():
+        known = [x for x in v if x is not None and x >= 0]
+        if known:
+            percent[k] = round(100 * sum(known) / len(known), 2)
+    return {"step": UPTIME_STEP, "cards": cards, "percent": percent}
+
+
+def seed_demo_uptime():
+    """A week of made-up past for the demo: mostly up, a few short outages, one host off at night."""
+    import random
+    rnd = random.Random(7)
+    for i, c in enumerate(_checked_cards()):
+        series = []
+        for n in range(UPTIME_POINTS):
+            hour = (n * UPTIME_STEP // 3600) % 24
+            if i % 7 == 3 and hour < 7:
+                series.append(-1)
+            elif rnd.random() < 0.002:
+                series.append(round(rnd.choice((0.0, 0.4, 0.8)), 3))
+            else:
+                series.append(1.0)
+        _uptime[c["id"]] = collections.deque(series, maxlen=UPTIME_POINTS)
 
 
 def history(long=False):
@@ -840,7 +924,7 @@ def checklist(result):
     add("LABHUD_HOSTS names the display", bool(ALLOWED_HOSTS - default_hosts),
         "only localhost: the display gets 421" if not ALLOWED_HOSTS - default_hosts else "set")
     if ACTION_URL:
-        add("Actions signed", bool(ACTION_SECRET), "set" if ACTION_SECRET else "LABHUD_ACTION_SECRET (docs/actions.md)")
+        add("Actions signed", bool(ACTION_SECRET), "set" if ACTION_SECRET else "actions are off until LABHUD_ACTION_SECRET is set (docs/actions.md)")
     add("Keys kept in files, not in the environment", bool(envfiles.LOADED) or None,
         "LABHUD_*_FILE: " + ", ".join(envfiles.LOADED) if envfiles.LOADED else "optional: LABHUD_*_FILE (docs/security.md)")
     add("History kept across restarts", store.enabled(),
@@ -923,7 +1007,7 @@ def health():
         displays = len(_subscribers)
     return {
         "version": VERSION, "demo": DEMO, "now": now, "started": STARTED,
-        "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": ("signed" if ACTION_SECRET else "direct") if ACTION_URL else False,
+        "displays": displays, "max_displays": MAX_SUBSCRIBERS, "actions": "signed" if ACTION_URL and ACTION_SECRET else False,
         "grace": SOURCE_GRACE, "config_errors": CONFIG_ERRORS, "keys": KEY_CHECKS,
         "tls": dict(sources.TLS_SEEN), "secret_files": envfiles.LOADED,
         "store": {"on": store.enabled(), "problem": store.PROBLEM} if store.DIR else {"on": False},
@@ -946,12 +1030,8 @@ def health():
 # ---------------------------------------------------------------------------------------------
 
 def _csp():
-    action = ""
-    if ACTION_URL and not ACTION_SECRET:   # signed actions go through labhud itself
-        m = re.match(r"^(https?://[^/]+)", ACTION_URL)
-        action = " " + m.group(1) if m else ""
     return ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-            f"font-src 'self'; media-src 'self'; connect-src 'self'{action}; frame-ancestors 'none'; "
+            f"font-src 'self'; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
             "base-uri 'none'; form-action 'self'; object-src 'none'")
 
 
@@ -988,7 +1068,7 @@ def app_state(full=False):
 def app_info():
     return {"api": API_VERSION, "version": VERSION, "title": TOPOLOGY.get("title") or "LabHUD", "demo": DEMO,
             "actions": bool(ACTION_URL and ACTION_SECRET), "maintenance_buttons": TOPOLOGY["maintenance"]["buttons"],
-            "pairing": devices.enabled(), "admin": ADMIN.is_on(), "trends": TOPOLOGY.get("trends") or []}
+            "pairing": devices.enabled(), "admin": ADMIN.is_on(), "trends": TOPOLOGY.get("trends") or [], "uptime": True}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1002,7 +1082,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         # Only this server's own scripts, styles, fonts and media; no frames around it; the
-        # browser talks to this server and, for direct actions, to LABHUD_ACTION_URL's origin.
+        # browser talks to this server alone (actions included: it forwards them, signed).
         self.send_header("Content-Security-Policy", CSP)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -1064,7 +1144,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream()
         if path == "/api/config":
             return self._json(dict(config.public(TOPOLOGY), lock=LOCK.public(), admin=ADMIN.public(),
-                                   action_url="/action/" if ACTION_URL and ACTION_SECRET else ACTION_URL))
+                                   action_url="/action/" if ACTION_URL and ACTION_SECRET else ""))
         if path == "/api/snapshot":  # useful for debugging and for the check screenshots
             return self._json(snapshot())
         if path == "/api/status":
@@ -1145,6 +1225,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(card) if card else self._json({"error": "no such card"}, 404)
         if path == "/api/v1/history":
             return self._json(history(long="long" in self.path.partition("?")[2]))
+        if path == "/api/v1/uptime":
+            span = 7 * 86400 if "range=7d" in self.path.partition("?")[2] else 86400
+            return self._json(uptime(span))
         if path == "/api/v1/events":
             return self._json({"events": EVENTS.all()})
         if path == "/api/v1/stream":
@@ -1511,15 +1594,14 @@ if __name__ == "__main__":
         rest = "checked (LABHUD_VERIFY)" if sources._common._VERIFIED else "NOT checked (see LABHUD_PINS)"
         print(f"certificates: {len(sources.PINS)} pinned, the others {rest}" if sources.PINS
               else f"certificates: {rest}", flush=True)
-    # labhud has no login: whoever opens the page sees the buttons. The agent's own checks
-    # (Origin + source IP allowlist, see docs/actions.md) are the only thing between a tap and the action.
     print(("actions: on, signed, forwarded by labhud to " + ACTION_URL if ACTION_URL and ACTION_SECRET
-           else f"actions: on, sent by the browser to {ACTION_URL} (the agent must check Origin and the source IP)"
-           if ACTION_URL else "actions: off (set LABHUD_ACTION_URL to enable)"), flush=True)
+           else "actions: OFF: LABHUD_ACTION_URL is set but LABHUD_ACTION_SECRET is not (docs/actions.md)"
+           if ACTION_URL else "actions: off (set LABHUD_ACTION_URL and LABHUD_ACTION_SECRET to enable)"), flush=True)
     print(f"notifications: {notify.problem() or 'on, ' + notify.FORMAT}" if notify.enabled()
           else "notifications: off (set LABHUD_NOTIFY_URL to enable)", flush=True)
     if DEMO:
         seed_demo_history()
+        seed_demo_uptime()
     threading.Thread(target=loop, daemon=True, name="collect").start()
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     threading.Thread(target=watch_lock, daemon=True, name="lock").start()

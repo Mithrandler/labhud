@@ -6,6 +6,24 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- **Uptime per card**: every card with a check is sampled each minute (up, down, off on purpose)
+  and kept as 15-minute slices over 7 days, with `LABHUD_DATA` across restarts. The app reads it
+  from `GET /api/v1/uptime?range=24h|7d`; `info.uptime` says the server has it.
+- `metrics[].format` in `/api/v1/state` and `/api/v1/card`, so an app can tell a temperature from
+  a share without guessing from the label.
+
+### Removed
+- **Direct actions.** Actions now always go through labhud, signed for the agent: both
+  `LABHUD_ACTION_URL` and `LABHUD_ACTION_SECRET` are needed, and with the URL alone actions stay
+  off (the startup log and `/status` say so). The agent's `LABHUD_AGENT_ORIGIN` is gone; set
+  `LABHUD_AGENT_SECRET` and allow only labhud's IP. See docs/actions.md.
+
+### Docs
+- Brought up to date and trimmed: actions, architecture, threat model, security and the app API
+  describe only what exists now; the roadmap keeps the done work as one summary.
+- docs/agents.md: the plan for labhud's own agents.
+
 ## [0.2.14] - 2026-10-15
 
 ### Changed

@@ -128,14 +128,12 @@ Discord), that text leaves your network: use a topic nobody can guess, or your o
 
 ## Actions
 
-Off unless `LABHUD_ACTION_URL` is set. With `LABHUD_ACTION_SECRET` (recommended), the display
-posts to labhud, which checks the request comes from its own page and the action is offered in
-`config.toml`, then forwards it with an HMAC signature that the agent checks (fresh, never
-reused, from labhud's IP only). Without it, the browser posts straight to the agent, which must
-check the `Origin` header and the display's IP. Either way the agent runs only commands listed
-in its own file. With no login, anyone who opens the page can press the buttons, unless the
-display has a PIN (see the lock, below). See
-[actions.md](actions.md).
+Off unless both `LABHUD_ACTION_URL` and `LABHUD_ACTION_SECRET` are set. The display (or a paired
+app) posts to labhud, which checks the request comes from its own page (or carries a phone's
+token) and the action is offered in `config.toml`, then forwards it with an HMAC signature that
+the agent checks (fresh, never reused, from labhud's IP only). The agent runs only commands
+listed in its own file. Anyone who opens the page can press the buttons unless the display has a
+PIN (see the lock, below). See [actions.md](actions.md).
 
 ## The lock (PIN)
 
@@ -148,15 +146,13 @@ minutes without a touch, or at once with the lock left of ⚙.
   can come from a file, `LABHUD_LOCK_PIN_HASH_FILE`). Without a data folder the PIN cannot be
   changed from the screen.
 - labhud checks the PIN and answers with a ticket, kept in memory (a restart locks every screen).
-  With a PIN set, labhud refuses the maintenance buttons and signed actions without a live ticket.
+  With a PIN set, labhud refuses the maintenance buttons and actions without a live ticket.
 - Four digits are 10,000 PINs. After five wrong ones labhud checks nothing for a minute, then
   2, 4… up to an hour; each such pause goes to the log and the day's timeline.
 - Forgotten PIN: `docker exec labhud python3 /app/init.py pin --clear`.
 
 What it does not do: over plain HTTP the PIN crosses the LAN in clear text, like everything else
-the page shows. In direct action mode (no `LABHUD_ACTION_SECRET`) the browser talks to the agent
-itself, so there the lock lives only in the page: someone with the browser's developer tools at
-the display can still send an action. Use signed actions to have labhud enforce it.
+the page shows. Use `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY` or a VPN where that matters.
 
 ## The admin
 

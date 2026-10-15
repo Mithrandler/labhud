@@ -485,7 +485,7 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False):
         "bad": card_bad(c, data), "summary": summary(c, data), "frozen": _frozen(c, data),
         "note": text, "note_kind": kind,
         "metrics": [{"key": path, "label": label, "value": format_(get(data, path), fmt),
-                     "sev": severity(path, fmt, get(data, path)), "trend": path in trends}
+                     "sev": severity(path, fmt, get(data, path)), "trend": path in trends, "format": fmt}
                     for path, label, fmt in c.get("metrics") or []],
     }
     if st is None and not c.get("check"):
