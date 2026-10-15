@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.66] - 2026-10-15
+
 ### Added
 - A lock for a display anyone can walk up to: with a 4-digit PIN set, the screen is only for
   looking. Pages, rotation, night and calm go on, but any touch opens a keypad. The right PIN opens
@@ -352,7 +354,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.65...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.66...HEAD
+[0.1.66]: https://github.com/Mithrandler/labhud/compare/v0.1.65...v0.1.66
 [0.1.65]: https://github.com/Mithrandler/labhud/compare/v0.1.64...v0.1.65
 [0.1.64]: https://github.com/Mithrandler/labhud/compare/v0.1.63...v0.1.64
 [0.1.63]: https://github.com/Mithrandler/labhud/compare/v0.1.62...v0.1.63
