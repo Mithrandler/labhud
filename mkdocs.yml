@@ -24,3 +24,4 @@ nav:
       - Threat model: threat-model.md
   - Roadmap: ROADMAP.md
   - Agents (plan): agents.md
+  - Agent protocol: agent-protocol.md
