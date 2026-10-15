@@ -176,6 +176,9 @@ function start_stream() {
       // there is no way to see it without touching the screen.
       const asked = new URLSearchParams(location.search).get("panel");
       if (asked && CARD_BY_ID[asked]) open_panel(CARD_BY_ID[asked]);
+      // `&settings=<tab>` opens ⚙ on that tab, for the same reason (agents, phones, security…)
+      const tab = new URLSearchParams(location.search).get("settings");
+      if (tab && SETTINGS_TABS.some(([k]) => k === tab)) { S.tab = tab; open_settings(); }
       setTimeout(() => {
         const c = $("#content");
         const groups = [...c.querySelectorAll(".group")].map((g) =>

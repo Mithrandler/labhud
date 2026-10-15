@@ -380,6 +380,21 @@ function open_settings() {
   admin_settings((title) => section(title, "security"));
   const adminOn = CFG && CFG.admin && CFG.admin.on;
 
+  // --- agents (agents.py): one per host, what each may do ---
+  if (tab === "agents") {
+    if (adminOn && !ADMIN_TICKET) {
+      const locked = section("Agents", "agents");
+      locked.appendChild(el("p", "hint", "Adding agents and choosing what they may do needs the admin."));
+      const go = el("button", "choice", "Sign in (Security)");
+      go.type = "button";
+      go.addEventListener("click", () => { S.tab = "security"; save_settings(); open_settings(); });
+      locked.appendChild(go);
+      return finish_settings(body, keep, box, tab);
+    }
+    agents_settings(section("Agents", "agents"));
+    return finish_settings(body, keep, box, tab);
+  }
+
   // --- the LabHUD app: a one-time QR code that pairs a phone (devices.py) ---
   if (tab !== "phones") return finish_settings(body, keep, box, tab);
   if (adminOn && !ADMIN_TICKET) {
@@ -408,7 +423,7 @@ function open_settings() {
 }
 
 /** The tabs over the panel: what this screen shows, and what labhud keeps for every screen. */
-const SETTINGS_TABS = [["display", "Display"], ["screen", "Screen"], ["phones", "Phones"], ["security", "Security"]];
+const SETTINGS_TABS = [["display", "Display"], ["screen", "Screen"], ["phones", "Phones"], ["agents", "Agents"], ["security", "Security"]];
 
 function settings_tabs(current) {
   const bar = $("#settings-tabs");
@@ -430,7 +445,7 @@ function settings_tabs(current) {
 }
 
 function finish_settings(body, keep, box, tab) {
-  if (tab === "phones" || tab === "security") {
+  if (tab === "phones" || tab === "agents" || tab === "security") {
     body.appendChild(el("p", "hint", "Kept by LabHUD itself: the same on every screen."));
     box.hidden = false;
     body.scrollTop = keep;
@@ -635,3 +650,168 @@ function toggle_hidden(key) {
 }
 
 function close_settings() { $("#settings").hidden = true; touched(); }
+
+// ---------------------------------------------------------------------------------------------
+// ⚙ > Agents: the paired agents, what each found, what each may do (agents.py)
+// ---------------------------------------------------------------------------------------------
+
+const CAP_TEXT = {
+  docker: ["Docker", "start, stop, restart containers"],
+  systemd: ["Services", "start, stop, restart systemd units"],
+  host: ["The host", "reboot, shut down, update packages"],
+  wol: ["Wake-on-LAN", "wake machines on its network"],
+  pve: ["Proxmox", "start, shut down, reboot guests"],
+  ptero: ["Game servers", "start, stop, restart (Pterodactyl)"],
+};
+
+function agents_post(op, body) {
+  return fetch("/api/agents/" + op, {
+    method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: JSON.stringify(body || {}),
+  }).then((r) => r.json().catch(() => ({ ok: r.ok }))).catch(() => ({ ok: false, error: "could not reach LabHUD" }));
+}
+
+function agents_settings(s) {
+  const show = el("div", "pair-qr");
+  const add = el("button", "choice", "Add an agent");
+  add.type = "button";
+  add.addEventListener("click", () => add_agent(show, list));
+  const row = el("div", "choices");
+  row.appendChild(add);
+  const list = el("div", "agents");
+  s.append(row, show, list);
+  s.appendChild(el("p", "hint", "An agent runs on a host and acts only through its own APIs. Nothing is allowed "
+    + "until you tick it here: first what it may do, then on which containers, guests, services or servers."));
+  load_agents(list);
+}
+
+let agentsWatch = null;
+/** The list, drawn again every 10 s while it is on screen (online, last seen, new targets). */
+function load_agents(host, quiet) {
+  clearTimeout(agentsWatch);
+  // the first draw comes before ⚙ is shown; the refreshes stop once it is closed
+  if (!host || !host.isConnected || (quiet && $("#settings").hidden)) return;
+  agents_post("list").then((r) => {
+    agentsWatch = setTimeout(() => load_agents(host, true), 10000);
+    if (!r.ok) {
+      host.textContent = "";
+      const say = (m) => host.appendChild(el("p", "hint", m));
+      return r.error === "forbidden" ? admin_forbidden(say) : say(r.error || "Could not list the agents.");
+    }
+    // a redraw while a tick is on its way would undo it on screen: only when nothing is pending
+    if (quiet && host.querySelector(".pending")) return;
+    host.textContent = "";
+    if (!r.agents.length) { host.appendChild(el("p", "hint", "No agent yet.")); return; }
+    for (const a of r.agents) host.appendChild(agent_box(a, host));
+  });
+}
+
+function agent_box(a, host) {
+  const box = el("div", "agent");
+  const head = el("div", "device");
+  const text = el("div", "device-text");
+  const name = el("span", "device-name");
+  name.append(el("span", "dot" + (a.online ? " up" : "")), document.createTextNode(" " + a.name));
+  const facts = [a.online ? "online" : "offline, seen " + ago(a.seen), a.version && "v" + a.version,
+    a.host && a.host.os].filter(Boolean).join(" · ");
+  text.append(name, el("span", "device-seen", facts));
+  const rm = el("button", "choice danger", "Remove");
+  rm.type = "button";
+  rm.addEventListener("click", () => {
+    put($("#confirm-text"), `Remove ${a.name}? Its key ends at once and the agent stops; it needs a new code to come back.`);
+    ask([["REMOVE", () => agents_post("remove", { id: a.id }).then((r) => {
+      if (!r.ok) show_message(r.error || "Refused.");
+      load_agents(host);
+    }), true]]);
+  });
+  head.append(text, rm);
+  box.appendChild(head);
+
+  const caps = a.found.filter((c) => CAP_TEXT[c]);
+  if (!caps.length) { box.appendChild(el("p", "hint", "It found nothing it could act on (sensors only).")); return box; }
+  const capRow = el("div", "choices");
+  for (const c of caps) {
+    const on = a.caps.includes(c);
+    const b = el("button", "choice" + (on ? " on" : ""), CAP_TEXT[c][0]);
+    b.type = "button";
+    b.title = CAP_TEXT[c][1];
+    b.addEventListener("click", () => {
+      b.classList.add("pending");
+      const next = on ? a.caps.filter((x) => x !== c) : [...a.caps, c];
+      agents_post("caps", { id: a.id, caps: next }).then((r) => {
+        if (!r.ok) show_message(r.error || "Refused.");
+        // the host has one target, itself: ticking the capability ticks it too
+        if (r.ok && c === "host" && !on) return agents_post("targets", { id: a.id, cap: "host", targets: ["host"] });
+      }).then(() => load_agents(host));
+    });
+    capRow.appendChild(b);
+  }
+  box.appendChild(capRow);
+  for (const c of caps) {
+    if (!a.caps.includes(c) || c === "host") continue;
+    const ticked = (a.targets || {})[c] || [];
+    const all = [...new Set([...ticked, ...((a.choices || {})[c] || [])])];
+    const t = el("div", "agent-targets");
+    t.appendChild(el("h4", null, CAP_TEXT[c][0] + ": " + CAP_TEXT[c][1]));
+    if (!all.length) t.appendChild(el("p", "hint", a.online ? "Nothing found yet." : "Shown when the agent is online."));
+    const tRow = el("div", "choices");
+    if (all.length > 24) {   // a long list (services, the ARP table): a filter above it
+      const f = el("input", "agent-filter");
+      f.placeholder = `Filter ${all.length}…`;
+      f.addEventListener("input", () => {
+        const q = f.value.trim().toLowerCase();
+        for (const b of tRow.children) b.hidden = !!q && !b.textContent.toLowerCase().includes(q) && !b.classList.contains("on");
+      });
+      t.appendChild(f);
+    }
+    for (const x of all) {
+      const on = ticked.includes(x);
+      const label = ((a.labels || {})[c] || {})[x];
+      const b = el("button", "choice" + (on ? " on" : ""), label ? `${label} (${x})` : x);
+      b.type = "button";
+      b.addEventListener("click", () => {
+        b.classList.add("pending");
+        agents_post("targets", { id: a.id, cap: c, targets: on ? ticked.filter((y) => y !== x) : [...ticked, x] })
+          .then((r) => { if (!r.ok) show_message(r.error || "Refused."); load_agents(host); });
+      });
+      tRow.appendChild(b);
+    }
+    t.appendChild(tRow);
+    box.appendChild(t);
+  }
+  return box;
+}
+
+/** A one-time code with the two ways to install, counting down its 5 minutes. */
+function add_agent(show, list) {
+  show.textContent = "";
+  show.appendChild(el("p", "hint", "Asking LabHUD…"));
+  agents_post("code").then((r) => {
+    show.textContent = "";
+    if (!r.ok) {
+      const say = (m) => show.appendChild(el("p", "hint", m));
+      return r.error === "forbidden" ? admin_forbidden(say) : say(r.error || "Refused.");
+    }
+    const before = list.querySelectorAll(".agent").length;
+    show.appendChild(el("p", "hint", "On the host, as root (a systemd service):"));
+    show.appendChild(el("p", "pair-link agent-line", r.install));
+    show.appendChild(el("p", "hint", "Or as a container:"));
+    show.appendChild(el("p", "pair-link agent-line", r.docker));
+    const left = el("p", "hint");
+    show.appendChild(left);
+    const until = Date.now() + r.minutes * 60000;
+    const tick = () => {
+      if (!show.isConnected) return;
+      const s = Math.round((until - Date.now()) / 1000);
+      if (s <= 0) { show.textContent = ""; show.appendChild(el("p", "hint", "The code expired: make a new one.")); return; }
+      put(left, `The code works once, for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} more.`);
+      if (list.querySelectorAll(".agent").length > before) {
+        show.textContent = "";
+        show.appendChild(el("p", "hint", "Paired. Tick below what it may do."));
+        return;
+      }
+      setTimeout(tick, 1000);
+    };
+    tick();
+  });
+  touched();
+}
