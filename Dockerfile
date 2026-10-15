@@ -6,9 +6,9 @@ RUN apk add --no-cache iputils libcap \
  && setcap cap_net_raw+ep "$(command -v ping)" \
  && adduser -D -u 10001 labhud
 WORKDIR /app
-COPY admin.py cardstate.py config.py devices.py editmode.py envfiles.py events.py init.py lock.py mqtt.py notify.py onboard.py qr.py screen.py server.py setupmode.py store.py thresholds.py ./
+COPY admin.py agentproto.py agents.py cardstate.py config.py devices.py editmode.py envfiles.py events.py init.py lock.py mqtt.py notify.py onboard.py qr.py screen.py server.py setupmode.py store.py thresholds.py websock.py ./
 COPY sources ./sources
-COPY agents/labhud-agent.py agents/install.sh ./agents/
+COPY agents/labhud-agent.py agents/install.sh agents/install-agent.sh agents/agent-release.json ./agents/
 COPY static ./static
 COPY demo ./demo
 # The app may also be mounted read-only over /app; without this Python complains it cannot write __pycache__.

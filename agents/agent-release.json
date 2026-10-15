@@ -1,0 +1,6 @@
+{
+  "_": "The labhud-agent that /agent/install-agent.sh installs, and the SHA-256 of each build, copied from that release's SHA256SUMS when labhud is released. Empty: no download, only --binary with --sha256.",
+  "version": "0.1.0",
+  "releases": "https://github.com/Mithrandler/labhud-agent/releases/download",
+  "sha256": {"amd64": "", "arm64": ""}
+}

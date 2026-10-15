@@ -95,6 +95,27 @@ whatever the scheme.
 
 ## Agents
 
+**labhud-agent** ([agents.md](agents.md)) dials labhud on `/api/agent/ws`:
+
+- Its key is **derived from the pairing code on both sides and never sent**; labhud proves it
+  knows the code too, so an agent cannot be paired to an impostor. labhud keeps only a hash and
+  a derived secret of each code, never the code.
+- **Every frame is signed** (HMAC-SHA256) in both directions, bound to its connection, numbered,
+  and refused when older than 30 s: a captured frame cannot be replayed, here or on another
+  connection.
+- **Over plain HTTP the content is not encrypted**: the names of your containers, guests and
+  services, and the sensors, cross the LAN in clear. Nothing in them is a secret, and nothing
+  can be changed or forged in transit; if that is still too much, give labhud a certificate
+  (`LABHUD_TLS_CERT`) and use `https://`. labhud then vouches for it at pairing and the agent
+  pins it.
+- The endpoint answers under any name (the signature is the check) and **refuses any request
+  with an `Origin`**, which every browser sends with a WebSocket: no web page can reach it.
+- What it may do is ticked in ⚙ and checked **twice**, by labhud and by the agent. The Proxmox
+  token and the Pterodactyl key stay on the host, in `/etc/labhud-agent/config` (mode 600).
+- labhud never sends an agent code or an update.
+
+The older agents:
+
 - **Push** (recommended): the agent sends its data to labhud, signed with a key of its own
   (`LABHUD_PUSH_<NAME>_KEY`), and listens on nothing. A forged or replayed push is refused. See
   [live-agent.md](live-agent.md#pushing-instead-of-being-polled).

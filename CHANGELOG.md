@@ -6,6 +6,25 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.2.16] - unreleased
+
+### Added
+- **Agents** ([docs/agents.md](docs/agents.md)): labhud-agent, one per host, dials labhud on
+  `/api/agent/ws` and acts only through the host's own APIs: Docker, systemd, reboot and package
+  updates, Wake-on-LAN, Proxmox guests, Pterodactyl servers. Paired from a one-time code in the
+  new **⚙ > Agents**, where each capability and each target is ticked; nothing is allowed before.
+  The protocol ([docs/agent-protocol.md](docs/agent-protocol.md)): the key is derived from the
+  code on both sides, every frame is signed, test vectors shared with the Go agent.
+- Proxmox guest cards get the agent's START / SHUT DOWN / REBOOT when the guest is ticked; new card
+  keys `agent` and `agent_target` for a host's or a target's buttons, sensors and state.
+- `/agent/install-agent.sh` installs the Go agent as a service, checking it against the SHA-256
+  labhud pins (`agents/agent-release.json`); `LABHUD_AGENT_RELEASES` and `LABHUD_AGENT_IMAGE`
+  change where it and the image come from.
+- `?static&settings=<tab>` opens ⚙ on a tab, for screenshots.
+
+### Changed
+- An agent's buttons need no `LABHUD_ACTION_URL`; the config's own actions still do.
+
 ## [0.2.15] - 2026-10-15
 
 ### Added

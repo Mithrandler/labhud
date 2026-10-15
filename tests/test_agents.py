@@ -203,6 +203,22 @@ class Server(DemoServer):
         self.assertLess(time.monotonic() - started, agents.FIRST_FRAME + 3)
         c.close()
 
+    def test_installer_served(self):
+        status, _, body = self.get("/agent/install-agent.sh", host="any-name:1")   # under any name
+        self.assertEqual(status, 200)
+        text = body.decode()
+        self.assertNotIn("@AGENT_", text)
+        self.assertIn('VERSION="0.1.0"', text)
+        self.assertIn("releases/download", text)
+        import subprocess
+        self.assertEqual(subprocess.run(["sh", "-n"], input=body).returncode, 0)
+
+    def test_code_lines(self):
+        r = self.manage("code")[1]
+        self.assertIn("/agent/install-agent.sh | sudo sh -s -- --url", r["install"])
+        self.assertIn("--network host", r["docker"])
+        self.assertIn(r["code"], r["docker"])
+
     # --- after pairing ---
 
     def test_reconnect_and_state(self):

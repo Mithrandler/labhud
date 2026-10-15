@@ -93,6 +93,19 @@ HTTP (`setupmode.py`).
 | Someone at the display bypasses the keypad (developer tools) | labhud refuses an action, and maintenance, without a live ticket | nothing |
 | Someone at the display puts a host in maintenance to hide an outage | off unless `[maintenance] buttons = true`; at most 7 days; logged and in the history | the host stays grey and silent until it ends |
 
+### Agents (labhud-agent)
+
+| attack | stopped by | left over |
+|---|---|---|
+| Pairing a fake agent | a one-time code, 144 bits, 5 minutes, admin only | someone who reads the code in those minutes pairs an agent that is allowed nothing until ticked |
+| A fake labhud collects agents | labhud must prove it knows the code; an agent refuses a wrong proof | nothing |
+| Recording the pairing | only a hash of the code and nonces travel; the key is derived, never sent | nothing |
+| Replaying or reflecting a frame | each frame is signed for its connection, its direction and its number, at most 30 s old | nothing |
+| Someone on the LAN reads the traffic | `https://` with a pinned certificate, if labhud has one | over plain HTTP: names of containers, guests, services, and the sensors |
+| A web page opens the WebSocket | refused when the request has an `Origin` | nothing |
+| labhud itself is taken over | the agent acts only on the ticked targets, with the ticked verbs, and accepts no code | the ticked buttons can be pressed: that is their price |
+| Command injection through a target | targets have a strict shape, checked in labhud and in the agent; each verb is one API call | nothing |
+
 ### Availability
 
 | attack | stopped by | left over |

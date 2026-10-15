@@ -1104,7 +1104,24 @@ TYPES = {
 
 AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
 AGENT_FILES = {"/agent/install.sh": os.path.join(AGENTS, "install.sh"),
-               "/agent/labhud-agent.py": os.path.join(AGENTS, "labhud-agent.py")}
+               "/agent/labhud-agent.py": os.path.join(AGENTS, "labhud-agent.py"),
+               "/agent/install-agent.sh": os.path.join(AGENTS, "install-agent.sh")}
+# Where install-agent.sh downloads labhud-agent from (a mirror, or a forge of your own); the
+# checksums stay labhud's own (agents/agent-release.json), whatever the address.
+AGENT_RELEASES = os.environ.get("LABHUD_AGENT_RELEASES", "")
+# The image `docker run` uses in ⚙ > Agents.
+AGENT_IMAGE = os.environ.get("LABHUD_AGENT_IMAGE", "ghcr.io/mithrandler/labhud-agent:latest")
+
+
+def agent_release():
+    try:
+        with open(os.path.join(AGENTS, "agent-release.json"), encoding="utf-8") as f:
+            r = json.load(f)
+    except (OSError, ValueError):
+        r = {}
+    sums = r.get("sha256") or {}
+    return {"@AGENT_VERSION@": str(r.get("version", "")), "@AGENT_RELEASES@": AGENT_RELEASES or r.get("releases", ""),
+            "@AGENT_SHA256_AMD64@": sums.get("amd64", ""), "@AGENT_SHA256_ARM64@": sums.get("arm64", "")}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1452,11 +1469,14 @@ class Handler(BaseHTTPRequestHandler):
             base = f"{'https' if TLS_CERT else 'http'}://{host}"
             print(f"agent pairing code made from {self.client_address[0]}", flush=True)
             return self._json({"ok": True, "code": code, "minutes": agents.PAIR_MINUTES, "url": base,
-                               "install": f"curl -fsSL {base}/agent/install.sh | sh -s -- --url {base} --code {code}",
-                               "docker": (f"docker run -d --name labhud-agent --restart unless-stopped "
-                                          f"-v /var/run/docker.sock:/var/run/docker.sock -v labhud-agent:/etc/labhud-agent "
-                                          f"-e LABHUD_URL={base} -e LABHUD_AGENT_CODE={code} "
-                                          f"ghcr.io/mithrandler/labhud-agent:latest")})
+                               "install": f"curl -fsSL {base}/agent/install-agent.sh | sudo sh -s -- --url {base} --code {code}",
+                               # host network: Wake-on-LAN and the ARP table; / read-only: the
+                               # host's sensors and disk; the sockets: Docker and systemd
+                               "docker": (f"docker run -d --name labhud-agent --restart unless-stopped --network host "
+                                          f"-v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock "
+                                          f"-v /run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket "
+                                          f"-v labhud-agent:/etc/labhud-agent "
+                                          f"-e LABHUD_URL={base} -e LABHUD_AGENT_CODE={code} {AGENT_IMAGE}")})
         aid = body.get("id")
         if not isinstance(aid, str) or not agents.get(aid):
             return self._json({"ok": False, "error": "no such agent"}, 404)
@@ -1654,9 +1674,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with open(AGENT_FILES[path], "rb") as f:
                 body = f.read()
-            if path.endswith(".sh"):
+            if path == "/agent/install.sh":
                 with open(AGENT_FILES["/agent/labhud-agent.py"], "rb") as f:
                     body = body.replace(b"@AGENT_SHA256@", hashlib.sha256(f.read()).hexdigest().encode())
+            elif path == "/agent/install-agent.sh":
+                for k, v in agent_release().items():
+                    body = body.replace(k.encode(), v.encode())
         except OSError:
             return self._json({"error": "not found"}, 404)
         self._headers(200, "text/plain; charset=utf-8", len(body), "no-cache")

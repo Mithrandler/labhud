@@ -30,7 +30,7 @@ jobs:
       - name: Compile
         run: python -m py_compile $(git ls-files '*.py')
       - name: Frontend syntax
-        run: node --check static/app.js
+        run: node --check static/app.js && node --check static/settings.js
       - name: Shipped configs are valid
         run: |
           python config.py config.example.toml
