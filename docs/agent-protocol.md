@@ -96,7 +96,13 @@ sig = HMAC(key, "V|frame|<dir>|S|<id>|<seq>|<t>|<body>")
 - The frame has exactly these five keys; anything else is refused.
 
 labhud closes a connection whose first frame does not arrive within 5 s or does not verify,
-and any frame over 1 MiB. One agent id has one connection: a new one replaces the old.
+and any frame over 1 MiB. Before closing for a refusal it sends one unsigned
+`{"type":"error","error":"<why>"}`, which the agent only logs (it proves nothing). One agent id
+has one connection: a new one replaces the old.
+
+The endpoint does not go through `LABHUD_HOSTS`, like `/api/push`: the signature is the check, so
+an agent may know labhud by any address. It refuses any request with an `Origin` header instead:
+a browser always sends one with a WebSocket and an agent never does, so no web page can reach it.
 
 ## Messages
 
@@ -132,7 +138,7 @@ part means "this capability is not here", an empty one "found, nothing in it".
 
 `sensors` uses the flat keys of the Python agent (`agents/labhud-agent.py`), plus `power_w`
 (RAPL). `guests` has the shape of the Proxmox source (`sources/proxmox.py`), so cards treat both
-the same. `units` lists only the units named in the allowlist (a host has hundreds).
+the same. `units` lists the loaded `.service` units, at most 200.
 `neighbours` is the ARP table, to choose Wake-on-LAN targets from.
 
 `result` — the end of a command: `{"type":"result","cmd":"<id>","ok":true}` or

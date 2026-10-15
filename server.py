@@ -20,12 +20,14 @@ import json
 import re
 import os
 import queue
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
 import admin
+import agents
 import cardstate
 import config
 import devices
@@ -39,6 +41,7 @@ import sources
 import screen
 import store
 import thresholds
+import websock
 from sources import push
 
 # print() writes the text and the newline separately, so two threads logging at once glued their
@@ -783,6 +786,20 @@ def snapshot():
         return dict(_data)
 
 
+def publish_agents():
+    """The agents' state (agents.py) as one more entry of the snapshot: `agents.<name>.…`."""
+    result = dict(agents.snapshot(), _t=int(time.time()))
+    with _lock:
+        _data["agents"] = result
+    _publish({"agents": result})
+
+
+agents.on_change = publish_agents
+agents.on_event = lambda text, bad: _log([(text, bad)])
+# At most this many agent connections at once, paired or still saying who they are.
+_agent_slots = threading.BoundedSemaphore(agents.MAX_AGENTS + 8)
+
+
 # What each limitable key may do beyond reading (sources.check_rights), checked at start and after
 # a reload. A monitoring key that can also stop a VM is the most common avoidable risk.
 KEY_CHECKS = {}
@@ -803,7 +820,7 @@ def _mark_inactive():
     """The snapshot's entries for sources that do not run: "not configured", or gone after a reload."""
     with _lock:
         for name in list(_data):
-            if name not in SOURCES and name not in INACTIVE and name not in ("events", "maintenance"):
+            if name not in SOURCES and name not in INACTIVE and name not in ("events", "maintenance", "agents"):
                 del _data[name]
                 _health.pop(name, None)
         for name, needs in INACTIVE.items():
@@ -1129,6 +1146,8 @@ class Handler(BaseHTTPRequestHandler):
         # labhud under any name (like /api/push), so before the LABHUD_HOSTS check.
         if self.path in AGENT_FILES:
             return self._agent_file(self.path)
+        if self.path == "/api/agent/ws":   # an agent's own signature is the check (agents.py)
+            return self._agent_ws()
         if not self._host_ok():
             # Text, not JSON: this is what someone sees on their first try on another port or name.
             # Echoing the Host back is safe as text/plain.
@@ -1173,6 +1192,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._unpair()
         if self.path == "/api/v1/login-pair":
             return self._login_pair()
+        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
+        if ag:
+            return self._agents_admin(ag.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|edit)", self.path)
         if ad:
             return self._admin_step(ad.group(1))
@@ -1342,6 +1364,76 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "no such device"}, 404)
         print(f"device unpaired: {name} from the display at {self.client_address[0]}", flush=True)
         _log([(f"Phone unpaired: {devices.clean_name(name)}", False)])
+        self._json({"ok": True})
+
+    def _agent_ws(self):
+        """An agent's WebSocket (docs/agent-protocol.md). A browser always sends Origin with a
+        WebSocket and an agent never does: refusing it keeps every web page off this door."""
+        key = websock.handshake_ok(self.headers)
+        if self.headers.get("Origin") or not key:
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        if not agents.enabled():
+            return self._json({"ok": False, "error": "agents need LABHUD_DATA (a folder labhud can write)"}, 409)
+        if not _agent_slots.acquire(blocking=False):
+            return self._json({"ok": False, "error": "too many agent connections"}, 503)
+        try:
+            self.send_response(101)
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", websock.accept_key(key))
+            self.end_headers()
+            self.wfile.flush()
+            sock = self.connection
+            conn = websock.Conn(self.rfile, self.wfile, kill=lambda: sock.shutdown(socket.SHUT_RDWR))
+            why = agents.Session(conn, self.client_address[0]).run(set_timeout=sock.settimeout)
+            print(f"agent connection from {self.client_address[0]} ended: {why}", flush=True)
+        finally:
+            _agent_slots.release()
+            self.close_connection = True
+
+    def _agents_admin(self, op):
+        """⚙ > Agents: the list, a pairing code, what each agent may do, removing one. From labhud's
+        own page, as the admin when there is one (like pairing a phone). One answer for every refusal."""
+        body = self._small_json(64 * 1024)
+        if body is None or not self._may_manage():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        if not agents.enabled():
+            return self._json({"ok": False, "error": "agents need LABHUD_DATA (a folder labhud can write)"}, 409)
+        if op == "list":
+            return self._json({"ok": True, "agents": agents.listing(), "caps": list(agents.CAPS),
+                               "verbs": {c: list(v) for c, v in agents.VERBS.items()}})
+        if op == "code":
+            code = agents.new_code()
+            host = (self.headers.get("Host") or "").lower()
+            base = f"{'https' if TLS_CERT else 'http'}://{host}"
+            print(f"agent pairing code made from {self.client_address[0]}", flush=True)
+            return self._json({"ok": True, "code": code, "minutes": agents.PAIR_MINUTES, "url": base,
+                               "install": f"curl -fsSL {base}/agent/install.sh | sh -s -- --url {base} --code {code}",
+                               "docker": (f"docker run -d --name labhud-agent --restart unless-stopped "
+                                          f"-v /var/run/docker.sock:/var/run/docker.sock -v labhud-agent:/etc/labhud-agent "
+                                          f"-e LABHUD_URL={base} -e LABHUD_AGENT_CODE={code} "
+                                          f"ghcr.io/mithrandler/labhud-agent:latest")})
+        aid = body.get("id")
+        if not isinstance(aid, str) or not agents.get(aid):
+            return self._json({"ok": False, "error": "no such agent"}, 404)
+        name = agents.get(aid)["name"]
+        if op == "caps":
+            ok = agents.set_caps(aid, body.get("caps"))
+            what = f"capabilities {body.get('caps')}"
+        elif op == "targets":
+            ok = agents.set_targets(aid, body.get("cap"), body.get("targets"))
+            what = f"{body.get('cap')} targets {body.get('targets')}"
+        elif op == "rename":
+            new = agents.rename(aid, body.get("name"))
+            ok, what = new is not None, f"renamed to {new}"
+        else:
+            agents.remove(aid)
+            print(f"agent removed: {name} from {self.client_address[0]}", flush=True)
+            _log([(f"Agent removed: {name}", False)])
+            return self._json({"ok": True})
+        if not ok:
+            return self._json({"ok": False, "error": "not a valid choice"}, 400)
+        print(f"agent {name}: {what} from {self.client_address[0]}", flush=True)
         self._json({"ok": True})
 
     def _app_stream(self):
@@ -1614,6 +1706,9 @@ if __name__ == "__main__":
         mqtt.announce(mqtt_cards(), TOPOLOGY["title"])
         mqtt.start()
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
+    agents.tls_fp = devices.tls_fingerprint(TLS_CERT)
+    threading.Thread(target=agents.pinger, args=(threading.Event(),), daemon=True, name="agents").start()
+    publish_agents()
     # Maintenance as kept at the last stop is not news: in the snapshot before the watcher starts.
     _data["maintenance"] = dict(maintenance_now(), _t=int(time.time()))
     if not DEMO:
