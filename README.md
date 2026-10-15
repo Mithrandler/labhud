@@ -31,6 +31,8 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **A phone app.** The LabHUD Android app pairs with a QR code (⚙ > Phone app, or
   `init.py pair`) and shows what is red, every card and its charts, the actions, and the wall
   itself, over your LAN or VPN. See [docs/app-api.md](docs/app-api.md).
+- **One admin, with two factors.** A password and an authenticator app guard pairing phones and
+  editing the config from the display. Set in the setup page, or `init.py admin`.
 - **One config file** (TOML) describing your pages and cards, reloaded on save.
 - **Demo mode** with made-up data, so you can try it without touching your lab.
 

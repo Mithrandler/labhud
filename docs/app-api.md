@@ -57,11 +57,18 @@ The link is `labhud://pair?u=<labhud's address>&c=<code>[&fp=<sha256>]`. `fp`, p
 labhud serves HTTPS itself (`LABHUD_TLS_CERT`), is the SHA-256 of its certificate (DER, hex):
 accept that certificate and no other.
 
+### Pairing by signing in as the admin
+
+When labhud has an admin (`info.admin`), the app can pair without a QR code:
+`POST /api/v1/login-pair` with `{"user", "password", "code", "name"}` (the code from the admin's
+authenticator app), under any Host. The answer is the same as `/api/v1/pair`; 403 for a wrong
+sign-in, with `wait` (seconds) once wrong tries are being slowed down. A code works once.
+
 ### Reading
 
 | route | answer |
 |---|---|
-| `GET /api/v1/info` | `api`, `version`, `title`, `demo`, `actions` (signed actions on), `maintenance_buttons`, `pairing`, `trends` (the keys that have history) |
+| `GET /api/v1/info` | `api`, `version`, `title`, `demo`, `actions` (signed actions on), `maintenance_buttons`, `pairing`, `admin` (signing in to pair works), `trends` (the keys that have history) |
 | `GET /api/v1/state` | the whole state, below |
 | `GET /api/v1/card/<id>` | one card as in `state`, plus `sections` (its panel) |
 | `GET /api/v1/stream` | SSE: `event: state` with the same document as `/api/v1/state`, at once and on every change (at most once a second), `: ping` every 20 s |

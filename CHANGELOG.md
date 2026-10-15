@@ -6,6 +6,21 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-15
+
+### Added
+- **The admin**: one account with a password and a code from an authenticator app (TOTP). The
+  setup page has a new Admin step (it ends only when a code is right); an existing install gets
+  one with `init.py admin` (which also replaces it; `--remove` deletes it). Once there is an
+  admin, ⚙ > Admin signs in, and pairing or removing phones and opening the config editor
+  (**Edit config** in ⚙, no `init.py edit` needed) need that sign-in. A code works once; wrong
+  sign-ins are slowed down like the PIN's. See docs/security.md.
+- `POST /api/v1/login-pair`: the app can pair by signing in as the admin, without a QR code.
+
+### Fixed
+- A test that compared the server's card colours with the display's depended on the demo's random
+  numbers and failed now and then (it held back the 0.2.0 and 0.2.2 images on Gitea).
+
 ## [0.2.2] - 2026-10-15
 
 ### Fixed
@@ -393,7 +408,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Mithrandler/labhud/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Mithrandler/labhud/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Mithrandler/labhud/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Mithrandler/labhud/compare/v0.1.67...v0.2.0

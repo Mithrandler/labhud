@@ -27,8 +27,11 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import admin
 import config
 import onboard
+import qr
+import store
 from sources._common import scrub
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -63,6 +66,8 @@ class State:
         self.proxmox = None    # {"url", "token_id", "secret", "found", "pin"}
         self.sources = {}      # name -> {"LABHUD_X": value}, each tried successfully
         self.done = False
+        self.admin_pending = None   # {"user", "password"} until its first TOTP code is right
+        self.admin = None           # the admin's kept form (admin.record), once confirmed
         self.lock = threading.Lock()
 
     def check_code(self, given):
@@ -88,7 +93,7 @@ class State:
 
     def hello(self, host):
         return {"catalog": onboard.catalog(), "folder": self.folder, "writable": self.writable(),
-                "host": host, "tried": sorted(self.sources),
+                "host": host, "tried": sorted(self.sources), "admin": self.admin["user"] if self.admin else None,
                 "proxmox": self._proxmox_view() if self.proxmox else None}
 
     def _proxmox_view(self):
@@ -160,6 +165,30 @@ class State:
         self.sources.pop(str(body.get("name") or ""), None)
         return {"ok": True}
 
+    def admin_start(self, body):
+        """{user, password}: checked, then a new authenticator secret to scan. Kept only in memory."""
+        user, password = body.get("user"), body.get("password")
+        try:
+            admin.record(user, password, "X")
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        secret = admin.new_secret()
+        self.admin_pending = {"user": user, "password": password, "totp": secret}
+        uri = admin.otpauth_uri(user, secret)
+        return {"ok": True, "svg": qr.svg(uri), "secret": secret, "uri": uri}
+
+    def admin_confirm(self, body):
+        """{code}: the first code from the authenticator app; right, the admin is ready to write."""
+        p = self.admin_pending
+        if not p:
+            return {"ok": False, "error": "start with the user name and password"}
+        if admin.totp_counter(body.get("code"), p["totp"]) is None:
+            return {"ok": False, "error": "not that code: check the phone's clock, and type the current one"}
+        self.admin = admin.record(p["user"], p["password"], p["totp"])
+        self.admin_pending = None
+        print(f"setup: admin {self.admin['user']!r} ready", flush=True)
+        return {"ok": True, "user": self.admin["user"]}
+
     def build(self, plan):
         """(config text, env text, problems) for the plan the page sends."""
         problems = []
@@ -196,7 +225,11 @@ class State:
         except config.ConfigError as e:
             problems += e.problems
         env = onboard.build_env(found, url, token_id, secret, hosts, pin)
+        if not self.admin:
+            problems.append("there is no admin account yet: go back to the Admin step")
         values = {}
+        if self.admin and not store.enabled():   # no LABHUD_DATA: the admin goes into .env, like a key
+            values[admin.ENV_KEY] = admin.env_line(self.admin).split("=", 1)[1]
         for name in services or self.sources:
             values.update(self.sources.get(name, {}))
         env = onboard.merge_env(env, values)
@@ -223,6 +256,8 @@ class State:
                 env = onboard.merge_env(f.read(), {line.split("=", 1)[0]: line.split("=", 1)[1]
                                                    for line in env.splitlines() if line.startswith("LABHUD_")})
         _write(env_path, env, 0o600)
+        if store.enabled():
+            store.save(admin.STORE_KEY, self.admin)
         _write(self.path, text, 0o644)
         self.done = True
         print(f"setup: wrote {self.path} and {env_path}; starting as the display", flush=True)
@@ -239,7 +274,8 @@ def _write(path, text, mode):
 
 
 STEPS = {"hello": None, "proxmox": "set_proxmox", "forget-proxmox": "forget_proxmox", "weather": "weather",
-         "try": "try_source", "forget": "forget_source", "suggest": "suggest", "preview": "preview", "finish": "finish"}
+         "try": "try_source", "forget": "forget_source", "suggest": "suggest", "preview": "preview", "finish": "finish",
+         "admin-start": "admin_start", "admin-confirm": "admin_confirm"}
 
 
 def handler_for(state):

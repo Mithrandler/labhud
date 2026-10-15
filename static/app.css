@@ -480,6 +480,9 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings .choice.swatch::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--sw); margin-right: 6px; vertical-align: -1px; }
 #settings .pair-qr svg { display: block; width: min(100%, 280px); height: auto; margin: 6px 0; border-radius: 4px; }
 #settings .pair-link { font-size: 10px; color: var(--sub); word-break: break-all; margin: 4px 0 0; }
+#settings .admin-form { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+#settings .admin-form input { font: 14px var(--font); color: var(--text); background: var(--block); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+#settings .admin-form .choice { align-self: flex-start; }
 #settings .devices { margin: 6px 0 2px; }
 #settings .device { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
 #settings .device-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }

@@ -19,8 +19,9 @@ HARNESS = os.path.join(ROOT, "tests", "js", "cardstate_parity.mjs")
 STATUS = {True: "up", False: "down", None: None}
 
 
-def shifted(data, cfg, delta):
-    """A copy of the snapshot with every number a card shows moved by `delta`."""
+def shifted(data, cfg, delta, to=None):
+    """A copy of the snapshot with every number a card shows moved by `delta`, or set to `to`
+    (a percentage for [used, total] pairs): the demo's numbers are random, the marks are not."""
     out = copy.deepcopy(data)
     for cards in cfg["cards"].values():
         for c in cards:
@@ -33,9 +34,9 @@ def shifted(data, cfg, delta):
                     continue
                 v = node.get(last)
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    node[last] = max(0, v + delta)
+                    node[last] = to if to is not None else max(0, v + delta)
                 elif isinstance(v, list) and len(v) == 2 and all(isinstance(x, (int, float)) for x in v) and v[1]:
-                    node[last] = [max(0, min(v[1], v[0] + delta / 100 * v[1])), v[1]]
+                    node[last] = [to / 100 * v[1] if to is not None else max(0, min(v[1], v[0] + delta / 100 * v[1])), v[1]]
     return out
 
 
@@ -49,7 +50,9 @@ class Parity(DemoServer):
         down = next(c["id"] for c in cardstate.state(cfg, data)["cards"] if c["status"] == "down")
         maint = copy.deepcopy(data)
         maint.setdefault("maintenance", {})[down] = int(time.time()) + 600
-        snaps = [data, shifted(data, cfg, 40), shifted(data, cfg, 36), shifted(data, cfg, -30), maint]
+        # warn (85), crit (95), crit kept by the hysteresis (89), back to fine (50), then random moves
+        snaps = [data, shifted(data, cfg, 0, to=85), shifted(data, cfg, 0, to=95), shifted(data, cfg, 0, to=89),
+                 shifted(data, cfg, 0, to=50), shifted(data, cfg, 40), shifted(data, cfg, 36), shifted(data, cfg, -30), maint]
 
         rounds = json.loads(subprocess.run([NODE, HARNESS], input=json.dumps({"cfg": cfg, "snapshots": snaps}),
                                            capture_output=True, text=True, check=True, timeout=30).stdout)

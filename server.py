@@ -26,6 +26,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
+import admin
 import cardstate
 import config
 import devices
@@ -207,6 +208,9 @@ _health = {}
 # What changed, newest first: the `events` source (see events.py). The demo starts with a made-up past.
 EVENTS = events.Log(demo.events() if DEMO else store.load("events", []))
 LOCK.on_block = lambda text: (EVENTS.add(text, True), print(text, flush=True))
+# The admin (admin.py): one account with a password and TOTP, for pairing phones and the editor.
+ADMIN = admin.Admin()
+ADMIN.on_block = LOCK.on_block
 # Maintenance set from the display: {card id: until (Unix seconds)}. Windows from config.toml are
 # added to it in maintenance_now(); both are kept out of the red, the notifications and the focus.
 MAINT = {} if DEMO else {k: v for k, v in store.load("maintenance", {}).items() if v > time.time()}
@@ -926,6 +930,7 @@ def health():
         "mqtt": dict(mqtt.state, on=True, problem=mqtt.problem()) if mqtt.enabled() else {"on": False},
         "maintenance": maintenance_now(),
         "devices": devices.listing(),
+        "admin": ADMIN.public(),
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
@@ -983,7 +988,7 @@ def app_state(full=False):
 def app_info():
     return {"api": API_VERSION, "version": VERSION, "title": TOPOLOGY.get("title") or "LabHUD", "demo": DEMO,
             "actions": bool(ACTION_URL and ACTION_SECRET), "maintenance_buttons": TOPOLOGY["maintenance"]["buttons"],
-            "pairing": devices.enabled(), "trends": TOPOLOGY.get("trends") or []}
+            "pairing": devices.enabled(), "admin": ADMIN.is_on(), "trends": TOPOLOGY.get("trends") or []}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1058,7 +1063,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/stream":
             return self._stream()
         if path == "/api/config":
-            return self._json(dict(config.public(TOPOLOGY), lock=LOCK.public(),
+            return self._json(dict(config.public(TOPOLOGY), lock=LOCK.public(), admin=ADMIN.public(),
                                    action_url="/action/" if ACTION_URL and ACTION_SECRET else ACTION_URL))
         if path == "/api/snapshot":  # useful for debugging and for the check screenshots
             return self._json(snapshot())
@@ -1086,6 +1091,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._pair_code()
         if self.path == "/api/v1/unpair":
             return self._unpair()
+        if self.path == "/api/v1/login-pair":
+            return self._login_pair()
+        ad = re.fullmatch(r"/api/admin/(login|logout|edit)", self.path)
+        if ad:
+            return self._admin_step(ad.group(1))
         ed = re.fullmatch(r"/edit/api/(load|check|save)", self.path)
         if ed:
             return self._edit(ed.group(1))
@@ -1173,7 +1183,7 @@ class Handler(BaseHTTPRequestHandler):
         """The display's "Pair a phone" (⚙): from labhud's own page, unlocked. Answers the link and
         its QR code as SVG; the link uses the address the display itself opened."""
         body = self._small_json()
-        if body is None or not self._same_page() or not self._unlocked() or self._device()[1] == "bearer":
+        if body is None or not self._may_manage():
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if not devices.enabled():
             return self._json({"ok": False, "error": "pairing needs LABHUD_DATA (a folder labhud can write)"}, 409)
@@ -1183,13 +1193,67 @@ class Handler(BaseHTTPRequestHandler):
         print(f"pairing code made on the display from {self.client_address[0]}", flush=True)
         self._json({"ok": True, "link": link, "svg": qr.svg(link), "minutes": devices.PAIR_MINUTES})
 
+    def _admin_ok(self):
+        return ADMIN.valid(self.headers.get("X-Labhud-Admin"))
+
+    def _may_manage(self):
+        """Pairing and removing phones: from labhud's own page (also in the app's wall mode), never
+        with the app's own token; signed in as the admin when there is one, else unlocked."""
+        if not self._same_page() or self._device()[1] == "bearer":
+            return False
+        return self._admin_ok() if ADMIN.is_on() else self._unlocked()
+
+    def _admin_step(self, step):
+        """login {user, password, code} -> {ticket}; logout; edit -> a code for the config editor.
+        From labhud's own page, JSON, small. One answer for every refusal."""
+        body = self._small_json()
+        if body is None or not self._same_page() or self._device()[1] == "bearer" or not ADMIN.is_on():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        if step == "login":
+            ticket, wait = ADMIN.login(body.get("user"), body.get("password"), body.get("code"))
+            if not ticket:
+                print(f"admin: wrong sign-in from {self.client_address[0]}", flush=True)
+                return self._json({"ok": False, "error": "wrong user, password or code", "wait": wait}, 403)
+            print(f"admin: signed in from {self.client_address[0]}", flush=True)
+            return self._json({"ok": True, "ticket": ticket, "idle": ADMIN.idle, "user": ADMIN.user()})
+        if step == "logout":
+            ADMIN.close(self.headers.get("X-Labhud-Admin"))
+            return self._json({"ok": True})
+        if not self._admin_ok():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        if not os.access(CONFIG_PATH, os.W_OK):
+            return self._json({"ok": False, "error": f"{CONFIG_PATH} is not writable by labhud: mount it read-write"}, 409)
+        try:
+            code = editmode.open_ticket(CONFIG_PATH)
+        except OSError as e:
+            return self._json({"ok": False, "error": f"cannot open the editor: {e.strerror}"}, 409)
+        print(f"admin: config editor opened from {self.client_address[0]}", flush=True)
+        self._json({"ok": True, "code": code})
+
+    def _login_pair(self):
+        """{user, password, code, name} -> {token, name}: pairing from the app by signing in as the
+        admin, without a QR code. Under any Host, like /api/v1/pair; slowed like every sign-in."""
+        body = self._small_json()
+        if body is None or not ADMIN.is_on() or not devices.enabled():
+            return self._json({"ok": False, "error": "this LabHUD has no admin to sign in as"}, 403)
+        right, wait = ADMIN.check(body.get("user"), body.get("password"), body.get("code"))
+        if not right:
+            print(f"admin: wrong sign-in to pair from {self.client_address[0]}", flush=True)
+            return self._json({"ok": False, "error": "wrong user, password or code", "wait": wait}, 403)
+        token, name = devices.pair(devices.new_code(), body.get("name"))
+        if not token:
+            return self._json({"ok": False, "error": "too many paired phones"}, 409)
+        print(f"device paired by the admin: {name} from {self.client_address[0]}", flush=True)
+        _log([(f"Phone paired: {name} (admin sign-in)", False)])
+        self._json({"ok": True, "token": token, "name": name, "info": app_info()})
+
     def _unpair(self):
         """{name}: the display's ⚙ removes a paired phone, whose token stops working at once. From
         labhud's own page (also in the app's wall mode), unlocked; never with the app's own token
         (a stolen phone cannot lock the others out)."""
         body = self._small_json()
         name = body.get("name") if body else None
-        if not isinstance(name, str) or not self._same_page() or not self._unlocked() or self._device()[1] == "bearer":
+        if not isinstance(name, str) or not self._may_manage():
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if not devices.unpair(name):
             return self._json({"ok": False, "error": "no such device"}, 404)

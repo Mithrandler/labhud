@@ -7,6 +7,7 @@
     python3 init.py pin [--clear|--hash]  # the display's lock PIN (also settable on the screen, ⚙)
     python3 init.py pair [name] [URL]   # a QR code that pairs the LabHUD app (also in the display's ⚙)
     python3 init.py devices             # the paired phones; init.py unpair <name> removes one
+    python3 init.py admin [--env|--remove]  # the one admin account (password + authenticator app)
     docker run --rm -it -v "$PWD:/out" ghcr.io/mithrandler/labhud:latest python3 /app/init.py /out
 
 It asks for a Proxmox VE address and an API token, checks that they work and that the token can
@@ -159,7 +160,54 @@ def list_devices(args):
         print(f"{d['name']:<24} paired {day(d['paired'])}   last seen {day(d['seen'])}")
 
 
+def admin_account(args):
+    """init.py admin: makes (or replaces) the admin: a user name, a password and an authenticator
+    app, checked with one code before anything is kept. --remove deletes it; --env only prints the
+    line for .env (no LABHUD_DATA)."""
+    import envfiles  # noqa: F401
+    import admin
+    import qr
+    import store
+    if args[:1] == ["--remove"]:
+        if not store.enabled():
+            sys.exit(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'}): remove {admin.ENV_KEY} from .env instead")
+        store.save(admin.STORE_KEY, {})
+        return print("Admin removed: pairing and the editor work as without one (the display's PIN).")
+    current = admin.Admin().user()
+    if current:
+        print(f"This replaces the admin {current!r} (a new password and a new authenticator entry).")
+    while True:
+        user = ask("Admin user name", current or "admin")
+        if admin.USER.fullmatch(user):
+            break
+        print("  1 to 40 letters, digits, . _ @ -")
+    while True:
+        password = ask(f"Password, at least {admin.MIN_PASSWORD} characters (not shown)", secret=True)
+        if admin.password_problem(password):
+            print("  " + admin.password_problem(password))
+            continue
+        if ask("Again (not shown)", secret=True) == password:
+            break
+        print("  the two do not match, again")
+    secret = admin.new_secret()
+    uri = admin.otpauth_uri(user, secret)
+    print("\nScan this with your authenticator app (Aegis, 2FAS, Google Authenticator, Bitwarden...):\n")
+    print(qr.terminal(uri))
+    print(f"\nOr type the key by hand: {' '.join(secret[i:i + 4] for i in range(0, len(secret), 4))}\n")
+    while admin.totp_counter(ask("The 6-digit code it shows now"), secret) is None:
+        print("  not that one: check the phone's clock, and type the current code")
+    rec = admin.record(user, password, secret)
+    if args[:1] == ["--env"] or not store.enabled():
+        if args[:1] != ["--env"]:
+            print(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'}), so add this line to .env and recreate the container:")
+        return print(admin.env_line(rec))
+    store.save(admin.STORE_KEY, rec)
+    print(f"Admin {user!r} set. Sign in on the display (⚙ > Admin) or from the LabHUD app.")
+
+
 def main():
+    if sys.argv[1:2] == ["admin"]:
+        return admin_account(sys.argv[2:])
     if sys.argv[1:2] == ["pair"]:
         return pair(sys.argv[2:])
     if sys.argv[1:2] == ["devices"]:

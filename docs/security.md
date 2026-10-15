@@ -158,6 +158,27 @@ the page shows. In direct action mode (no `LABHUD_ACTION_SECRET`) the browser ta
 itself, so there the lock lives only in the page: someone with the browser's developer tools at
 the display can still send an action. Use signed actions to have labhud enforce it.
 
+## The admin
+
+One account, with a password and a second factor (TOTP: Aegis, 2FAS, Bitwarden, Google
+Authenticator...). It is made by the setup page, or by `init.py admin` on an older install; the
+same command replaces it (a forgotten password, a lost authenticator) and `--remove` deletes it.
+
+Once there is an admin, these need it signed in: pairing and removing phones in ⚙ > Phone app,
+opening the config editor from ⚙, and pairing from the app without a QR code (the app signs in
+with the same three). Without an admin they work as before: on the display's own page, behind its
+PIN when one is set.
+
+- Only a scrypt hash of the password is kept, in `LABHUD_DATA` or in `LABHUD_ADMIN` (`init.py
+  admin --env` prints the line). The TOTP secret must be kept as it is, like any key in `.env`.
+- A code works once, even within its 30 seconds. After five wrong sign-ins nothing is checked for a
+  minute, then 2, 4... up to an hour, for every sign-in at once; each pause goes to the log and the
+  day's timeline.
+- A sign-in on the display lasts while it is used and ends after 15 minutes without use, or at a
+  restart, or when the admin is replaced.
+- Over plain HTTP the password and the code cross the network in clear text, like the PIN. Sign in
+  from the display, the host, or over the VPN.
+
 ## Paired phones (the LabHUD app)
 
 The app is not labhud's own page, so it cannot pass the Host and Origin checks. It is paired once
@@ -176,8 +197,9 @@ instead (`init.py pair`, or ⚙ > Phone app > Pair a phone) and then sends a tok
   phone cannot remove the others with its own token.
 - The app's wall mode loads the wall page with the token as a cookie: that page is a display like
   any other, so the display's PIN still guards its buttons, pairing and removing.
-- With a PIN on the display, **Pair a phone** needs the screen unlocked; without one, anyone at the
-  display can pair a phone, as they can already press its buttons.
+- With an admin, **Pair a phone** and **Remove** need it signed in. Without one: with a PIN on the
+  display they need the screen unlocked; without a PIN, anyone at the display can pair a phone, as
+  they can already press its buttons.
 - Over plain HTTP the token crosses the network in clear text, like everything else. Over a VPN
   that is fine; on a network you do not trust, give labhud HTTPS (`LABHUD_TLS_CERT`): the QR code
   then carries the certificate's fingerprint and the app accepts only that certificate.

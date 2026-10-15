@@ -3,7 +3,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const ORDER = ["code", "proxmox", "guests", "services", "display", "review"];
+const ORDER = ["code", "proxmox", "guests", "services", "display", "admin", "review"];
 const S = {
   code: "",
   catalog: [],
@@ -77,6 +77,7 @@ async function start() {
   S.tried = new Set(r.tried || []);
   S.writable = r.writable;
   S.folder = r.folder;
+  S.admin = r.admin || null;
   $("d-hosts").value = defaultHosts();
   $("find-hosts").value = location.hostname;
   renderCatalog();
@@ -267,6 +268,42 @@ function plan() {
 $("display-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   if ($("d-city").value.trim() && !S.weather) $("d-find").click();
+  if (S.admin) return review();
+  show("admin");
+});
+
+// -- 6. the admin ---------------------------------------------------------------------------
+
+$("admin-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if ($("a-pass").value !== $("a-pass2").value) return msg($("a-msg"), "the two passwords differ", "bad");
+  const r = await busy(ev.submitter || $("admin-form").querySelector("button"),
+    () => api("admin-start", { user: $("a-user").value.trim(), password: $("a-pass").value }));
+  if (!r.ok) return msg($("a-msg"), r.error, "bad");
+  msg($("a-msg"), "");
+  const svg = new DOMParser().parseFromString(r.svg, "image/svg+xml").documentElement;
+  $("a-qr").replaceChildren(document.importNode(svg, true));
+  $("a-secret").textContent = r.secret.replace(/(.{4})/g, "$1 ").trim();
+  $("a-totp").hidden = false;
+  $("a-code").focus();
+});
+
+$("a-code-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const r = await busy(ev.submitter || $("a-code-form").querySelector("button"),
+    () => api("admin-confirm", { code: $("a-code").value }));
+  if (!r.ok) return msg($("a-msg"), r.error, "bad");
+  S.admin = r.user;
+  $("a-pass").value = $("a-pass2").value = "";
+  $("admin-form").hidden = true;
+  $("a-totp").hidden = true;
+  msg($("a-msg"), `Admin ${r.user} is ready. Keep the authenticator entry: it is asked at every sign-in.`, "ok");
+  $("admin-next").hidden = false;
+});
+
+$("admin-next").addEventListener("click", () => review());
+
+async function review() {
   const r = await api("preview", plan());
   $("r-where").textContent = S.writable
     ? `LabHUD will write config.toml and .env to ${S.folder}, then start as the display.`
@@ -277,7 +314,7 @@ $("display-form").addEventListener("submit", async (ev) => {
   $("r-env").textContent = (r.env || []).map((n) => n + "=…").join("\n");
   $("r-write").disabled = !r.ok || !S.writable;
   show("review");
-});
+}
 
 $("r-write").addEventListener("click", async (ev) => {
   const r = await busy(ev.target, () => api("finish", plan()));

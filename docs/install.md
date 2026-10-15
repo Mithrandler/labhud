@@ -38,11 +38,16 @@ Open http://<this machine>:8095/#ABCD-EFGH
 The page walks through Proxmox VE (address, a read-only token, which nodes and guests get a
 card; it says so if the token can do more than read, and offers to pin the certificate), every
 other source (a form each, with where to find the key, tried on the spot and kept only if it
-answers), the weather and the names the display uses. At the end it writes `config.toml` and
+answers), the weather, the names the display uses and **the admin** (a user name, a password of
+at least 10 characters, and an authenticator app you scan a QR code into; the step ends only when
+a code from it is right). At the end it writes `config.toml` and
 `.env` (mode 600) into that folder and starts again as the display. Edit both files by hand
 afterwards for everything else. See [threat-model.md](threat-model.md#the-setup-page) for why
 only the code from the log opens it; over plain HTTP, open it from the host itself or a network
 you trust, since the keys you type cross it once.
+
+**The admin on an install made before 0.3.0** (or to replace it: a forgotten password, a lost
+authenticator): `docker exec -it labhud python3 /app/init.py admin`. `--remove` deletes it.
 
 **In a terminal, if you have Proxmox VE:** let labhud write a first config for you. It asks for
 the Proxmox address and an API token (role `PVEAuditor`), checks that the token works and can

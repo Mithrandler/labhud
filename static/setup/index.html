@@ -17,6 +17,7 @@
       <li data-step="guests">Guests</li>
       <li data-step="services">Services</li>
       <li data-step="display">Display</li>
+      <li data-step="admin">Admin</li>
       <li data-step="review">Write</li>
     </ol>
   </header>
@@ -95,8 +96,33 @@ pveum user token add labhud@pve wall --privsep 0</pre>
       <label>City for the weather (empty: none)
         <span class="row"><input id="d-city"><button type="button" class="ghost" id="d-find">Find</button></span></label>
       <p class="msg" id="d-weather"></p>
-      <div class="row"><button>Review</button></div>
+      <div class="row"><button>Next</button></div>
     </form>
+  </section>
+
+  <section id="admin" hidden>
+    <h2>The admin</h2>
+    <p>One account guards pairing phones (the LabHUD app) and opening the config editor from the
+      display: a password, plus a code from an authenticator app on your phone (Aegis, 2FAS, Bitwarden,
+      Google Authenticator…).</p>
+    <form id="admin-form">
+      <label>User name <input id="a-user" value="admin" autocomplete="username" maxlength="40" required></label>
+      <label>Password, at least 10 characters <input id="a-pass" type="password" autocomplete="new-password" required></label>
+      <label>Again <input id="a-pass2" type="password" autocomplete="new-password" required></label>
+      <div class="row"><button>Next: the authenticator</button></div>
+    </form>
+    <div id="a-totp" hidden>
+      <p>Scan this with the authenticator app:</p>
+      <div id="a-qr" class="qr"></div>
+      <p class="small">Or type the key by hand: <code id="a-secret"></code></p>
+      <form id="a-code-form">
+        <label>The 6-digit code it shows now
+          <input id="a-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
+        <div class="row"><button>Confirm</button></div>
+      </form>
+    </div>
+    <p class="msg" id="a-msg"></p>
+    <div class="row"><button id="admin-next" hidden>Review</button></div>
   </section>
 
   <section id="review" hidden>

@@ -15,6 +15,7 @@ from unittest import mock
 
 import config
 import envfiles
+import admin
 import onboard
 import setupmode
 from sources._common import REGISTRY, env, source
@@ -42,6 +43,7 @@ class Build(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.st = setupmode.State(os.path.join(self.dir, "config.toml"), code="ABCD-EFGH")
+        self.st.admin = admin.record("admin", "correct horse 1", admin.new_secret())
         onboard.catalog()
 
         @source("fakesvc", every=60, env=("FAKESVC_URL", "FAKESVC_KEY"), title="Fake")
@@ -80,6 +82,26 @@ class Build(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertIn("LABHUD_FAKESVC_KEY=good-key-123", envtext)
 
+    def test_admin_step(self):
+        self.st.admin = None
+        self.assertIn("there is no admin account yet: go back to the Admin step",
+                      self.st.build({"hosts": ["192.0.2.50:8095"]})[2])
+        self.assertFalse(self.st.admin_start({"user": "admin", "password": "short"})["ok"])
+        self.assertFalse(self.st.admin_start({"user": "bad name", "password": "long enough 1"})["ok"])
+        r = self.st.admin_start({"user": "boss", "password": "long enough 1"})
+        self.assertTrue(r["ok"] and r["svg"].startswith("<svg") and r["uri"].startswith("otpauth://totp/LabHUD%3Aboss?"))
+        self.assertNotIn("long enough 1", json.dumps(r))
+        now = int(time.time()) // 30
+        valid = {admin.totp(r["secret"], c) for c in range(now - 1, now + 2)}
+        self.assertFalse(self.st.admin_confirm({"code": next(c for c in ("000000", "111111", "222222") if c not in valid)})["ok"])
+        good = admin.totp(r["secret"], int(time.time()) // 30)
+        self.assertEqual(self.st.admin_confirm({"code": good}), {"ok": True, "user": "boss"})
+        self.assertTrue(admin.verify_password("long enough 1", self.st.admin["hash"]))
+        _, envtext, problems = self.st.build({"hosts": ["192.0.2.50:8095"]})
+        self.assertEqual(problems, [])
+        self.assertIn("LABHUD_ADMIN=boss:scrypt$", envtext)   # no LABHUD_DATA here: it goes into .env
+        self.assertNotIn("long enough 1", envtext)
+
     def test_bad_hosts(self):
         _, _, problems = self.st.build({"hosts": ["evil host"]})
         self.assertTrue(problems)
@@ -98,6 +120,7 @@ class Build(unittest.TestCase):
         self.assertIn("# mine", text)
         self.assertIn("LABHUD_OTHER=keep", text)
         self.assertIn("LABHUD_HOSTS=192.0.2.50:8095", text)
+        self.assertIn("LABHUD_ADMIN=admin:scrypt$", text)
         self.assertNotIn("old:1", text)
         self.assertFalse(self.st.finish({"hosts": ["192.0.2.50:8095"]})["ok"])  # never twice
 
@@ -198,6 +221,11 @@ class FirstStart(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(hello["writable"])
         self.assertTrue(any(e["name"] == "healthchecks" for e in hello["catalog"]))
+        self.assertFalse(self.call("finish", {"hosts": [self.host], "title": "FIRST"})[1]["ok"])   # no admin yet
+        status, started = self.call("admin-start", {"user": "admin", "password": "first start 1"})
+        self.assertTrue(started["ok"])
+        code = admin.totp(started["secret"], int(time.time()) // 30)
+        self.assertEqual(self.call("admin-confirm", {"code": code})[1], {"ok": True, "user": "admin"})
         status, done = self.call("finish", {"hosts": [self.host], "title": "FIRST"})
         self.assertEqual((status, done), (200, {"ok": True}))
         # the same process, started again as the display
@@ -211,6 +239,7 @@ class FirstStart(unittest.TestCase):
                 conn.close()
                 if r.status == 200:
                     self.assertEqual(cfg["title"], "FIRST")
+                    self.assertEqual(cfg["admin"], {"on": True})
                     self.assertIsNone(self.proc.poll())
                     return
             except (OSError, ValueError):

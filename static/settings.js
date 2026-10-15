@@ -366,7 +366,12 @@ function open_settings() {
   // --- the lock (lock.js): the PIN is labhud's, the same on every screen ---
   lock_settings(section);
 
+  // --- the admin (admin.py): signs in for the phones and the config editor ---
+  admin_settings(section);
+  const adminOn = CFG && CFG.admin && CFG.admin.on;
+
   // --- the LabHUD app: a one-time QR code that pairs a phone (devices.py) ---
+  if (adminOn && !ADMIN_TICKET) return finish_settings(body, keep, box);
   const app = section("Phone app");
   const show = el("div", "pair-qr");
   const pairButton = el("button", "choice", "Pair a phone");
@@ -380,6 +385,10 @@ function open_settings() {
     + "Remove ends a phone's access at once."));
   load_devices(list);
 
+  finish_settings(body, keep, box);
+}
+
+function finish_settings(body, keep, box) {
   const reset = el("button", "reset", "Reset this screen to the defaults");
   reset.type = "button";
   reset.addEventListener("click", () => {
@@ -398,10 +407,10 @@ function pair_phone(host) {
   host.textContent = "";
   host.appendChild(el("p", "hint", "Asking LabHUD…"));
   fetch("/api/v1/pair-code", {
-    method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: "{}",
+    method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: "{}",
   }).then((r) => r.json()).then((r) => {
     host.textContent = "";
-    if (!r.ok) { host.appendChild(el("p", "hint", r.error === "forbidden" ? "Unlock the screen first." : r.error)); return; }
+    if (!r.ok) { host.appendChild(el("p", "hint", r.error === "forbidden" ? admin_forbidden() : r.error)); return; }
     const svg = new DOMParser().parseFromString(r.svg, "image/svg+xml").documentElement;
     host.appendChild(document.importNode(svg, true));
     host.appendChild(el("p", "hint", `Scan it in the app (Add server). It works once, within ${r.minutes} minutes.`));
@@ -409,6 +418,85 @@ function pair_phone(host) {
     wait_for_pairing(host.parentNode.querySelector(".devices"));
   }).catch(() => { host.textContent = ""; host.appendChild(el("p", "hint", "Could not reach LabHUD.")); });
   touched();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The admin: one account (password + authenticator code); its ticket lives in this tab only
+// ---------------------------------------------------------------------------------------------
+
+const ADMIN_KEY = "labhud-admin";
+let ADMIN_TICKET = "";
+try { ADMIN_TICKET = sessionStorage.getItem(ADMIN_KEY) || ""; } catch (e) { /* not kept */ }
+let ADMIN_USER = "";
+
+function admin_headers(h) {
+  return ADMIN_TICKET ? { ...h, "X-Labhud-Admin": ADMIN_TICKET } : h;
+}
+
+function set_admin(ticket, user) {
+  ADMIN_TICKET = ticket || "";
+  ADMIN_USER = user || "";
+  try { if (ADMIN_TICKET) sessionStorage.setItem(ADMIN_KEY, ADMIN_TICKET); else sessionStorage.removeItem(ADMIN_KEY); } catch (e) { /* ignore */ }
+}
+
+/** A refusal while an admin exists: the sign-in ended (15 minutes unused, or a restart). */
+function admin_forbidden() {
+  if (CFG && CFG.admin && CFG.admin.on) { set_admin(""); setTimeout(open_settings, 1500); return "Signed out: sign in as the admin again."; }
+  return "Unlock the screen first.";
+}
+
+function admin_post(step, body) {
+  return fetch("/api/admin/" + step, {
+    method: "POST", headers: admin_headers({ "Content-Type": "application/json" }), body: JSON.stringify(body || {}),
+  }).then((r) => r.json().catch(() => ({ ok: r.ok }))).catch(() => ({ ok: false, error: "could not reach LabHUD" }));
+}
+
+function admin_settings(section) {
+  const s = section("Admin");
+  if (!(CFG && CFG.admin && CFG.admin.on)) {
+    s.appendChild(el("p", "hint", "No admin yet: pairing phones works as on any unlocked screen. "
+      + "Set one on the server with init.py admin (a password and an authenticator app)."));
+    return;
+  }
+  if (ADMIN_TICKET) {
+    s.appendChild(el("p", "hint", "Signed in" + (ADMIN_USER ? " as " + ADMIN_USER : "") + ". It ends after 15 minutes unused."));
+    const row = el("div", "choices");
+    const edit = el("button", "choice", "Edit config");
+    edit.type = "button";
+    edit.addEventListener("click", () => admin_post("edit").then((r) => {
+      if (r.ok) window.open("/edit#" + r.code, "_blank", "noopener");
+      else show_message(r.error === "forbidden" ? admin_forbidden() : r.error);
+    }));
+    const out = el("button", "choice", "Sign out");
+    out.type = "button";
+    out.addEventListener("click", () => admin_post("logout").then(() => { set_admin(""); open_settings(); }));
+    row.append(edit, out);
+    s.appendChild(row);
+    return;
+  }
+  s.appendChild(el("p", "hint", "Sign in to pair or remove phones and to edit the config."));
+  const form = el("form", "admin-form");
+  const user = el("input"); user.placeholder = "User"; user.autocomplete = "username";
+  const pass = el("input"); pass.type = "password"; pass.placeholder = "Password"; pass.autocomplete = "current-password";
+  const code = el("input"); code.placeholder = "Code from the authenticator"; code.inputMode = "numeric";
+  code.autocomplete = "one-time-code"; code.maxLength = 6;
+  const go = el("button", "choice", "Sign in");
+  const said = el("p", "hint");
+  form.append(user, pass, code, go, said);
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    put(said, "Checking…");
+    admin_post("login", { user: user.value.trim(), password: pass.value, code: code.value.trim() }).then((r) => {
+      pass.value = code.value = "";
+      if (!r.ok) {
+        put(said, r.wait ? `Too many wrong tries: wait ${Math.ceil(r.wait / 60)} min.` : (r.error || "Refused."));
+        return;
+      }
+      set_admin(r.ticket, r.user);
+      open_settings();
+    });
+  });
+  s.appendChild(form);
 }
 
 /** "5 min ago", "3 h ago", "2 days ago": when a phone was last seen. */
@@ -446,9 +534,9 @@ function load_devices(host) {
 
 function unpair_device(name, host) {
   fetch("/api/v1/unpair", {
-    method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: JSON.stringify({ name }),
+    method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: JSON.stringify({ name }),
   }).then((r) => r.json()).then((r) => {
-    if (!r.ok) show_message(r.error === "forbidden" ? "Unlock the screen first." : r.error);
+    if (!r.ok) show_message(r.error === "forbidden" ? admin_forbidden() : r.error);
     load_devices(host);
   }).catch(() => show_message("Could not reach LabHUD."));
   touched();
