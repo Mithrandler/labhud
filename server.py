@@ -29,6 +29,7 @@ import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anythin
 import config
 import editmode
 import events
+import lock
 import mqtt
 import notify
 import sources
@@ -180,6 +181,11 @@ def _apply(topology):
     CARD_IDS = set(CARD_NAMES)
     TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST = (
         topology, active, inactive, every, targets, source_host)
+    LOCK.idle = topology.get("lock", {}).get("idle", 600)
+
+
+# The display's lock (lock.py): a PIN, then a ticket that the requests changing something carry.
+LOCK = lock.Lock()
 
 
 # First start, no config.toml yet: the setup page instead (setupmode.py), which writes the files and
@@ -197,6 +203,7 @@ _lock = threading.Lock()
 _health = {}
 # What changed, newest first: the `events` source (see events.py). The demo starts with a made-up past.
 EVENTS = events.Log(demo.events() if DEMO else store.load("events", []))
+LOCK.on_block = lambda text: (EVENTS.add(text, True), print(text, flush=True))
 # Maintenance set from the display: {card id: until (Unix seconds)}. Windows from config.toml are
 # added to it in maintenance_now(); both are kept out of the red, the notifications and the focus.
 MAINT = {} if DEMO else {k: v for k, v in store.load("maintenance", {}).items() if v > time.time()}
@@ -767,6 +774,15 @@ def watch_config():
         _send("config", {"reload": True})
 
 
+def watch_lock():
+    """A PIN set or removed outside the page (init.py pin): open screens learn it in a few seconds."""
+    while True:
+        time.sleep(3)
+        if LOCK.outside_change():
+            print(f"lock: PIN {'set' if LOCK.is_on() else 'removed'} outside the display", flush=True)
+            _send("lock", LOCK.public())
+
+
 def _note_health(name, result, took, failures, next_at):
     """Records how the poll went; returns the events it makes: a source that has kept failing
     past SOURCE_GRACE (with its host up), and the same source answering again."""
@@ -993,7 +1009,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/stream":
             return self._stream()
         if path == "/api/config":
-            return self._json(dict(config.public(TOPOLOGY),
+            return self._json(dict(config.public(TOPOLOGY), lock=LOCK.public(),
                                    action_url="/action/" if ACTION_URL and ACTION_SECRET else ACTION_URL))
         if path == "/api/snapshot":  # useful for debugging and for the check screenshots
             return self._json(snapshot())
@@ -1018,6 +1034,9 @@ class Handler(BaseHTTPRequestHandler):
         ed = re.fullmatch(r"/edit/api/(load|check|save)", self.path)
         if ed:
             return self._edit(ed.group(1))
+        lk = re.fullmatch(r"/api/lock/(unlock|touch|lock|pin)", self.path)
+        if lk:
+            return self._lock_step(lk.group(1))
         mt = re.fullmatch(r"/api/maintenance/([A-Za-z0-9_.-]{1,64})", self.path)
         if mt:
             return self._maintenance(mt.group(1))
@@ -1028,7 +1047,7 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
         if not (m and ACTION_URL and ACTION_SECRET and self._host_ok() and _action_allowed(m.group(1))
-                and origin in (f"http://{host}", f"https://{host}")):
+                and origin in (f"http://{host}", f"https://{host}") and self._unlocked()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         code, answer = forward_action(m.group(1))
         print(f"action {m.group(1)} from {self.client_address[0]}: "
@@ -1040,6 +1059,43 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
         return self._host_ok() and origin in (f"http://{host}", f"https://{host}")
+
+    def _unlocked(self):
+        """No PIN set, or the request carries a live ticket (lock.py)."""
+        return LOCK.allows(self.headers.get("X-Labhud-Unlock"))
+
+    def _lock_step(self, step):
+        """The lock: unlock {pin}, touch, lock, pin {old, new}. From labhud's own page, JSON, small."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length)) if 0 < length <= 256 else {}
+            if not isinstance(body, dict):
+                raise ValueError
+        except ValueError:
+            length, body = -1, {}
+        if not (self._same_page() and 0 <= length <= 256):
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        ticket = self.headers.get("X-Labhud-Unlock")
+        if step == "unlock":
+            new, wait = LOCK.unlock(body.get("pin"))
+            if not new:
+                print(f"lock: wrong PIN from {self.client_address[0]}", flush=True)
+                return self._json({"ok": False, "error": "wrong PIN", "wait": wait}, 403)
+            return self._json({"ok": True, "ticket": new, "idle": LOCK.idle})
+        if step == "touch":
+            ok = not LOCK.is_on() or LOCK.valid(ticket)
+            return self._json({"ok": ok}, 200 if ok else 403)
+        if step == "lock":
+            LOCK.close(ticket)
+            return self._json({"ok": True})
+        ok, new, error, wait = LOCK.set_pin(body.get("old"), body.get("new"))
+        if not ok:
+            return self._json({"ok": False, "error": error, "wait": wait}, 403)
+        what = "set" if new else "removed"
+        print(f"lock: PIN {what} from {self.client_address[0]}", flush=True)
+        EVENTS.add(f"Display PIN {what}")
+        _send("lock", LOCK.public())
+        return self._json({"ok": True, "ticket": new, "lock": LOCK.public()})
 
     def _edit(self, step):
         """The config editor (editmode.py): a code from `init.py edit`, the page's own Origin,
@@ -1088,7 +1144,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, AttributeError):
             minutes = -1
         if not (TOPOLOGY["maintenance"]["buttons"] and card in CARD_IDS and self._same_page()
-                and 0 <= minutes <= 7 * 24 * 60):
+                and 0 <= minutes <= 7 * 24 * 60 and self._unlocked()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         set_maintenance(card, minutes)
         print(f"maintenance {card}: {f'{minutes} min' if minutes else 'ended'} from {self.client_address[0]}", flush=True)
@@ -1104,6 +1160,8 @@ class Handler(BaseHTTPRequestHandler):
             result, took = body.get("result"), int(body.get("took") or 0)
         except (ValueError, AttributeError, TypeError):
             result, took = None, 0
+        # No lock ticket here: "done" may come minutes after the action, once the screen locked again;
+        # the action itself needed one, and the text is written here, never taken from the request.
         if not (result in ACTION_RESULTS and _action_allowed(name) and self._same_page()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         text = f"{action_text(name)}: {ACTION_RESULTS[result]}"
@@ -1224,6 +1282,7 @@ if __name__ == "__main__":
         seed_demo_history()
     threading.Thread(target=loop, daemon=True, name="collect").start()
     threading.Thread(target=watch_config, daemon=True, name="config").start()
+    threading.Thread(target=watch_lock, daemon=True, name="lock").start()
     notify.start()
     if screen.enabled():
         print(f"screen: Fully Kiosk at {screen.URL}" + ("" if TOPOLOGY.get("night") else " (idle: no [night] in config.toml)"), flush=True)

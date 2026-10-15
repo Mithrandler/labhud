@@ -49,9 +49,10 @@ WINDOW_KEYS = {"cards", "from", "until", "reason"}
 ALERTS_KEYS = {"path", "page"}
 NIGHT_KEYS = {"from", "to", "dim"}
 CALM_KEYS = {"after"}
+LOCK_KEYS = {"idle"}
 PUBLIC_KEYS = {"title", "groups"}
 TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "include", "sparklines",
-            "maintenance"}
+            "maintenance", "lock"}
 # The formats whose numbers get a sparkline (the last hours, behind the value)
 TREND_FORMATS = {"percent", "percent1", "celsius", "rate", "used_of"}
 DEFAULT_TITLE = "LABHUD"
@@ -266,6 +267,7 @@ def load(path=None):
     alerts       {path, page?} or None
     night        {from, to, dim} or None: the screen dims in that window (the display's local time)
     calm         {after} or None: seconds with nothing red before the screen shows only the clock
+    lock         {idle}: seconds without a touch before an unlocked screen locks again (with a PIN set)
     trends       [data path]: the numbers kept for sparklines (empty with sparklines = false)
     """
     path = path or config_path()
@@ -593,6 +595,21 @@ def _validate(raw, path):
                 ck.err("calm", f"after must be from 30 to 86400 seconds, got {after}")
             calm = {"after": after or 300}
 
+    # Lock: with a PIN set (from the display's settings or init.py pin), the screen is only for
+    # looking; a PIN opens it, and it closes again after `idle` minutes without a touch.
+    lock = {"idle": 600}
+    if "lock" in raw:
+        lk = raw["lock"]
+        if not isinstance(lk, dict):
+            ck.err("top level", "lock must be written as a [lock] table")
+        else:
+            ck.unknown("lock", lk, LOCK_KEYS)
+            idle = ck.opt("lock", lk, "idle", int, "minutes")
+            if idle is not None and not 1 <= idle <= 120:
+                ck.err("lock", f"idle must be from 1 to 120 minutes, got {idle}")
+            elif idle is not None:
+                lock["idle"] = idle * 60
+
     # Public status page (LABHUD_PUBLIC_PORT): only the names and states of these groups' cards.
     public_page = None
     if "public" in raw:
@@ -616,7 +633,7 @@ def _validate(raw, path):
     if ck.problems:
         raise ConfigError(path, ck.problems)
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
-            "weather": weather, "night": night, "calm": calm, "public": public_page,
+            "weather": weather, "night": night, "calm": calm, "lock": lock, "public": public_page,
             "trends": [] if sparklines is False else sorted({
                 m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) if m[2] in TREND_FORMATS})}
 

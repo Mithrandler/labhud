@@ -363,6 +363,9 @@ function open_settings() {
   choices(scr, [[false, "Silent"], [true, "Beep"]], S.sound, (v) => { S.sound = v; save_settings(); if (v) beep(); });
   if (S.sound) choices(scr, [[false, "Silent at night"], [true, "Beep at night too"]], S.loud_night, (v) => { S.loud_night = v; save_settings(); });
 
+  // --- the lock (lock.js): the PIN is labhud's, the same on every screen ---
+  lock_settings(section);
+
   const reset = el("button", "reset", "Reset this screen to the defaults");
   reset.type = "button";
   reset.addEventListener("click", () => {

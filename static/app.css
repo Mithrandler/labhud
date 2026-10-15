@@ -114,6 +114,18 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 /* in the theme's accent (it follows ⚙ itself), thin and half-lit: there, but not drawing the eye */
 #gear svg { display: block; }
 #gear:hover, #gear:active { opacity: 1; }
+/* The lock (lock.js), left of ⚙ and only with a PIN set: closed = only for looking. Open, the
+   shackle lifts; the health mark moves over to make room. */
+#lock-btn {
+  position: absolute; right: calc(100% + 30px); top: 50%; transform: translateY(-50%);
+  appearance: none; border: 0; background: transparent; color: var(--title); opacity: .55;
+  padding: 4px; line-height: 0; cursor: pointer;
+}
+#lock-btn svg { display: block; }
+#lock-btn .shackle { transition: transform .2s; }
+#lock-btn.open .shackle { transform: translate(5px, -2px); }
+#lock-btn.open { opacity: .35; }
+#clock.has-lock #health { right: calc(100% + 56px); }
 #clock .time { display: block; font-size: 19px; font-weight: 700; letter-spacing: .5px; }
 #clock .date { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
 
@@ -428,6 +440,8 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
   #topbar { grid-template-columns: 1fr auto 1fr; grid-template-rows: 40px 34px; row-gap: 0; }
   #weather { grid-row: 1; grid-column: 1; }
   #brand   { grid-row: 1; grid-column: 2; display: block; }
+  /* the lock (lock.js) takes the room left of ⚙: the brand steps aside so they do not touch */
+  #topbar:has(#clock.has-lock) #brand { transform: translateX(-18px); }
   #clock   { grid-row: 1; grid-column: 3; }
   #menu    { grid-row: 2; grid-column: 1 / -1; justify-content: space-between; gap: 2px; }
   /* 6 pages since 1 Oct 2026 (HEALTH): at 360 px they fit only with smaller padding and font */
@@ -541,3 +555,26 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 #actions-bar .track.done i { background: var(--green); }
 #actions-bar .track.timeout, #actions-bar .track.refused { border-color: var(--red); color: #ffd9e2; }
 #actions-bar .track.timeout i, #actions-bar .track.refused i { background: var(--red); }
+
+/* The lock's keypad (lock.js): over everything, big keys for a finger. */
+#lock { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .86); display: flex; align-items: center; justify-content: center; }
+#lock .box { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; }
+#lock .title { margin: 0; color: var(--title); font-weight: 700; letter-spacing: .5px; text-transform: uppercase; font-size: 14px; }
+#lock .dots { display: flex; gap: 14px; margin: 4px 0; }
+#lock .dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--title); }
+#lock .dots i.on { background: var(--title); }
+#lock .dots.shake { animation: lock-shake .35s; }
+@keyframes lock-shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+#lock .msg { margin: 0; min-height: 16px; color: var(--warn); font-size: 12px; text-align: center; }
+#lock .keys { display: grid; grid-template-columns: repeat(3, 68px); gap: 10px; }
+#lock .keys button { appearance: none; height: 58px; border-radius: 12px; border: 1px solid var(--line); background: var(--block);
+  color: var(--text); font: 500 24px var(--font); cursor: pointer; touch-action: manipulation; }
+#lock .keys button:active { background: var(--line); }
+#lock .keys .cancel, #lock .keys .back { color: var(--sub); font-size: 20px; }
+/* a phone on its side: the dots left of the keys, the keys a little lower */
+@media (max-height: 420px) {
+  #lock .box { display: grid; grid-template-columns: auto auto; column-gap: 32px; align-items: center; }
+  #lock .title, #lock .dots, #lock .msg { grid-column: 1; justify-self: center; }
+  #lock .keys { grid-column: 2; grid-row: 1 / span 3; grid-template-columns: repeat(3, 64px); gap: 6px; }
+  #lock .keys button { height: 46px; font-size: 20px; }
+}

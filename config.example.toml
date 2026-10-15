@@ -225,6 +225,12 @@ city = "Berlin"              # optional, shown next to the temperature
 # [calm]
 # after = 300
 
+# Optional: the lock. Set a 4-digit PIN in ⚙ > Lock on the display (or `init.py pin`), and the
+# screen is only for looking until someone types it. Open, it locks again after `idle` minutes
+# without a touch (default 10, from 1 to 120); the lock left of ⚙ closes it at once.
+# [lock]
+# idle = 10
+
 # Optional: a public status page on its own port (LABHUD_PUBLIC_PORT), with only the names and
 # states (up, down, maintenance) of these groups' cards: no address, number or button. Expose
 # that port alone, e.g. for the people who play on your game servers.

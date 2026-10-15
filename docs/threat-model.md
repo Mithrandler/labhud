@@ -88,7 +88,9 @@ HTTP (`setupmode.py`).
 | Replaying a captured request | signed mode: 30-second window, nonce, each signature accepted once | in direct mode: only the IP allowlist |
 | Faking `Origin` in direct mode | only the display's IP | a device that can take the display's IP (same Wi-Fi, no DHCP reservation) can run actions. Use signed mode |
 | Injecting a command | the agent runs only commands written in its TOML file; the name only selects one | nothing |
-| Someone at the display presses SHUT DOWN | a confirmation dialog | nobody is identified. Keep destructive actions to what a guest may press |
+| Someone at the display presses SHUT DOWN | the PIN, if set (`[lock]`); a confirmation dialog | without a PIN nobody is identified. Keep destructive actions to what a guest may press |
+| Someone at the display guesses the PIN | 5 wrong PINs stop the checks for 1 min, doubling up to 1 h; each pause is in the timeline | 10,000 PINs: a patient guesser gets through in weeks, and it shows in the history long before |
+| Someone at the display bypasses the keypad (developer tools) | signed mode: labhud refuses an action, and maintenance, without a live ticket | direct mode: the browser posts to the agent itself, so the lock is in the page only |
 | Someone at the display puts a host in maintenance to hide an outage | off unless `[maintenance] buttons = true`; at most 7 days; logged and in the history | the host stays grey and silent until it ends |
 
 ### Availability

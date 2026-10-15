@@ -56,6 +56,7 @@ class DemoServer(unittest.TestCase):
         cls.host = f"127.0.0.1:{cls.port}"
         env = {k: v for k, v in os.environ.items() if not k.startswith("LABHUD_")}
         env.update(LABHUD_DEMO="1", LABHUD_PORT=str(cls.port), PYTHONDONTWRITEBYTECODE="1")
+        env.update(getattr(cls, "extra_env", {}))   # a test class's own settings (test_lock: LABHUD_DATA)
         if os.environ.get("LABHUD_TEST_CONFIG"):  # test_reload: a copy it can edit
             env["LABHUD_CONFIG"] = os.environ["LABHUD_TEST_CONFIG"]
         cls.proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py")], cwd=ROOT, env=env,
@@ -125,7 +126,7 @@ class DemoServer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(ctype.startswith("text/html"))
         self.assertIn(b"app.js", body)
-        for asset in ("/app.js", "/settings.js", "/app.css"):
+        for asset in ("/app.js", "/settings.js", "/lock.js", "/app.css"):
             self.assertEqual(self.get(asset)[0], 200, asset)
 
     def test_config(self):

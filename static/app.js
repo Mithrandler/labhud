@@ -203,6 +203,8 @@ function start_stream() {
     if (c.reload) location.reload();
     else show_config_errors(c.errors || []);
   });
+  // the PIN was set or removed (here, on another screen, or by init.py pin): see lock.js
+  s.addEventListener("lock", (e) => lock_state(JSON.parse(e.data)));
   s.onopen = () => document.body.classList.remove("disconnected");
   s.onerror = () => document.body.classList.add("disconnected");  // EventSource reconnects by itself
 }
@@ -1414,8 +1416,8 @@ function ask_maintenance(c) {
   const until = maintenance_until(c);
   put($("#confirm-text"), until ? `${c.name}: maintenance until ${clock(until)}.` : `Put ${c.name} in maintenance for:`);
   const set = (minutes) => () => fetch("/api/maintenance/" + encodeURIComponent(c.id), {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minutes }),
-  }).then((r) => r.json().catch(() => ({ ok: r.ok })))
+    method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: JSON.stringify({ minutes }),
+  }).then((r) => { lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
     .then((r) => show_message(r.ok ? (minutes ? "✓ maintenance until " + clock(r.until) : "✓ maintenance over") : "✕ " + (r.error || "failed")))
     .catch(() => show_message("✕ could not reach labhud"));
   ask([["1 HOUR", set(60)], ["4 HOURS", set(240)], ["1 DAY", set(1440)]].concat(until ? [["END", set(0)]] : []));
@@ -1434,8 +1436,10 @@ function send_action(name, c) {
   const t = { name, label: track_label(name, c), started: Date.now(), phase: "sending", ...track_goal(name, c) };
   TRACKS = [t, ...TRACKS.filter((x) => x.name !== name)].slice(0, 3);
   render_tracks();
-  fetch(CFG.action_url + encodeURIComponent(name), { method: "POST", mode: "cors" })
-    .then((r) => r.json().catch(() => ({ ok: r.ok })))
+  // the lock's ticket only to labhud itself (/action/): a header to the agent would need CORS for it
+  const own = CFG.action_url.startsWith("/");
+  fetch(CFG.action_url + encodeURIComponent(name), { method: "POST", mode: "cors", headers: own ? lock_headers() : {} })
+    .then((r) => { if (own) lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
     .then((r) => {
       if (!r.ok) return finish(t, "refused", r.error || "refused");
       log_action(name, "accepted");
@@ -1962,6 +1966,7 @@ function from_address() {
 fetch("/api/config").then((r) => r.json()).then((cfg) => {
   CFG = cfg;
   document.title = CFG.title || "LABHUD";
+  lock_state(CFG.lock);
   put($("#weather .city"), CFG.city || "");
   for (const items of Object.values(CFG.cards)) for (const c of items) CARD_BY_ID[c.id] = c;
   CFG.pages.forEach((p, i) => {
@@ -1995,6 +2000,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   $("#health").addEventListener("click", open_health_panel);
   start_tour();
   $("#gear").addEventListener("click", open_settings);
+  $("#lock-btn").addEventListener("click", () => (locked() ? lock_unlock() : lock_close()));
   for (const part of ["#clock .time", "#clock .date"]) $(part).addEventListener("click", open_today);
   $("#weather").addEventListener("click", () => {
     if (!get("weather.days")) return;
@@ -2004,7 +2010,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   // The rotation: checked every second against this screen's period and pages (⚙, settings.js).
   if (!LIST_VIEW) tick(() => {
     if (!S.rotate || Date.now() - turnedAt < S.period * 1000) return;
-    if (Date.now() < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden || !$("#settings").hidden) return;
+    if (Date.now() < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden || !$("#settings").hidden || pad) return;
     const pages = rotation_pages();
     if (!pages.length) return;
     go(pages.find((i) => i > page) ?? pages[0]);

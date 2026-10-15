@@ -6,6 +6,23 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- A lock for a display anyone can walk up to: with a 4-digit PIN set, the screen is only for
+  looking. Pages, rotation, night and calm go on, but any touch opens a keypad. The right PIN opens
+  the screen until `[lock] idle` minutes (10 by default) pass without a touch; the lock left of ⚙
+  closes it at once. The PIN is set, changed or removed in ⚙ (the current PIN is asked first) or
+  with `init.py pin`; `init.py pin --clear` removes a forgotten one.
+- `[lock] idle = <minutes>` (1–120).
+
+### Security
+- Only the PIN's scrypt hash is kept: in `LABHUD_DATA`, or in `LABHUD_LOCK_PIN_HASH` (printed by
+  `init.py pin --hash`) without it. labhud checks the PIN and gives the page a ticket held in memory.
+  With a PIN set, the maintenance buttons and signed actions (`/action/`) are refused without a
+  live ticket. Five wrong PINs stop the checks for a minute, then 2, 4… up to an hour, and go to
+  the day's timeline.
+- Direct actions (no `LABHUD_ACTION_SECRET`) go from the browser to the agent, so for them the
+  lock is in the page only; use signed mode to have labhud enforce it.
+
 ## [0.1.65] - 2026-10-14
 
 ### Added

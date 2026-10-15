@@ -133,8 +133,30 @@ posts to labhud, which checks the request comes from its own page and the action
 `config.toml`, then forwards it with an HMAC signature that the agent checks (fresh, never
 reused, from labhud's IP only). Without it, the browser posts straight to the agent, which must
 check the `Origin` header and the display's IP. Either way the agent runs only commands listed
-in its own file. With no login, anyone who opens the page can press the buttons. See
+in its own file. With no login, anyone who opens the page can press the buttons, unless the
+display has a PIN (see the lock, below). See
 [actions.md](actions.md).
+
+## The lock (PIN)
+
+A display on a wall is used by whoever walks by. With a PIN set (⚙ > Lock, or `init.py pin`),
+the screen is only for looking until someone types it; open, it locks again after `[lock] idle`
+minutes without a touch, or at once with the lock left of ⚙.
+
+- Only a scrypt hash of the PIN is kept: in `LABHUD_DATA` (`labhud.db`), or in
+  `LABHUD_LOCK_PIN_HASH` when there is no data folder (`init.py pin --hash` prints the line; it
+  can come from a file, `LABHUD_LOCK_PIN_HASH_FILE`). Without a data folder the PIN cannot be
+  changed from the screen.
+- labhud checks the PIN and answers with a ticket, kept in memory (a restart locks every screen).
+  With a PIN set, labhud refuses the maintenance buttons and signed actions without a live ticket.
+- Four digits are 10,000 PINs. After five wrong ones labhud checks nothing for a minute, then
+  2, 4… up to an hour; each such pause goes to the log and the day's timeline.
+- Forgotten PIN: `docker exec labhud python3 /app/init.py pin --clear`.
+
+What it does not do: over plain HTTP the PIN crosses the LAN in clear text, like everything else
+the page shows. In direct action mode (no `LABHUD_ACTION_SECRET`) the browser talks to the agent
+itself, so there the lock lives only in the page: someone with the browser's developer tools at
+the display can still send an action. Use signed actions to have labhud enforce it.
 
 ## Reporting a problem
 

@@ -25,6 +25,9 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **Each screen its own look.** The ⚙ next to the clock sets, for that screen only: OLED black or
   dark grey, an accent colour, the font (Roboto, Inter, JetBrains Mono) and text size, which pages
   rotate and how fast, and its own night and calm hours. Nothing changes on the server.
+- **A PIN for a screen anyone walks by.** With a 4-digit PIN set, the display is only for looking:
+  any touch asks for the PIN, and it locks again after 10 minutes without a touch, or from the
+  lock next to ⚙. Only a scrypt hash is kept; wrong guesses are slowed down.
 - **One config file** (TOML) describing your pages and cards, reloaded on save.
 - **Demo mode** with made-up data, so you can try it without touching your lab.
 

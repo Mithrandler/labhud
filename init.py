@@ -4,6 +4,7 @@
     python3 init.py [folder]          # writes <folder>/config.toml and <folder>/.env
     python3 init.py agent <name> [URL]  # a key and a card for a machine running labhud-agent
     python3 init.py edit [minutes]      # a one-time link to edit config.toml in a browser
+    python3 init.py pin [--clear|--hash]  # the display's lock PIN (also settable on the screen, ⚙)
     docker run --rm -it -v "$PWD:/out" ghcr.io/mithrandler/labhud:latest python3 /app/init.py /out
 
 It asks for a Proxmox VE address and an API token, checks that they work and that the token can
@@ -81,7 +82,37 @@ def edit(args):
     print(f"Open {where}/edit#{code}  (valid {minutes} minutes)")
 
 
+def lock_pin(args):
+    """init.py pin: set the display's 4-digit lock PIN (kept as a scrypt hash in LABHUD_DATA);
+    --clear removes it (a forgotten PIN), --hash only prints the line for .env (no LABHUD_DATA)."""
+    import envfiles  # noqa: F401  (LABHUD_DATA may come from a _FILE)
+    import lock
+    import store
+    if args[:1] == ["--clear"]:
+        if not store.enabled():
+            sys.exit(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'}): remove {lock.ENV_KEY} from .env instead")
+        store.save(lock.STORE_KEY, "")
+        return print("PIN removed: the display is open to every touch again.")
+    while True:
+        first = ask("New PIN, 4 digits (not shown)", secret=True)
+        if not lock.PIN.fullmatch(first):
+            print("  exactly 4 digits")
+            continue
+        if ask("Again (not shown)", secret=True) == first:
+            break
+        print("  the two do not match, again")
+    hashed = lock.hash_pin(first)
+    if args[:1] == ["--hash"] or not store.enabled():
+        if args[:1] != ["--hash"]:
+            print(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'}), so add this line to .env and recreate the container:")
+        return print(f"{lock.ENV_KEY}={hashed}")
+    store.save(lock.STORE_KEY, hashed)
+    print("PIN set: the display locks now (open screens within a few seconds).")
+
+
 def main():
+    if sys.argv[1:2] == ["pin"]:
+        return lock_pin(sys.argv[2:])
     if sys.argv[1:2] == ["edit"]:
         return edit(sys.argv[2:])
     if sys.argv[1:2] == ["agent"]:
