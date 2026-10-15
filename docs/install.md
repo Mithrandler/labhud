@@ -46,7 +46,7 @@ afterwards for everything else. See [threat-model.md](threat-model.md#the-setup-
 only the code from the log opens it; over plain HTTP, open it from the host itself or a network
 you trust, since the keys you type cross it once.
 
-**The admin on an install made before 0.3.0** (or to replace it: a forgotten password, a lost
+**The admin on an install made before 0.2.13** (or to replace it: a forgotten password, a lost
 authenticator): `docker exec -it labhud python3 /app/init.py admin`. `--remove` deletes it.
 
 **In a terminal, if you have Proxmox VE:** let labhud write a first config for you. It asks for

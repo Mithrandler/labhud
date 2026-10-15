@@ -6,7 +6,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-15
+## [0.2.13] - 2026-10-15
 
 ### Added
 - **The admin**: one account with a password and a code from an authenticator app (TOTP). The
@@ -408,8 +408,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/Mithrandler/labhud/compare/v0.2.2...v0.3.0
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.2.13...HEAD
+[0.2.13]: https://github.com/Mithrandler/labhud/compare/v0.2.2...v0.2.13
 [0.2.2]: https://github.com/Mithrandler/labhud/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Mithrandler/labhud/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Mithrandler/labhud/compare/v0.1.67...v0.2.0
