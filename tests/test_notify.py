@@ -54,6 +54,13 @@ class Notify(unittest.TestCase):
         data, headers = notify.body("LABHUD", "NAS down", True)
         self.assertEqual(data, b"NAS down")
         self.assertEqual((headers["Title"], headers["Priority"]), ("LABHUD", "high"))
+        self.assertNotIn("Click", headers)
+        notify.CLICK = "app"
+        try:
+            self.assertEqual(notify.body("L", "NAS down", True, card="nas")[1]["Click"], "labhud://card/nas")
+            self.assertEqual(notify.body("L", "LabHUD started", False)[1]["Click"], "labhud://open")
+        finally:
+            notify.CLICK = ""
         notify.FORMAT = "gotify"
         self.assertEqual(json.loads(notify.body("T", "x", False)[0]), {"title": "T", "message": "x", "priority": 4})
         notify.FORMAT = "discord"

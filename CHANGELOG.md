@@ -6,6 +6,20 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- Pairing for the LabHUD Android app: `init.py pair [name]` (a QR code in the terminal) or
+  **Pair a phone** in ⚙ (a QR code on the display) makes a one-time code, valid 5 minutes. The
+  app trades it for a token of its own. `init.py devices` lists the paired phones (also on
+  `/status`), `init.py unpair <name>` ends one at once. Needs `LABHUD_DATA`.
+- A paired device's token (`Authorization: Bearer`) stands in for `LABHUD_HOSTS`, the Origin
+  check and the lock's PIN: the app asks for the phone's fingerprint or PIN when it opens. The
+  `labhud_device` cookie does the same for the wall page inside the app, Origin still checked.
+- `/api/v1/info`, `/api/v1/state`, `/api/v1/card/<id>`, `/api/v1/stream`, `/api/v1/history`,
+  `/api/v1/events`: each card's status, red or not, summary, coloured numbers, note, actions and
+  panel, worked out on the server exactly as the display does (a test runs both on the demo).
+  See [docs/app-api.md](docs/app-api.md).
+- `LABHUD_NOTIFY_CLICK=app` (ntfy): a tap on a notification opens the app on that card.
+
 ## [0.1.67] - 2026-10-15
 
 ### Changed

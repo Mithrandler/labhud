@@ -17,6 +17,7 @@ nav:
   - Integrations: integrations.md
   - Your own data: live-agent.md
   - Actions: actions.md
+  - Phone app: app-api.md
   - Security:
       - Overview: security.md
       - Architecture: architecture.md

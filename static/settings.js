@@ -366,6 +366,18 @@ function open_settings() {
   // --- the lock (lock.js): the PIN is labhud's, the same on every screen ---
   lock_settings(section);
 
+  // --- the LabHUD app: a one-time QR code that pairs a phone (devices.py) ---
+  const app = section("Phone app");
+  const show = el("div", "pair-qr");
+  const pairButton = el("button", "choice", "Pair a phone");
+  pairButton.type = "button";
+  pairButton.addEventListener("click", () => pair_phone(show));
+  const prow = el("div", "choices");
+  prow.appendChild(pairButton);
+  app.append(prow, show);
+  app.appendChild(el("p", "hint", "Shows a QR code for the LabHUD Android app, valid once for a few minutes. "
+    + "Paired phones are listed on /status; init.py unpair <name> removes one."));
+
   const reset = el("button", "reset", "Reset this screen to the defaults");
   reset.type = "button";
   reset.addEventListener("click", () => {
@@ -377,6 +389,23 @@ function open_settings() {
   body.appendChild(el("p", "hint", "Saved in this browser only: other screens keep their own settings."));
   box.hidden = false;
   body.scrollTop = keep;
+}
+
+/** Asks labhud for a pairing code and shows it as a QR code (an SVG made by the server, qr.py). */
+function pair_phone(host) {
+  host.textContent = "";
+  host.appendChild(el("p", "hint", "Asking LabHUD…"));
+  fetch("/api/v1/pair-code", {
+    method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: "{}",
+  }).then((r) => r.json()).then((r) => {
+    host.textContent = "";
+    if (!r.ok) { host.appendChild(el("p", "hint", r.error === "forbidden" ? "Unlock the screen first." : r.error)); return; }
+    const svg = new DOMParser().parseFromString(r.svg, "image/svg+xml").documentElement;
+    host.appendChild(document.importNode(svg, true));
+    host.appendChild(el("p", "hint", `Scan it in the app (Add server). It works once, within ${r.minutes} minutes.`));
+    host.appendChild(el("p", "pair-link", r.link));
+  }).catch(() => { host.textContent = ""; host.appendChild(el("p", "hint", "Could not reach LabHUD.")); });
+  touched();
 }
 
 function toggle_hidden(key) {

@@ -5,6 +5,8 @@
     python3 init.py agent <name> [URL]  # a key and a card for a machine running labhud-agent
     python3 init.py edit [minutes]      # a one-time link to edit config.toml in a browser
     python3 init.py pin [--clear|--hash]  # the display's lock PIN (also settable on the screen, ⚙)
+    python3 init.py pair [name] [URL]   # a QR code that pairs the LabHUD app (also in the display's ⚙)
+    python3 init.py devices             # the paired phones; init.py unpair <name> removes one
     docker run --rm -it -v "$PWD:/out" ghcr.io/mithrandler/labhud:latest python3 /app/init.py /out
 
 It asks for a Proxmox VE address and an API token, checks that they work and that the token can
@@ -20,6 +22,7 @@ import getpass
 import os
 import re
 import sys
+import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -110,7 +113,61 @@ def lock_pin(args):
     print("PIN set: the display locks now (open screens within a few seconds).")
 
 
+def display_url():
+    hosts = [h.strip() for h in os.environ.get("LABHUD_HOSTS", "").split(",") if h.strip()
+             and not h.strip().startswith(("localhost", "127."))]
+    scheme = "https" if os.environ.get("LABHUD_TLS_CERT") else "http"
+    return f"{scheme}://{hosts[0]}" if hosts else ""
+
+
+def pair(args):
+    """init.py pair [name] [URL]: a one-time code for the LabHUD app, as a link and a QR code.
+    URL is labhud's address as the phone will reach it (default: the first name in LABHUD_HOSTS)."""
+    import envfiles  # noqa: F401  (LABHUD_DATA may come from .env or a _FILE)
+    import devices
+    import qr
+    import store
+    url = next((a for a in args if re.match(r"^https?://", a)), "") or display_url()
+    name = " ".join(a for a in args if not re.match(r"^https?://", a))
+    if not store.enabled():
+        sys.exit(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'}): pairing keeps its devices there")
+    if not url:
+        sys.exit("usage: python3 init.py pair [name] http://labhud-host:8095  (no LABHUD_HOSTS name to use)")
+    link = devices.pair_link(url, devices.new_code(name), os.environ.get("LABHUD_TLS_CERT", ""))
+    print(qr.terminal(link))
+    print(f"\nScan it with the LabHUD app (Add server), or paste this link there:\n\n  {link}\n")
+    print(f"It works once, within {devices.PAIR_MINUTES} minutes. The phone must reach {url} (home Wi-Fi or VPN).")
+
+
+def list_devices(args):
+    """init.py devices: the paired phones. init.py unpair <name>: remove one, at once."""
+    import envfiles  # noqa: F401
+    import devices
+    import store
+    if not store.enabled():
+        sys.exit(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'})")
+    if args:
+        name = " ".join(args)
+        if not devices.unpair(name):
+            sys.exit(f"no paired device called {name!r} (init.py devices lists them)")
+        return print(f"{name}: unpaired, its token no longer works.")
+    found = devices.listing()
+    if not found:
+        return print("No paired devices. init.py pair adds one.")
+    day = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else "never"  # noqa: E731
+    for d in found:
+        print(f"{d['name']:<24} paired {day(d['paired'])}   last seen {day(d['seen'])}")
+
+
 def main():
+    if sys.argv[1:2] == ["pair"]:
+        return pair(sys.argv[2:])
+    if sys.argv[1:2] == ["devices"]:
+        return list_devices([])
+    if sys.argv[1:2] == ["unpair"]:
+        if len(sys.argv) < 3:
+            sys.exit("usage: python3 init.py unpair <name>")
+        return list_devices(sys.argv[2:])
     if sys.argv[1:2] == ["pin"]:
         return lock_pin(sys.argv[2:])
     if sys.argv[1:2] == ["edit"]:

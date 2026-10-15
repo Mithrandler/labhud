@@ -478,6 +478,8 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
   border-radius: 7px; padding: 8px 10px; cursor: pointer; }
 #settings .choice.on { color: var(--text); border-color: var(--title); box-shadow: inset 0 0 0 1px var(--title); }
 #settings .choice.swatch::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--sw); margin-right: 6px; vertical-align: -1px; }
+#settings .pair-qr svg { display: block; width: min(100%, 280px); height: auto; margin: 6px 0; border-radius: 4px; }
+#settings .pair-link { font-size: 10px; color: var(--sub); word-break: break-all; margin: 4px 0 0; }
 #settings .choice.custom { display: inline-flex; align-items: center; gap: 6px; }
 #settings .choice.custom::before { display: none; }
 #settings .choice.custom input { width: 22px; height: 18px; padding: 0; border: 0; background: transparent; }

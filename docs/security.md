@@ -158,6 +158,29 @@ the page shows. In direct action mode (no `LABHUD_ACTION_SECRET`) the browser ta
 itself, so there the lock lives only in the page: someone with the browser's developer tools at
 the display can still send an action. Use signed actions to have labhud enforce it.
 
+## Paired phones (the LabHUD app)
+
+The app is not labhud's own page, so it cannot pass the Host and Origin checks. It is paired once
+instead (`init.py pair`, or ⚙ > Phone app > Pair a phone) and then sends a token of its own.
+
+- The pairing code is random (144 bits), works once, and only for 5 minutes. It travels in the QR
+  code and in the link; whoever scans or copies it first gets the token.
+- A valid token stands in for `LABHUD_HOSTS`, the Origin check and the lock's PIN: **a token is as
+  good as standing at an unlocked display**, including the actions and maintenance buttons. The
+  app keeps it in Android's encrypted storage and asks for the phone's fingerprint or PIN when it
+  opens.
+- Only SHA-256 hashes of codes and tokens are kept (in `LABHUD_DATA`); every phone has its own
+  token, listed with when it was last seen on `/status` and by `init.py devices`.
+- A lost phone: `docker exec labhud python3 /app/init.py unpair "<name>"`. Its token stops working
+  at once.
+- With a PIN on the display, **Pair a phone** needs the screen unlocked; without one, anyone at the
+  display can pair a phone, as they can already press its buttons.
+- Over plain HTTP the token crosses the network in clear text, like everything else. Over a VPN
+  that is fine; on a network you do not trust, give labhud HTTPS (`LABHUD_TLS_CERT`): the QR code
+  then carries the certificate's fingerprint and the app accepts only that certificate.
+- The app reaches labhud the same way a browser would: keep it on the LAN or behind a VPN. Pairing
+  does not make it safe to expose the port to the internet.
+
 ## Reporting a problem
 
 Open an issue on GitHub. For anything that should not be public, use GitHub's private

@@ -26,12 +26,15 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
+import cardstate
 import config
+import devices
 import editmode
 import events
 import lock
 import mqtt
 import notify
+import qr
 import sources
 import screen
 import store
@@ -547,7 +550,7 @@ def _log(found):
         mqtt.event(text, bad)
         if bad:
             screen.wake()
-        notify.submit(TOPOLOGY["title"], text, bad, still_true)
+        notify.submit(TOPOLOGY["title"], text, bad, still_true, card)
     if not DEMO:
         store.save("events", EVENTS.all())
     result = dict(EVENTS.snapshot(), _t=int(time.time()))
@@ -922,6 +925,7 @@ def health():
         "store": {"on": store.enabled(), "problem": store.PROBLEM} if store.DIR else {"on": False},
         "mqtt": dict(mqtt.state, on=True, problem=mqtt.problem()) if mqtt.enabled() else {"on": False},
         "maintenance": maintenance_now(),
+        "devices": devices.listing(),
         "notify": dict(notify.state, on=notify.enabled(), format=notify.FORMAT, problem=notify.problem())
         if notify.enabled() else {"on": False},
         "problems": [n for n, h in result.items() if h.get("alarm")],
@@ -962,6 +966,26 @@ AGENT_FILES = {"/agent/install.sh": os.path.join(AGENTS, "install.sh"),
                "/agent/labhud-agent.py": os.path.join(AGENTS, "labhud-agent.py")}
 
 
+# ---------------------------------------------------------------------------------------------
+# Apps (the LabHUD Android app): a token per paired device (devices.py), the cards' state worked
+# out here (cardstate.py), under /api/v1. The contract is in docs/app-api.md.
+# ---------------------------------------------------------------------------------------------
+
+API_VERSION = 1
+
+
+def app_state(full=False):
+    with _lock:
+        data = dict(_data)
+    return cardstate.state(TOPOLOGY, data, actions_on=bool(ACTION_URL and ACTION_SECRET), full=full)
+
+
+def app_info():
+    return {"api": API_VERSION, "version": VERSION, "title": TOPOLOGY.get("title") or "LabHUD", "demo": DEMO,
+            "actions": bool(ACTION_URL and ACTION_SECRET), "maintenance_buttons": TOPOLOGY["maintenance"]["buttons"],
+            "pairing": devices.enabled(), "trends": TOPOLOGY.get("trends") or []}
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "wall"
@@ -989,8 +1013,31 @@ class Handler(BaseHTTPRequestHandler):
         self._headers(code, "application/json; charset=utf-8", len(body))
         self.wfile.write(body)
 
+    def _device(self):
+        """(name, how) of the paired device this request comes from, or (None, None). "bearer":
+        the app itself; "cookie": the wall page the app opens in a WebView (devices.py)."""
+        # One handler serves every request of a kept-alive connection: the answer is per request.
+        if getattr(self, "_dev_for", None) is not self.headers:
+            self._dev_for, self._dev = self.headers, (None, None)
+            auth = self.headers.get("Authorization") or ""
+            if auth.startswith("Bearer "):
+                name = devices.check(auth[len("Bearer "):].strip())
+                self._dev = (name, "bearer") if name else (None, None)
+            else:
+                for part in (self.headers.get("Cookie") or "").split(";"):
+                    k, _, v = part.strip().partition("=")
+                    if k == "labhud_device":
+                        name = devices.check(v)
+                        self._dev = (name, "cookie") if name else (None, None)
+        return self._dev
+
     def _host_ok(self):
-        return (self.headers.get("Host") or "").lower() in ALLOWED_HOSTS
+        """A name in LABHUD_HOSTS, or a paired device: its token is what DNS rebinding cannot have."""
+        return (self.headers.get("Host") or "").lower() in ALLOWED_HOSTS or self._device()[0] is not None
+
+    def _who(self):
+        name, _ = self._device()
+        return f"{self.client_address[0]} ({name})" if name else self.client_address[0]
 
     def do_GET(self):
         # The agent and its installer: public code, no data, fetched by machines that may know
@@ -1006,6 +1053,8 @@ class Handler(BaseHTTPRequestHandler):
             self._headers(421, "text/plain; charset=utf-8", len(body))
             return self.wfile.write(body)
         path = self.path.split("?", 1)[0]
+        if path.startswith("/api/v1/"):
+            return self._app_get(path)
         if path == "/api/stream":
             return self._stream()
         if path == "/api/config":
@@ -1031,6 +1080,10 @@ class Handler(BaseHTTPRequestHandler):
         p = re.fullmatch(r"/api/push/([a-z0-9_]{1,64})", self.path)
         if p:
             return self._push(p.group(1))
+        if self.path == "/api/v1/pair":
+            return self._pair()
+        if self.path == "/api/v1/pair-code":
+            return self._pair_code()
         ed = re.fullmatch(r"/edit/api/(load|check|save)", self.path)
         if ed:
             return self._edit(ed.group(1))
@@ -1044,25 +1097,129 @@ class Handler(BaseHTTPRequestHandler):
         if al:
             return self._action_log(al.group(1))
         m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
-        host = (self.headers.get("Host") or "").lower()
-        origin = (self.headers.get("Origin") or "").lower()
-        if not (m and ACTION_URL and ACTION_SECRET and self._host_ok() and _action_allowed(m.group(1))
-                and origin in (f"http://{host}", f"https://{host}") and self._unlocked()):
+        if not (m and ACTION_URL and ACTION_SECRET and _action_allowed(m.group(1))
+                and self._same_page() and self._unlocked()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         code, answer = forward_action(m.group(1))
-        print(f"action {m.group(1)} from {self.client_address[0]}: "
+        print(f"action {m.group(1)} from {self._who()}: "
               f"{'ok' if answer.get('ok') else answer.get('error')}", flush=True)
         self._json(answer, code)
 
     def _same_page(self):
-        """The request comes from labhud's own page, under a name in LABHUD_HOSTS."""
+        """The request comes from labhud's own page, under a name in LABHUD_HOSTS, or from the
+        app with its token (an app has no Origin; the WebView's page still needs its own)."""
+        if self._device()[1] == "bearer":
+            return True
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
         return self._host_ok() and origin in (f"http://{host}", f"https://{host}")
 
     def _unlocked(self):
-        """No PIN set, or the request carries a live ticket (lock.py)."""
-        return LOCK.allows(self.headers.get("X-Labhud-Unlock"))
+        """No PIN set, or the request carries a live ticket (lock.py), or comes from a paired
+        device: the app asks for the phone's fingerprint or PIN itself when it opens."""
+        return self._device()[0] is not None or LOCK.allows(self.headers.get("X-Labhud-Unlock"))
+
+    # --- apps (/api/v1) ---
+
+    def _app_get(self, path):
+        if path == "/api/v1/info":
+            return self._json(app_info())
+        if path == "/api/v1/state":
+            return self._json(app_state())
+        c = re.fullmatch(r"/api/v1/card/([A-Za-z0-9_.-]{1,64})", path)
+        if c:
+            card = next((x for x in app_state(full=True)["cards"] if x["id"] == c.group(1)), None)
+            return self._json(card) if card else self._json({"error": "no such card"}, 404)
+        if path == "/api/v1/history":
+            return self._json(history(long="long" in self.path.partition("?")[2]))
+        if path == "/api/v1/events":
+            return self._json({"events": EVENTS.all()})
+        if path == "/api/v1/stream":
+            return self._app_stream()
+        return self._json({"error": "not found"}, 404)
+
+    def _small_json(self, limit=1024):
+        try:
+            length = int(self.headers.get("Content-Length") or -1)
+        except ValueError:
+            return None
+        if not (0 <= length <= limit) or not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            return None
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            return None
+        return body if isinstance(body, dict) else None
+
+    def _pair(self):
+        """{code, name} -> {token, name}: the one-time code from init.py pair or the display's ⚙.
+        Under any Host, like /api/push: the phone may know labhud by its VPN address, and the code
+        is the check. One answer for every refusal."""
+        body = self._small_json()
+        token, name = devices.pair(body.get("code"), body.get("name")) if body else (None, None)
+        if not token:
+            print(f"pairing refused from {self.client_address[0]}", flush=True)
+            return self._json({"ok": False, "error": "the code is wrong or expired: make a new one"}, 403)
+        print(f"device paired: {name} from {self.client_address[0]}", flush=True)
+        _log([(f"Phone paired: {name}", False)])
+        self._json({"ok": True, "token": token, "name": name, "info": app_info()})
+
+    def _pair_code(self):
+        """The display's "Pair a phone" (⚙): from labhud's own page, unlocked. Answers the link and
+        its QR code as SVG; the link uses the address the display itself opened."""
+        body = self._small_json()
+        if body is None or not self._same_page() or not self._unlocked() or self._device()[0]:
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        if not devices.enabled():
+            return self._json({"ok": False, "error": "pairing needs LABHUD_DATA (a folder labhud can write)"}, 409)
+        code = devices.new_code(body.get("name") or "")
+        host = (self.headers.get("Host") or "").lower()
+        link = devices.pair_link(f"{'https' if TLS_CERT else 'http'}://{host}", code, TLS_CERT)
+        print(f"pairing code made on the display from {self.client_address[0]}", flush=True)
+        self._json({"ok": True, "link": link, "svg": qr.svg(link), "minutes": devices.PAIR_MINUTES})
+
+    def _app_stream(self):
+        """SSE for apps: `event: state` with the whole of /api/v1/state, again whenever it changes
+        (at most once a second). Counts against MAX_SUBSCRIBERS like a display."""
+        q = queue.Queue(maxsize=64)
+        with _subscribers_lock:
+            if len(_subscribers) >= MAX_SUBSCRIBERS:
+                return self._json({"error": "too many open streams"}, 503)
+            _subscribers.append(q)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        last = None
+        try:
+            while True:
+                st = app_state()
+                sign = json.dumps({k: v for k, v in st.items() if k != "now"}, sort_keys=True)
+                if sign != last:
+                    last = sign
+                    body = json.dumps(st, ensure_ascii=False, separators=(",", ":"))
+                    self.wfile.write(f"event: state\ndata: {body}\n\n".encode())
+                    self.wfile.flush()
+                try:
+                    q.get(timeout=20)
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    continue
+                time.sleep(1)   # several sources often answer together: one state for all of them
+                while True:
+                    try:
+                        q.get_nowait()
+                    except queue.Empty:
+                        break
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            with _subscribers_lock:
+                if q in _subscribers:
+                    _subscribers.remove(q)
 
     def _lock_step(self, step):
         """The lock: unlock {pin}, touch, lock, pin {old, new}. From labhud's own page, JSON, small."""
@@ -1147,7 +1304,7 @@ class Handler(BaseHTTPRequestHandler):
                 and 0 <= minutes <= 7 * 24 * 60 and self._unlocked()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         set_maintenance(card, minutes)
-        print(f"maintenance {card}: {f'{minutes} min' if minutes else 'ended'} from {self.client_address[0]}", flush=True)
+        print(f"maintenance {card}: {f'{minutes} min' if minutes else 'ended'} from {self._who()}", flush=True)
         self._json({"ok": True, "until": maintenance_now().get(card)})
 
     def _action_log(self, name):

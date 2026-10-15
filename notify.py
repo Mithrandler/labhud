@@ -9,6 +9,8 @@ Off unless LABHUD_NOTIFY_URL is set. The message goes out in one of these shapes
     json     {"title", "text", "bad", "time"} (anything else: n8n, Home Assistant, your script)
 
 LABHUD_NOTIFY_AUTH, when set, is sent as the Authorization header ("Bearer <token>" for ntfy).
+LABHUD_NOTIFY_CLICK=app (ntfy only) makes a tap on the notification open the LabHUD app on the
+card it is about (labhud://card/<id>), or on its home screen for news about no card.
 Only bad news is sent, unless LABHUD_NOTIFY_ALL=1 (then recoveries and starts too). A host that
 goes down is reported only if it is still down LABHUD_NOTIFY_DELAY seconds later (default 120),
 so a reboot or a lost ping says nothing.
@@ -26,6 +28,7 @@ FORMAT = os.environ.get("LABHUD_NOTIFY_FORMAT", "json").lower()
 AUTH = os.environ.get("LABHUD_NOTIFY_AUTH", "")
 ALL = os.environ.get("LABHUD_NOTIFY_ALL", "").lower() in ("1", "true", "yes")
 DELAY = int(os.environ.get("LABHUD_NOTIFY_DELAY", "120"))
+CLICK = os.environ.get("LABHUD_NOTIFY_CLICK", "").lower()
 FORMATS = ("ntfy", "gotify", "discord", "json")
 
 _queue = queue.Queue(maxsize=200)
@@ -41,26 +44,30 @@ def problem():
     """A setting that cannot work, or None."""
     if URL and FORMAT not in FORMATS:
         return f"LABHUD_NOTIFY_FORMAT must be one of {', '.join(FORMATS)}, got {FORMAT!r}"
+    if URL and CLICK not in ("", "app"):
+        return f"LABHUD_NOTIFY_CLICK can only be app, got {CLICK!r}"
     return None
 
 
-def submit(title, text, bad, still_true=None):
+def submit(title, text, bad, still_true=None, card=None):
     """Queues one message. `still_true`, when given, is asked again after DELAY seconds and the
     message is dropped if it answers False (the host came back in the meantime)."""
     if not URL or problem() or not (bad or ALL):
         return
     due = time.monotonic() + (DELAY if still_true else 0)
     try:
-        _queue.put_nowait((due, title, text, bad, still_true))
+        _queue.put_nowait((due, title, text, bad, still_true, card))
     except queue.Full:
         pass  # a flood of events: the history on the screen still has them
 
 
-def body(title, text, bad, now=None):
+def body(title, text, bad, now=None, card=None):
     """(bytes, headers) for one message in the configured format."""
     if FORMAT == "ntfy":
         headers = {"Title": title, "Tags": "warning" if bad else "white_check_mark",
                    "Priority": "high" if bad else "default"}
+        if CLICK == "app":
+            headers["Click"] = f"labhud://card/{card}" if card else "labhud://open"
         return text.encode(), headers
     if FORMAT == "gotify":
         payload = {"title": title, "message": text, "priority": 8 if bad else 4}
@@ -71,8 +78,8 @@ def body(title, text, bad, now=None):
     return json.dumps(payload, ensure_ascii=False).encode(), {"Content-Type": "application/json"}
 
 
-def _send(title, text, bad):
-    data, headers = body(title, text, bad)
+def _send(title, text, bad, card=None):
+    data, headers = body(title, text, bad, card=card)
     req = urllib.request.Request(URL, data=data, method="POST")
     for k, v in headers.items():
         # HTTP headers are latin-1: a title with other characters would fail the whole request
@@ -94,11 +101,11 @@ def worker():
         now = time.monotonic()
         ready = [m for m in waiting if m[0] <= now]
         waiting = [m for m in waiting if m[0] > now]
-        for _, title, text, bad, still_true in ready:
+        for _, title, text, bad, still_true, card in ready:
             if still_true and not still_true():
                 continue
             try:
-                _send(title, text, bad)
+                _send(title, text, bad, card)
                 state.update(sent=state["sent"] + 1, last_sent=int(time.time()))
             except Exception as e:  # a notification service down must not stop anything else
                 message = str(e).replace(URL, "<url>").replace(AUTH or "\0", "<auth>")
