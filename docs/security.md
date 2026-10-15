@@ -171,8 +171,11 @@ instead (`init.py pair`, or ⚙ > Phone app > Pair a phone) and then sends a tok
   opens.
 - Only SHA-256 hashes of codes and tokens are kept (in `LABHUD_DATA`); every phone has its own
   token, listed with when it was last seen on `/status` and by `init.py devices`.
-- A lost phone: `docker exec labhud python3 /app/init.py unpair "<name>"`. Its token stops working
-  at once.
+- A lost phone: ⚙ > Phone app > **Remove** on the display, or
+  `docker exec labhud python3 /app/init.py unpair "<name>"`. Its token stops working at once. A
+  phone cannot remove the others with its own token.
+- The app's wall mode loads the wall page with the token as a cookie: that page is a display like
+  any other, so the display's PIN still guards its buttons, pairing and removing.
 - With a PIN on the display, **Pair a phone** needs the screen unlocked; without one, anyone at the
   display can pair a phone, as they can already press its buttons.
 - Over plain HTTP the token crosses the network in clear text, like everything else. Over a VPN

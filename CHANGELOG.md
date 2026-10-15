@@ -6,6 +6,14 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- ⚙ > Phone app lists the paired phones, with when each was last seen, and removes one
+  (asks first; the display's PIN when one is set). `GET /api/v1/devices`, `POST /api/v1/unpair`.
+
+### Changed
+- The wall page inside the app's wall mode (the `labhud_device` cookie) now asks for the display's
+  PIN like any other screen; only the app's own token skips it.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added

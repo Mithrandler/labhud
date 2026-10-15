@@ -23,8 +23,9 @@ The code works once and only for 5 minutes. The phone must reach labhud at the a
 link: the display's own address for ⚙, the first name in `LABHUD_HOSTS` for `init.py pair`
 (or give another: `init.py pair "Pixel 6a" http://10.8.0.1:8095` for a VPN address).
 
-`init.py devices` lists the paired phones (also on `/status`); `init.py unpair "Pixel 6a"` ends
-one at once. What a token allows, and why the port must still stay off the internet:
+⚙ > **Phone app** lists the paired phones, with when each was last seen, and **Remove** ends one at
+once (the display's PIN is asked first when one is set). From the machine: `init.py devices` and
+`init.py unpair "Pixel 6a"`. What a token allows, and why the port must still stay off the internet:
 [security.md](security.md#paired-phones-the-labhud-app).
 
 Notifications stay with ntfy: with `LABHUD_NOTIFY_FORMAT=ntfy` and `LABHUD_NOTIFY_CLICK=app`, a
@@ -42,8 +43,8 @@ Origin check and the display's PIN. Without a token the read routes answer as `/
 does: only under a name in `LABHUD_HOSTS` (421 otherwise).
 
 For the wall page inside a WebView, set the token as the cookie `labhud_device` for labhud's
-address instead: the page then loads under any name, and its own buttons work (their Origin must
-still be the page's own).
+address instead: the page then loads under any name. It stays a wall: its buttons need their
+Origin to be the page's own, and the display's PIN, when one is set, as on any other screen.
 
 ### Pairing
 
@@ -66,6 +67,7 @@ accept that certificate and no other.
 | `GET /api/v1/stream` | SSE: `event: state` with the same document as `/api/v1/state`, at once and on every change (at most once a second), `: ping` every 20 s |
 | `GET /api/v1/history` | `{step, series: {key: [values]}}`: the last hours of every trend, one point per `step` seconds; `?long`: 15-minute points over 7 days |
 | `GET /api/v1/events` | `{events: [{t, name, bad, card?, state?}]}`, newest first |
+| `GET /api/v1/devices` | `{pairing, devices: [{name, paired, seen}]}`: the paired phones |
 
 `state`:
 

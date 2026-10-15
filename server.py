@@ -1084,6 +1084,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._pair()
         if self.path == "/api/v1/pair-code":
             return self._pair_code()
+        if self.path == "/api/v1/unpair":
+            return self._unpair()
         ed = re.fullmatch(r"/edit/api/(load|check|save)", self.path)
         if ed:
             return self._edit(ed.group(1))
@@ -1115,9 +1117,10 @@ class Handler(BaseHTTPRequestHandler):
         return self._host_ok() and origin in (f"http://{host}", f"https://{host}")
 
     def _unlocked(self):
-        """No PIN set, or the request carries a live ticket (lock.py), or comes from a paired
-        device: the app asks for the phone's fingerprint or PIN itself when it opens."""
-        return self._device()[0] is not None or LOCK.allows(self.headers.get("X-Labhud-Unlock"))
+        """No PIN set, or the request carries a live ticket (lock.py), or comes from the app with
+        its token: the app asks for the phone's fingerprint or PIN itself when it opens. The wall
+        page inside the app (the cookie) is a wall like any other: the display's PIN still holds."""
+        return self._device()[1] == "bearer" or LOCK.allows(self.headers.get("X-Labhud-Unlock"))
 
     # --- apps (/api/v1) ---
 
@@ -1136,6 +1139,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"events": EVENTS.all()})
         if path == "/api/v1/stream":
             return self._app_stream()
+        if path == "/api/v1/devices":   # the display's ⚙ lists them; names and times, no secrets
+            return self._json({"devices": devices.listing(), "pairing": devices.enabled()})
         return self._json({"error": "not found"}, 404)
 
     def _small_json(self, limit=1024):
@@ -1168,7 +1173,7 @@ class Handler(BaseHTTPRequestHandler):
         """The display's "Pair a phone" (⚙): from labhud's own page, unlocked. Answers the link and
         its QR code as SVG; the link uses the address the display itself opened."""
         body = self._small_json()
-        if body is None or not self._same_page() or not self._unlocked() or self._device()[0]:
+        if body is None or not self._same_page() or not self._unlocked() or self._device()[1] == "bearer":
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if not devices.enabled():
             return self._json({"ok": False, "error": "pairing needs LABHUD_DATA (a folder labhud can write)"}, 409)
@@ -1177,6 +1182,20 @@ class Handler(BaseHTTPRequestHandler):
         link = devices.pair_link(f"{'https' if TLS_CERT else 'http'}://{host}", code, TLS_CERT)
         print(f"pairing code made on the display from {self.client_address[0]}", flush=True)
         self._json({"ok": True, "link": link, "svg": qr.svg(link), "minutes": devices.PAIR_MINUTES})
+
+    def _unpair(self):
+        """{name}: the display's ⚙ removes a paired phone, whose token stops working at once. From
+        labhud's own page (also in the app's wall mode), unlocked; never with the app's own token
+        (a stolen phone cannot lock the others out)."""
+        body = self._small_json()
+        name = body.get("name") if body else None
+        if not isinstance(name, str) or not self._same_page() or not self._unlocked() or self._device()[1] == "bearer":
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        if not devices.unpair(name):
+            return self._json({"ok": False, "error": "no such device"}, 404)
+        print(f"device unpaired: {name} from the display at {self.client_address[0]}", flush=True)
+        _log([(f"Phone unpaired: {devices.clean_name(name)}", False)])
+        self._json({"ok": True})
 
     def _app_stream(self):
         """SSE for apps: `event: state` with the whole of /api/v1/state, again whenever it changes

@@ -480,6 +480,12 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings .choice.swatch::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--sw); margin-right: 6px; vertical-align: -1px; }
 #settings .pair-qr svg { display: block; width: min(100%, 280px); height: auto; margin: 6px 0; border-radius: 4px; }
 #settings .pair-link { font-size: 10px; color: var(--sub); word-break: break-all; margin: 4px 0 0; }
+#settings .devices { margin: 6px 0 2px; }
+#settings .device { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+#settings .device-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#settings .device-name { color: var(--text); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings .device-seen { color: var(--muted); font-size: 11px; }
+#settings .choice.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
 #settings .choice.custom { display: inline-flex; align-items: center; gap: 6px; }
 #settings .choice.custom::before { display: none; }
 #settings .choice.custom input { width: 22px; height: 18px; padding: 0; border: 0; background: transparent; }

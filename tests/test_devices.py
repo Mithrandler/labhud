@@ -192,6 +192,25 @@ class Routes(DemoServer):
         status, p = self.call("POST", "/api/v1/pair", {"code": code})
         self.assertEqual((status, p["name"]), (200, "tablet"))
 
+    def test_list_and_remove_from_the_display(self):
+        code, _ = self.code_from(self.call("POST", "/api/v1/pair-code", {}, origin=True)[1]["link"])
+        token = self.call("POST", "/api/v1/pair", {"code": code, "name": "Old phone"})[1]["token"]
+        status, r = self.call("GET", "/api/v1/devices")
+        self.assertEqual(status, 200)
+        self.assertIn("Old phone", [d["name"] for d in r["devices"]])
+        self.assertNotIn("hash", json.dumps(r))
+        self.assertEqual(self.call("GET", "/api/v1/devices", host="far.away:1")[0], 421)
+
+        self.assertEqual(self.call("POST", "/api/v1/unpair", {"name": "Old phone"})[0], 403)              # no Origin
+        self.assertEqual(self.call("POST", "/api/v1/unpair", {"name": "Old phone"}, token=token)[0], 403)  # not from a phone
+        self.assertEqual(self.call("POST", "/api/v1/unpair", {"name": "nobody"}, cookie=token, origin=True)[0], 404)  # wall mode may
+        self.assertEqual(self.call("POST", "/api/v1/unpair", {"name": "nobody"}, origin=True)[0], 404)
+        self.assertEqual(self.call("POST", "/api/v1/unpair", {"name": "Old phone"}, origin=True)[0], 200)
+        self.assertNotIn("Old phone", [d["name"] for d in self.call("GET", "/api/v1/devices")[1]["devices"]])
+        self.assertEqual(self.call("GET", "/api/v1/state", host="far.away:1", token=token)[0], 421)
+        events = self.call("GET", "/api/v1/events")[1]["events"]
+        self.assertIn("Phone unpaired: Old phone", [e["name"] for e in events])
+
     def test_info_and_stream(self):
         status, info = self.call("GET", "/api/v1/info")
         self.assertEqual((status, info["api"], info["pairing"]), (200, 1, True))

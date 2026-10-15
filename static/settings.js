@@ -374,9 +374,11 @@ function open_settings() {
   pairButton.addEventListener("click", () => pair_phone(show));
   const prow = el("div", "choices");
   prow.appendChild(pairButton);
-  app.append(prow, show);
-  app.appendChild(el("p", "hint", "Shows a QR code for the LabHUD Android app, valid once for a few minutes. "
-    + "Paired phones are listed on /status; init.py unpair <name> removes one."));
+  const list = el("div", "devices");
+  app.append(prow, show, list);
+  app.appendChild(el("p", "hint", "Pair a phone shows a QR code for the LabHUD Android app, valid once for a few minutes. "
+    + "Remove ends a phone's access at once."));
+  load_devices(list);
 
   const reset = el("button", "reset", "Reset this screen to the defaults");
   reset.type = "button";
@@ -404,8 +406,71 @@ function pair_phone(host) {
     host.appendChild(document.importNode(svg, true));
     host.appendChild(el("p", "hint", `Scan it in the app (Add server). It works once, within ${r.minutes} minutes.`));
     host.appendChild(el("p", "pair-link", r.link));
+    wait_for_pairing(host.parentNode.querySelector(".devices"));
   }).catch(() => { host.textContent = ""; host.appendChild(el("p", "hint", "Could not reach LabHUD.")); });
   touched();
+}
+
+/** "5 min ago", "3 h ago", "2 days ago": when a phone was last seen. */
+function ago(t) {
+  if (!t) return "never";
+  const s = Math.max(0, Date.now() / 1000 - t);
+  if (s < 600) return "just now";   // labhud writes "last seen" at most every 5 minutes
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + (s < 172800 ? " day ago" : " days ago");
+}
+
+/** The paired phones, each with a Remove button (asks first). */
+function load_devices(host) {
+  if (!host) return;
+  fetch("/api/v1/devices").then((r) => r.json()).then((r) => {
+    host.textContent = "";
+    if (!r.pairing) { host.appendChild(el("p", "hint", "Pairing needs LABHUD_DATA (a folder labhud can write).")); return; }
+    if (!r.devices.length) { host.appendChild(el("p", "hint", "No phone paired yet.")); return; }
+    for (const d of r.devices) {
+      const row = el("div", "device");
+      const text = el("div", "device-text");
+      text.append(el("span", "device-name", d.name), el("span", "device-seen", "seen " + ago(d.seen)));
+      const rm = el("button", "choice danger", "Remove");
+      rm.type = "button";
+      rm.addEventListener("click", () => {
+        put($("#confirm-text"), `Remove ${d.name}? Its LabHUD app stops working until it is paired again.`);
+        ask([["REMOVE", () => unpair_device(d.name, host), true]]);
+      });
+      row.append(text, rm);
+      host.appendChild(row);
+    }
+  }).catch(() => { host.textContent = ""; host.appendChild(el("p", "hint", "Could not list the paired phones.")); });
+}
+
+function unpair_device(name, host) {
+  fetch("/api/v1/unpair", {
+    method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: JSON.stringify({ name }),
+  }).then((r) => r.json()).then((r) => {
+    if (!r.ok) show_message(r.error === "forbidden" ? "Unlock the screen first." : r.error);
+    load_devices(host);
+  }).catch(() => show_message("Could not reach LabHUD."));
+  touched();
+}
+
+/** While a QR code is shown, the list notices the new phone: checked every 3 s for 5 minutes. */
+let pairWatch = null;
+function wait_for_pairing(host) {
+  clearInterval(pairWatch);
+  const before = host ? host.querySelectorAll(".device").length : 0;
+  const until = Date.now() + 300000;
+  pairWatch = setInterval(() => {
+    if (!host || !host.isConnected || Date.now() > until) { clearInterval(pairWatch); return; }
+    fetch("/api/v1/devices").then((r) => r.json()).then((r) => {
+      if ((r.devices || []).length > before) {
+        clearInterval(pairWatch);
+        const qr = host.parentNode.querySelector(".pair-qr");
+        if (qr) { qr.textContent = ""; qr.appendChild(el("p", "hint", `Paired: ${r.devices[r.devices.length - 1].name}.`)); }
+        load_devices(host);
+      }
+    }).catch(() => {});
+  }, 3000);
 }
 
 function toggle_hidden(key) {
