@@ -207,6 +207,7 @@ function open_settings() {
   const box = $("#settings");
   const body = $("#settings-body");
   const keep = box.hidden ? 0 : body.scrollTop;   // a choice redraws the panel: stay where you were
+  if (box.hidden) recheck_admin();
   body.textContent = "";
 
   const section = (title) => { const s = el("section", "set"); s.appendChild(el("h3", null, title)); body.appendChild(s); return s; };
@@ -410,7 +411,11 @@ function pair_phone(host) {
     method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: "{}",
   }).then((r) => r.json()).then((r) => {
     host.textContent = "";
-    if (!r.ok) { host.appendChild(el("p", "hint", r.error === "forbidden" ? admin_forbidden() : r.error)); return; }
+    if (!r.ok) {
+      const say = (m) => host.appendChild(el("p", "hint", m));
+      if (r.error === "forbidden") admin_forbidden(say); else say(r.error);
+      return;
+    }
     const svg = new DOMParser().parseFromString(r.svg, "image/svg+xml").documentElement;
     host.appendChild(document.importNode(svg, true));
     host.appendChild(el("p", "hint", `Scan it in the app (Add server). It works once, within ${r.minutes} minutes.`));
@@ -439,10 +444,27 @@ function set_admin(ticket, user) {
   try { if (ADMIN_TICKET) sessionStorage.setItem(ADMIN_KEY, ADMIN_TICKET); else sessionStorage.removeItem(ADMIN_KEY); } catch (e) { /* ignore */ }
 }
 
-/** A refusal while an admin exists: the sign-in ended (15 minutes unused, or a restart). */
-function admin_forbidden() {
-  if (CFG && CFG.admin && CFG.admin.on) { set_admin(""); setTimeout(open_settings, 1500); return "Signed out: sign in as the admin again."; }
-  return "Unlock the screen first.";
+/** Explains a refusal. The admin flag is read again first: a page opened before the admin was
+ * made still holds "no admin" and would otherwise ask to unlock a screen that is unlocked. */
+function admin_forbidden(show) {
+  const had = !!ADMIN_TICKET;
+  fetch("/api/config").then((r) => r.json()).then((c) => { if (CFG) CFG.admin = c.admin; }).catch(() => {}).then(() => {
+    if (!(CFG && CFG.admin && CFG.admin.on)) { show("Unlock the screen first."); return; }
+    set_admin("");
+    show(had ? "Signed out: sign in as the admin again." : "Sign in as the admin first (⚙ > Admin).");
+    setTimeout(open_settings, 1500);
+  });
+}
+
+/** The admin may be made or removed (init.py admin) while this page stays open: read the flag
+ * again when ⚙ opens, and redraw the panel if it changed. */
+function recheck_admin() {
+  fetch("/api/config").then((r) => r.json()).then((c) => {
+    const was = !!(CFG && CFG.admin && CFG.admin.on);
+    if (!CFG || !c.admin || !!c.admin.on === was) return;
+    CFG.admin = c.admin;
+    if (!$("#settings").hidden) open_settings();
+  }).catch(() => {});
 }
 
 function admin_post(step, body) {
@@ -465,7 +487,7 @@ function admin_settings(section) {
     edit.type = "button";
     edit.addEventListener("click", () => admin_post("edit").then((r) => {
       if (r.ok) window.open("/edit#" + r.code, "_blank", "noopener");
-      else show_message(r.error === "forbidden" ? admin_forbidden() : r.error);
+      else (r.error === "forbidden" ? admin_forbidden(show_message) : show_message(r.error));
     }));
     const out = el("button", "choice", "Sign out");
     out.type = "button";
@@ -536,7 +558,7 @@ function unpair_device(name, host) {
   fetch("/api/v1/unpair", {
     method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: JSON.stringify({ name }),
   }).then((r) => r.json()).then((r) => {
-    if (!r.ok) show_message(r.error === "forbidden" ? admin_forbidden() : r.error);
+    if (!r.ok) (r.error === "forbidden" ? admin_forbidden(show_message) : show_message(r.error));
     load_devices(host);
   }).catch(() => show_message("Could not reach LabHUD."));
   touched();
