@@ -2,7 +2,7 @@
 
 How a [labhud agent](agents.md) and labhud talk. Two implementations follow it: `agentproto.py`
 and `agents.py` in this repository, `internal/proto` in
-[labhud-agent](https://git.pykeron.ro/pyke/labhud-agent). Both are checked against the same
+[labhud-agent](https://github.com/Mithrandler/labhud-agent). Both are checked against the same
 vectors, [agent-protocol-vectors.json](agent-protocol-vectors.json), so they cannot drift apart.
 
 ## In one picture
@@ -134,7 +134,7 @@ part means "this capability is not here", an empty one "found, nothing in it".
  "containers":{"jellyfin":{"state":"running","health":"healthy","image":"jellyfin/jellyfin"}},
  "units":{"nginx.service":{"active":"active","sub":"running"}},
  "servers":{"1a2b3c4d":{"name":"Valheim","state":"running"}},
- "neighbours":{"aa:bb:cc:dd:ee:ff":{"ip":"192.168.1.50"}}}
+ "neighbours":{"aa:bb:cc:dd:ee:ff":{"ip":"192.0.2.50"}}}
 ```
 
 `sensors` uses the flat keys of the Python agent (`agents/labhud-agent.py`) and of
