@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-15
+
 ### Added
 - Pairing for the LabHUD Android app: `init.py pair [name]` (a QR code in the terminal) or
   **Pair a phone** in ⚙ (a QR code on the display) makes a one-time code, valid 5 minutes. The
@@ -375,7 +377,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.67...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Mithrandler/labhud/compare/v0.1.67...v0.2.0
 [0.1.67]: https://github.com/Mithrandler/labhud/compare/v0.1.66...v0.1.67
 [0.1.66]: https://github.com/Mithrandler/labhud/compare/v0.1.65...v0.1.66
 [0.1.65]: https://github.com/Mithrandler/labhud/compare/v0.1.64...v0.1.65
