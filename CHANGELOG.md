@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.67] - 2026-10-15
+
 ### Changed
 - The name shows as **LabHUD** everywhere on screen: the top bar (now all in the accent colour, so
   it no longer reads "labHUD"), the default title, `/status`, the setup page, the config editor and
@@ -359,7 +361,8 @@ First tagged version, not published: the display as it runs in production, gener
 - Tests: the config loader, every source parser on saved API answers, and a smoke test of the
   server in demo mode.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.66...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.67...HEAD
+[0.1.67]: https://github.com/Mithrandler/labhud/compare/v0.1.66...v0.1.67
 [0.1.66]: https://github.com/Mithrandler/labhud/compare/v0.1.65...v0.1.66
 [0.1.65]: https://github.com/Mithrandler/labhud/compare/v0.1.64...v0.1.65
 [0.1.64]: https://github.com/Mithrandler/labhud/compare/v0.1.63...v0.1.64
