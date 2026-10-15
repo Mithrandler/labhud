@@ -13,6 +13,7 @@ The server plugs in through three hooks: on_change() when anything shown changed
 state, the list), on_event(text, bad) for the timeline, and tls_fp, its certificate's SHA-256.
 """
 
+import hashlib
 import json
 import re
 import secrets
@@ -116,8 +117,9 @@ def _unique(name, agents, own=None):
 
 
 def clean_name(name):
-    """An agent's name as shown: trimmed, at most 40 plain characters, never empty."""
-    name = re.sub(r"\s+", " ", str(name or "")).strip()[:40]
+    """An agent's name as shown: trimmed, at most 40 plain characters, never empty. No dots: the
+    name is a step of a data path (`agents.<name>.sensors`), so "pve2.lan" becomes "pve2-lan"."""
+    name = re.sub(r"\s+", " ", str(name or "")).strip().replace(".", "-")[:40]
     return name if devices.NAME.fullmatch(name) else "agent"
 
 
@@ -241,6 +243,78 @@ def snapshot():
         out[a["name"]] = dict(st, id=aid, online=aid in _live, version=a.get("version", ""),
                               caps=a.get("caps", []))
     return out
+
+
+# --- actions: names, and the buttons a card gets ---
+#
+# agent-<agent id>-<cap>-<target ref>-<verb>. The verb comes last, so the display's rules for
+# "-start" (hidden while up) and "-shutdown" (hidden while down) hold. A target that is not already
+# a plain lowercase name (a MAC, "nginx.service", "Jellyfin_1") is referred to by a short hash;
+# resolve() finds it among the agent's ticked targets, so a name can only ever mean one of those.
+
+ACTION = re.compile(r"agent-([0-9a-f]{8})-(" + "|".join(VERBS) + r")-([a-z0-9-]+)-([a-z]+)")
+PLAIN = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+VERB_TEXT = {"start": "START", "stop": "STOP", "restart": "RESTART", "shutdown": "SHUT DOWN",
+             "reboot": "REBOOT", "update": "UPDATE", "wake": "WAKE"}
+
+
+def tref(target):
+    if PLAIN.fullmatch(target) and len(target) <= 24:
+        return target
+    return "x" + hashlib.sha256(target.encode()).hexdigest()[:12]
+
+
+def action_name(aid, cap, target, verb):
+    return f"agent-{aid}-{cap}-{tref(target)}-{verb}"
+
+
+def resolve(name):
+    """(agent id, cap, target, verb) for an action name that means one ticked target, else None."""
+    m = ACTION.fullmatch(name or "")
+    if not m:
+        return None
+    aid, cap, ref, verb = m.groups()
+    a = get(aid)
+    if not a or verb not in VERBS[cap] or cap not in a.get("caps", []):
+        return None
+    hits = [t for t in a.get("targets", {}).get(cap, []) if tref(t) == ref]
+    return (aid, cap, hits[0], verb) if len(hits) == 1 else None
+
+
+def card_actions(card):
+    """The agents' buttons for one card of the config:
+    - a Proxmox guest card (`proxmox = "node/vmid"`): from the agent on that node, if the guest is ticked;
+    - `agent = "<name>"`: that host's reboot, shut down and update, if ticked;
+    - `agent` + `agent_target = "<cap>:<target>"`: that container, unit, server, guest or MAC."""
+    out = []
+    chk = card.get("check") or []
+    agents = _load()
+    if chk and chk[0] == "proxmox":
+        for aid, a in agents.items():
+            if ("pve" in a.get("caps", []) and (_state.get(aid) or {}).get("node") == chk[1]
+                    and str(chk[2]) in a.get("targets", {}).get("pve", [])):
+                out += [action_name(aid, "pve", str(chk[2]), v) for v in VERBS["pve"]]
+                break
+    if card.get("agent"):
+        aid, a = by_name(card["agent"])
+        cap, _, target = (card.get("agent_target") or "host:host").partition(":")
+        if a and cap in VERBS and cap in a.get("caps", []) and target in a.get("targets", {}).get(cap, []):
+            out += [action_name(aid, cap, target, v) for v in VERBS[cap]]
+    return out
+
+
+def action_text(name):
+    """"jellyfin · RESTART", "pve2 · UPDATE": an agent's action in words, for the timeline."""
+    r = resolve(name)
+    if not r:
+        return None
+    aid, cap, target, verb = r
+    st = _state.get(aid) or {}
+    part = {"pve": "guests", "ptero": "servers"}.get(cap)
+    label = ((st.get(part) or {}).get(target) or {}).get("name") if part else None
+    if cap == "host":
+        label = (get(aid) or {}).get("name")
+    return f"{label or target} · {VERB_TEXT[verb]}"
 
 
 # --- commands ---

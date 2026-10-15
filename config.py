@@ -37,7 +37,12 @@ CHECKS = ("ping", "tcp", "proxmox")
 PAGE_KEYS = {"id", "title", "group", "games"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
-             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links"}
+             "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links",
+             "agent", "agent_target"}
+# agent_target = "<capability>:<target>": what a card controls through its agent (agents.py)
+AGENT_TARGET = {"docker": r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
+                "systemd": r"[A-Za-z0-9:_.@-]{1,250}\.(service|timer|socket|target|mount|path)",
+                "wol": r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", "pve": r"[1-9][0-9]{2,8}", "ptero": r"[0-9a-f]{8}"}
 METRIC_KEYS = {"key", "label", "format"}
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
 QUIET_KEYS = {"from", "to", "sources"}
@@ -219,7 +224,35 @@ def _card(ck, where, c):
             out["actions"] = a
         else:
             ck.err(where, "actions must be a list of action names")
+    _card_agent(ck, where, c, out)
     return out
+
+
+def _card_agent(ck, where, c, out):
+    """agent = "<name>" (a host: its sensors, its reboot/update buttons) and, with it,
+    agent_target = "<cap>:<target>" (one container, unit, game server, guest or MAC instead).
+    The card's state comes from the agent unless the card has a check of its own."""
+    name = ck.opt(where, c, "agent", str, "the name of an agent in ⚙ > Agents")
+    target = ck.opt(where, c, "agent_target", str, '"<capability>:<target>", e.g. "docker:jellyfin"')
+    if target is not None and name is None:
+        ck.err(where, "agent_target needs agent = \"<name>\" too")
+    if name is None:
+        return
+    if not name.strip() or "." in name:
+        ck.err(where, f"agent must be an agent's name as ⚙ > Agents shows it (no dots), got {name!r}")
+        return
+    out["agent"] = name
+    cap = ""
+    if target is not None:
+        cap, _, t = target.partition(":")
+        if cap not in AGENT_TARGET or not re.fullmatch(AGENT_TARGET[cap], t):
+            ck.err(where, f"agent_target must be one of {', '.join(f'{k}:<target>' for k in AGENT_TARGET)}, got {target!r}")
+            return
+        out["agent_target"] = target
+    if target is None and "sensors" not in out:
+        out["sensors"] = f"agents.{name}.sensors"
+    if "check" not in out:
+        out["check"] = ["agent", name, cap, target.partition(":")[2] if target else ""]
 
 
 def _hour(ck, where, table, key):

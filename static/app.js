@@ -664,12 +664,29 @@ function raw_status(c) {
     return !!g.running;
   }
   if (c.check[0] === "known") return c.check[1];   // game servers know their own state
+  if (c.check[0] === "agent") return agent_status(get("agents." + c.check[1]), c.check[2], c.check[3]);
   const v = get("status." + c.id);
   if (v === "scheduled") return "scheduled";       // off on schedule, not down
   // Off by design (PBS is woken by WoL when needed): not an outage, so neither red nor pulsing —
   // a dot pulsing non-stop on the strip is noise, and an endless animation tied to no real event.
   if (v === false && c.on_demand) return "on-demand";
   return typeof v === "boolean" ? v : null;
+}
+
+// The same as cardstate.agent_status: unknown (not down) while the agent is offline.
+const AGENT_UP = {
+  docker: ["containers", "state", ["running"], ["exited", "dead", "created"]],
+  systemd: ["units", "active", ["active"], ["failed", "inactive"]],
+  ptero: ["servers", "state", ["running"], ["offline"]],
+};
+function agent_status(a, cap, target) {
+  if (!a || !a.online) return null;
+  if (!cap) return true;
+  if (cap === "pve") { const g = (a.guests || {})[target]; return g ? !!g.running : null; }
+  const rule = AGENT_UP[cap];
+  if (!rule) return null;
+  const v = (((a[rule[0]] || {})[target]) || {})[rule[1]];
+  return rule[2].includes(v) ? true : rule[3].includes(v) ? false : null;
 }
 
 function add_dot(head, c) {
@@ -1368,15 +1385,20 @@ function action_label(name) {
   if (m) return { start: "START", shutdown: "SHUT DOWN", reboot: "REBOOT" }[m[1]];
   m = /^game-(start|stop|restart)-/.exec(name);
   if (m) return { start: "START", stop: "STOP", restart: "RESTART" }[m[1]];
+  m = /^agent-.+-(start|stop|restart|shutdown|reboot|update|wake)$/.exec(name);
+  if (m) return AGENT_VERBS[m[1]];
   return name;
 }
+const AGENT_VERBS = { start: "START", stop: "STOP", restart: "RESTART", shutdown: "SHUT DOWN", reboot: "REBOOT", update: "UPDATE", wake: "WAKE" };
 
 /** Hides the actions that make no sense right now: we do not stop what is already stopped. */
 function useful_actions(c) {
-  const all = CFG.action_url ? c.actions || [] : [];   // no action agent: no buttons
+  // no action agent: only the agents' own buttons
+  const all = (c.actions || []).filter((a) => CFG.action_url || /^agent-/.test(a));
   const alive = card_status(c);
-  const starts = (a) => /-start$/.test(a) || /^wol-/.test(a) || /^game-start-/.test(a);
-  const stops = (a) => /-(shutdown|reboot)$/.test(a) || /^shutdown-/.test(a) || /^game-(stop|restart)-/.test(a);
+  const starts = (a) => /-start$/.test(a) || /^wol-/.test(a) || /^game-start-/.test(a) || /^agent-.+-wake$/.test(a);
+  const stops = (a) => /-(shutdown|reboot)$/.test(a) || /^shutdown-/.test(a) || /^game-(stop|restart)-/.test(a) ||
+    /^agent-.+-(stop|restart)$/.test(a);
   if (alive === true) return all.filter((a) => !starts(a));
   return all.filter((a) => !stops(a));   // what is not a stop (a report, an update) works either way
 }
@@ -1435,7 +1457,7 @@ function send_action(name, c) {
   const t = { name, label: track_label(name, c), started: Date.now(), phase: "sending", ...track_goal(name, c) };
   TRACKS = [t, ...TRACKS.filter((x) => x.name !== name)].slice(0, 3);
   render_tracks();
-  fetch(CFG.action_url + encodeURIComponent(name), { method: "POST", headers: lock_headers() })
+  fetch("/action/" + encodeURIComponent(name), { method: "POST", headers: lock_headers() })
     .then((r) => { lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
     .then((r) => {
       if (!r.ok) return finish(t, "refused", r.error || "refused");
@@ -1474,6 +1496,11 @@ function track_goal(name, c) {
     if (m[3] === "start") return { verb: "starting", doneText: "running", want: () => g().running === true };
     if (m[3] === "shutdown") return { verb: "shutting down", doneText: "off", want: () => g().running === false };
     return { verb: "rebooting", doneText: "back up", want: () => g().running === true && (g().uptime || 1e9) < Date.now() / 1000 - since };
+  }
+  m = /^agent-.+-(start|wake|stop|shutdown)$/.exec(name);
+  if (m && c) {
+    if (m[1] === "start" || m[1] === "wake") return { verb: m[1] === "wake" ? "waking up" : "starting", doneText: "up", want: () => card_status(c) === true };
+    return { verb: m[1] === "stop" ? "stopping" : "shutting down", doneText: "off", want: () => card_status(c) === false || quiet_off(card_status(c)) };
   }
   if (/^wol-/.test(name) && c) return { verb: "waking up", doneText: "up", want: () => card_status(c) === true };
   if (/^shutdown-/.test(name) && c) return { verb: "shutting down", doneText: "off", want: () => card_status(c) === false || quiet_off(card_status(c)) };

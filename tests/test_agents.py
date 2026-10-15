@@ -252,6 +252,116 @@ class Server(DemoServer):
         again.close()
 
 
+class Buttons(Server):
+    """The whole way: a ticked guest gets a button on its Proxmox card, the press reaches the
+    agent as a signed command, and its result comes back to the display."""
+
+    def test_guest_button_and_press(self):
+        c, session, aid, key = self.pair(name="pvebox")
+        c.send_signed(key, session, aid, {"type": "state", "node": "pve",
+                                          "guests": {"101": {"name": "web01", "running": True}}})
+        name = f"agent-{aid}-pve-101-shutdown"
+        origin = f"http://{self.host}"
+        self.assertEqual(self.post_json(f"/action/{name}", {}, origin)[0], 403)   # nothing ticked yet
+        self.manage("caps", {"id": aid, "caps": ["pve"]})
+        self.manage("targets", {"id": aid, "cap": "pve", "targets": ["101"]})
+        c.read_signed(key, session), c.read_signed(key, session)                  # the two allows
+
+        self.assertTrue(self.wait_for(lambda: any(name in [a["name"] for a in x.get("actions", [])]
+                                                  for x in json.loads(self.get("/api/v1/state")[2])["cards"])))
+        self.assertNotIn(f"agent-{aid}-pve-101-start", json.dumps(json.loads(self.get("/api/v1/state")[2])))  # it runs
+
+        answer = {}
+        t = threading.Thread(target=lambda: answer.update(r=self.post_json(f"/action/{name}", {}, origin)))
+        t.start()
+        cmd = c.read_signed(key, session)
+        self.assertEqual((cmd["type"], cmd["cap"], cmd["verb"], cmd["target"]), ("command", "pve", "shutdown", "101"))
+        c.send_signed(key, session, aid, {"type": "result", "cmd": cmd["cmd"], "ok": False, "error": "VM is locked"})
+        t.join(5)
+        self.assertEqual(answer["r"][0], 502)
+        self.assertEqual(json.loads(answer["r"][1])["error"], "VM is locked")
+        self.assertEqual(self.post_json(f"/action/{name}", {}, None)[0], 403)        # not from the page
+        self.assertEqual(self.post_json(f"/action/agent-{aid}-pve-102-shutdown", {}, origin)[0], 403)  # not ticked
+        c.close()
+
+
+class Names(unittest.TestCase):
+    def setUp(self):
+        self.real = agents.store
+        agents.store = FakeStore()
+        agents._state.clear()
+        agents.store.save(agents.AGENTS_KEY, {"a1b2c3d4": {
+            "name": "n100", "key": "k", "caps": ["docker", "systemd", "wol", "host"],
+            "targets": {"docker": ["jellyfin", "Plex_1"], "systemd": ["nginx.service"],
+                        "wol": ["aa:bb:cc:dd:ee:ff"], "host": ["host"]}}})
+
+    def tearDown(self):
+        agents.store = self.real
+
+    def test_round_trip(self):
+        for cap, target in (("docker", "jellyfin"), ("docker", "Plex_1"), ("systemd", "nginx.service"),
+                            ("wol", "aa:bb:cc:dd:ee:ff"), ("host", "host")):
+            for verb in agents.VERBS[cap]:
+                name = agents.action_name("a1b2c3d4", cap, target, verb)
+                self.assertLessEqual(len(name), 64)
+                self.assertRegex(name, r"^[a-z0-9][a-z0-9-]{0,63}$")
+                self.assertEqual(agents.resolve(name), ("a1b2c3d4", cap, target, verb))
+
+    def test_resolve_refuses(self):
+        self.assertIsNone(agents.resolve("agent-a1b2c3d4-docker-plex-restart"))       # not ticked
+        self.assertIsNone(agents.resolve("agent-a1b2c3d4-docker-jellyfin-exec"))      # no such verb
+        self.assertIsNone(agents.resolve("agent-a1b2c3d4-pve-101-start"))             # cap not ticked
+        self.assertIsNone(agents.resolve("agent-ffffffff-docker-jellyfin-restart"))   # no such agent
+        self.assertIsNone(agents.resolve("vm-pve-101-start"))
+
+    def test_card_actions(self):
+        host = agents.card_actions({"id": "n", "agent": "n100"})
+        self.assertEqual([n.rsplit("-", 1)[1] for n in host], ["reboot", "shutdown", "update"])
+        one = agents.card_actions({"id": "j", "agent": "n100", "agent_target": "docker:jellyfin"})
+        self.assertEqual(one, [f"agent-a1b2c3d4-docker-jellyfin-{v}" for v in ("start", "stop", "restart")])
+        self.assertEqual(agents.card_actions({"id": "p", "agent": "n100", "agent_target": "docker:plex"}), [])
+        self.assertEqual(agents.card_actions({"id": "x", "agent": "nobody"}), [])
+
+    def test_text(self):
+        self.assertEqual(agents.action_text(agents.action_name("a1b2c3d4", "host", "host", "update")), "n100 · UPDATE")
+        self.assertEqual(agents.action_text(agents.action_name("a1b2c3d4", "docker", "jellyfin", "restart")),
+                         "jellyfin · RESTART")
+
+
+class Cards(unittest.TestCase):
+    """config.py's agent keys and cardstate's view of an agent's target."""
+
+    def parse(self, card):
+        import config
+        text = ('[[page]]\nid = "p"\ntitle = "P"\n[[page.group]]\nid = "g"\ntitle = "G"\n'
+                '[[page.group.card]]\nid = "c"\nname = "C"\n' + card)
+        return config.loads(text)["cards"]["g"][0]
+
+    def test_config_keys(self):
+        import config
+        c = self.parse('agent = "n100"\n')
+        self.assertEqual((c["sensors"], c["check"]), ("agents.n100.sensors", ["agent", "n100", "", ""]))
+        c = self.parse('agent = "n100"\nagent_target = "docker:jellyfin"\nping = "10.0.0.1"\n')
+        self.assertEqual(c["check"][0], "ping")             # a card's own check wins
+        self.assertNotIn("sensors", c)
+        for bad in ('agent_target = "docker:jellyfin"\n', 'agent = "a.b"\n',
+                    'agent = "n"\nagent_target = "shell:ls"\n', 'agent = "n"\nagent_target = "docker:a;b"\n'):
+            with self.assertRaises(config.ConfigError, msg=bad):
+                self.parse(bad)
+
+    def test_status(self):
+        import cardstate
+        a = {"online": True, "containers": {"jellyfin": {"state": "running"}, "old": {"state": "exited"}},
+             "units": {"x.service": {"active": "activating"}}, "guests": {"101": {"running": False}}}
+        self.assertIs(cardstate.agent_status(a, "", ""), True)
+        self.assertIs(cardstate.agent_status(a, "docker", "jellyfin"), True)
+        self.assertIs(cardstate.agent_status(a, "docker", "old"), False)
+        self.assertIsNone(cardstate.agent_status(a, "systemd", "x.service"))
+        self.assertIs(cardstate.agent_status(a, "pve", "101"), False)
+        self.assertIsNone(cardstate.agent_status(dict(a, online=False), "docker", "jellyfin"))   # offline: unknown
+        self.assertIsNone(cardstate.agent_status(None, "", ""))
+
+
 class FakeWS:
     """A websock.Conn stand-in: what the server sends lands in `out`, recv() takes from `inbox`."""
 

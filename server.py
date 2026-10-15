@@ -150,6 +150,28 @@ def auto_guests(topology, px, previous=None):
     return dict(topology, cards=cards)
 
 
+def with_agents(topology):
+    """`topology` with the agents' buttons on the cards they control (agents.card_actions). An
+    agent's buttons for a Proxmox guest replace that guest's own vm-<node>-<vmid>-* ones."""
+    cards = {}
+    for gid, cs in topology["cards"].items():
+        cards[gid] = []
+        for c in cs:
+            extra = agents.card_actions(c)
+            if extra:
+                own = [a for a in c.get("actions", ())
+                       if not (any(x.endswith("-start") and "-pve-" in x for x in extra)
+                               and re.fullmatch(r"vm-[A-Za-z0-9]+-\d+-(start|shutdown|reboot)", a))]
+                c = dict(c, actions=own + extra)
+            cards[gid].append(c)
+    return dict(topology, cards=cards)
+
+
+def _agent_buttons(topology):
+    return sorted((c["id"], a) for cs in topology["cards"].values() for c in cs
+                  for a in c.get("actions", ()) if a.startswith("agent-"))
+
+
 def _auto_ids(topology):
     return sorted(c["id"] for cs in topology["cards"].values() for c in cs if c.get("auto"))
 
@@ -159,6 +181,7 @@ def _apply(topology):
     global TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST, FILE_TOPOLOGY
     FILE_TOPOLOGY = topology
     topology = auto_guests(topology, (globals().get("_data") or {}).get("proxmox"), globals().get("TOPOLOGY"))
+    topology = with_agents(topology)
     # Only the sources whose settings are present run; the others are reported as not configured.
     active, inactive = (demo.sources(), {}) if DEMO else sources.load(topology)
     # name -> interval in seconds. The paces follow how fast the measured thing changes, not "as
@@ -404,10 +427,19 @@ def history(long=False):
         return {"step": HISTORY_STEP, "series": {p: list(s) for p, s in _history.items()}}
 
 
+def actions_on():
+    """The config's own buttons (vm-…, wol-…, game-…) need the action agent to go to. An agent's
+    buttons (agent-…) do not: they are shown whenever a card has them."""
+    return bool(ACTION_URL and ACTION_SECRET)
+
+
 def _action_allowed(name):
-    """Only the actions the config offers: a card's `actions`, or a game server's buttons."""
+    """Only the actions the config offers: a card's `actions`, or a game server's buttons. An
+    agent's action: only a ticked target of a ticked capability (agents.resolve), card or not."""
     if not ACTION_NAME_RE.fullmatch(name):
         return False
+    if name.startswith("agent-"):
+        return agents.resolve(name) is not None
     if GAME_ACTION_RE.fullmatch(name):
         return any(p.get("games") for p in TOPOLOGY["pages"])
     offered = {a for cards in TOPOLOGY["cards"].values() for c in cards for a in c.get("actions", ())}
@@ -425,6 +457,8 @@ def action_text(name):
     """An action in words, for the timeline: "Valheim · START", "web01 · SHUT DOWN"."""
     with _lock:
         data = dict(_data)
+    if name.startswith("agent-"):
+        return agents.action_text(name) or name
     m = re.fullmatch(r"game-(start|stop|restart)-(.+)", name)
     if m:
         servers = []
@@ -787,11 +821,16 @@ def snapshot():
 
 
 def publish_agents():
-    """The agents' state (agents.py) as one more entry of the snapshot: `agents.<name>.…`."""
+    """The agents' state (agents.py) as one more entry of the snapshot: `agents.<name>.…`. When
+    what they may do changed the cards' buttons (a tick in ⚙, a guest moved), the displays reload."""
     result = dict(agents.snapshot(), _t=int(time.time()))
     with _lock:
         _data["agents"] = result
     _publish({"agents": result})
+    if "TOPOLOGY" in globals() and _agent_buttons(with_agents(FILE_TOPOLOGY)) != _agent_buttons(TOPOLOGY):
+        _apply(FILE_TOPOLOGY)
+        print(f"agent buttons now on: {', '.join(sorted({c for c, _ in _agent_buttons(TOPOLOGY)})) or 'no card'}", flush=True)
+        _send("config", {"reload": True})
 
 
 agents.on_change = publish_agents
@@ -1079,12 +1118,12 @@ API_VERSION = 1
 def app_state(full=False):
     with _lock:
         data = dict(_data)
-    return cardstate.state(TOPOLOGY, data, actions_on=bool(ACTION_URL and ACTION_SECRET), full=full)
+    return cardstate.state(TOPOLOGY, data, actions_on=actions_on(), full=full)
 
 
 def app_info():
     return {"api": API_VERSION, "version": VERSION, "title": TOPOLOGY.get("title") or "LabHUD", "demo": DEMO,
-            "actions": bool(ACTION_URL and ACTION_SECRET), "maintenance_buttons": TOPOLOGY["maintenance"]["buttons"],
+            "actions": actions_on() or bool(agents.listing()), "maintenance_buttons": TOPOLOGY["maintenance"]["buttons"],
             "pairing": devices.enabled(), "admin": ADMIN.is_on(), "trends": TOPOLOGY.get("trends") or [], "uptime": True}
 
 
@@ -1163,7 +1202,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream()
         if path == "/api/config":
             return self._json(dict(config.public(TOPOLOGY), lock=LOCK.public(), admin=ADMIN.public(),
-                                   action_url="/action/" if ACTION_URL and ACTION_SECRET else ""))
+                                   action_url="/action/" if actions_on() else ""))
         if path == "/api/snapshot":  # useful for debugging and for the check screenshots
             return self._json(snapshot())
         if path == "/api/status":
@@ -1211,10 +1250,15 @@ class Handler(BaseHTTPRequestHandler):
         if al:
             return self._action_log(al.group(1))
         m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
-        if not (m and ACTION_URL and ACTION_SECRET and _action_allowed(m.group(1))
-                and self._same_page() and self._unlocked()):
+        if not (m and _action_allowed(m.group(1)) and self._same_page() and self._unlocked()
+                and (m.group(1).startswith("agent-") or (ACTION_URL and ACTION_SECRET))):
             return self._json({"ok": False, "error": "forbidden"}, 403)
-        code, answer = forward_action(m.group(1))
+        if m.group(1).startswith("agent-"):
+            aid, cap, target, verb = agents.resolve(m.group(1))
+            ok, error = agents.command(aid, cap, verb, target)
+            code, answer = (200, {"ok": True}) if ok else (502, {"ok": False, "error": error})
+        else:
+            code, answer = forward_action(m.group(1))
         print(f"action {m.group(1)} from {self._who()}: "
               f"{'ok' if answer.get('ok') else answer.get('error')}", flush=True)
         self._json(answer, code)

@@ -221,12 +221,36 @@ def raw_status(c, data):
         return bool(g.get("running"))
     if chk[0] == "known":
         return chk[1]
+    if chk[0] == "agent":
+        return agent_status(get(data, f"agents.{chk[1]}"), chk[2], chk[3])
     v = get(data, "status." + c["id"])
     if v == "scheduled":
         return "scheduled"
     if v is False and c.get("on_demand"):
         return "on-demand"
     return v if isinstance(v, bool) else None
+
+
+# An agent's target: what counts as up (True) or down (False); anything else is in between (None).
+AGENT_UP = {"docker": ("containers", "state", {"running"}, {"exited", "dead", "created"}),
+            "systemd": ("units", "active", {"active"}, {"failed", "inactive"}),
+            "ptero": ("servers", "state", {"running"}, {"offline"})}
+
+
+def agent_status(a, cap, target):
+    """A card that follows an agent: unknown (not down) while the agent is offline."""
+    if not isinstance(a, dict) or not a.get("online"):
+        return None
+    if not cap:
+        return True
+    if cap == "pve":
+        g = (a.get("guests") or {}).get(target)
+        return bool(g.get("running")) if isinstance(g, dict) else None
+    if cap not in AGENT_UP:
+        return None
+    part, key, up, down = AGENT_UP[cap]
+    v = ((a.get(part) or {}).get(target) or {}).get(key)
+    return True if v in up else False if v in down else None
 
 
 def card_status(c, data):
@@ -332,13 +356,22 @@ def action_label(name, actions):
     m = re.match(r"game-(start|stop|restart)-", name)
     if m:
         return m.group(1).upper()
+    m = re.fullmatch(r"agent-.+-(start|stop|restart|shutdown|reboot|update|wake)", name)
+    if m:
+        return AGENT_VERBS[m.group(1)]
     return name
 
 
+AGENT_VERBS = {"start": "START", "stop": "STOP", "restart": "RESTART", "shutdown": "SHUT DOWN",
+               "reboot": "REBOOT", "update": "UPDATE", "wake": "WAKE"}
+
+
 def useful_actions(c, data, enabled):
-    every = list(c.get("actions") or []) if enabled else []
-    starts = lambda a: a.endswith("-start") or a.startswith(("wol-", "game-start-"))  # noqa: E731
-    stops = lambda a: bool(re.search(r"-(shutdown|reboot)$", a)) or a.startswith(("shutdown-", "game-stop-", "game-restart-"))  # noqa: E731
+    every = [a for a in c.get("actions") or [] if enabled or a.startswith("agent-")]
+    starts = lambda a: (a.endswith("-start") or a.startswith(("wol-", "game-start-"))  # noqa: E731
+                        or (a.startswith("agent-") and a.endswith("-wake")))
+    stops = lambda a: bool(re.search(r"-(shutdown|reboot)$", a) or re.fullmatch(r"agent-.+-(stop|restart)", a)) \
+        or a.startswith(("shutdown-", "game-stop-", "game-restart-"))  # noqa: E731
     if card_status(c, data) is True:
         return [a for a in every if not starts(a)]
     return [a for a in every if not stops(a)]
