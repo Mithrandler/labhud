@@ -124,10 +124,11 @@ part means "this capability is not here", an empty one "found, nothing in it".
 
 ```json
 {"type":"state",
- "sensors":{"cpu":12.5,"mem":41.0,"mem_used_of":"6.1 of 15.5 GB","disk":63.2,
-            "disk_used_of":"…","load1":0.42,"uptime":"3d 4h","cpu_temp":48,
-            "gpu_count":2,"gpu0_util":3,"gpu0_mem":10,"gpu0_temp":41,"gpu0_power":9.5,
-            "power_w":17.4},
+ "sensors":{"cpu":12.5,"mem":41.0,"mem_used_of":[6550000000,15900000000],"disk":63.2,
+            "disk_used_of":[40000000000,63000000000],"load1":0.42,"uptime":277200,"cpu_temp":48.0,
+            "gpu_count":2,"gpu0_util":3.0,"gpu0_mem":10.0,"gpu0_temp":41.0,"gpu0_power":9.5,
+            "gpu0_mem_used_mib":1024.0,"gpu0_mem_total_mib":8192.0,
+            "power_cpu":17.4,"power_gpu":19.0,"power_base":40,"power":76,"kwh_day":1.82,"cost_day":2.37},
  "guests":{"101":{"name":"pbs","type":"qemu","running":true,"cpu":1.2,"mem":34.0,
                   "mem_bytes":…,"mem_max":…,"uptime":86400,"tags":["infra"]}},
  "containers":{"jellyfin":{"state":"running","health":"healthy","image":"jellyfin/jellyfin"}},
@@ -136,8 +137,9 @@ part means "this capability is not here", an empty one "found, nothing in it".
  "neighbours":{"aa:bb:cc:dd:ee:ff":{"ip":"192.168.1.50"}}}
 ```
 
-`sensors` uses the flat keys of the Python agent (`agents/labhud-agent.py`), plus `power_w`
-(RAPL). `guests` has the shape of the Proxmox source (`sources/proxmox.py`), so cards treat both
+`sensors` uses the flat keys of the Python agent (`agents/labhud-agent.py`) and of
+host-temp-api: the power estimate is the CPU package from RAPL + the GPUs + a fixed base the
+agent is given (`LABHUD_AGENT_BASE_W`), and `cost_day` only with `LABHUD_AGENT_PRICE_KWH`. `guests` has the shape of the Proxmox source (`sources/proxmox.py`), so cards treat both
 the same. `units` lists the loaded `.service` units, at most 200.
 `neighbours` is the ARP table, to choose Wake-on-LAN targets from.
 
