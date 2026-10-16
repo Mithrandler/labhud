@@ -44,6 +44,18 @@ still change in a minor version; such changes are listed under **Changed** with 
   browsers, with Sign out for one or for all.
 
 ### Changed
+- **A paired phone only looks until it signs in as the admin.** Its token carries an `admin` flag,
+  tied to the admin who signed in (a new admin puts every phone back to looking): `POST
+  /api/v1/admin-login` and `admin-logout`; pairing by signing in (`login-pair`) gives it at once.
+  Tokens paired before only look. A phone signed in as the admin can also manage phones, agents and
+  the PIN. `info` and `state` say `device_admin`, `pin` and `unlocked`; ⚙ > Security > Signed in
+  lists the phones signed in as the admin.
+- **The PIN only goes with the admin, and a locked screen only shows.** With a PIN set, every
+  signed-in screen goes back to only showing after **2 minutes** without a touch (was 10; `[lock]
+  idle`): the pages and panels stay usable, ⚙ and the buttons go, and the lock, ⚙ or the panel's
+  UNLOCK ask for the PIN. The keypad no longer covers the whole screen at the first touch. The
+  PIN unlocks only a screen signed in as the admin; a phone signed in as the admin unlocks with
+  `POST /api/v1/unlock {pin}` and sends the ticket as `X-Labhud-Unlock`, like a display.
 - An agent's buttons need no `LABHUD_ACTION_URL`; the config's own actions still do.
 - **A display that is not signed in only shows**: no ⚙, no buttons on the cards, no maintenance,
   and labhud refuses them. Without an admin every display only shows (`init.py admin` makes one).

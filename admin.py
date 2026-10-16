@@ -210,6 +210,11 @@ class Admin:
     def is_on(self):
         return self.stored() is not None
 
+    def sign(self):
+        """Who the admin is now (a new password or authenticator is someone else), or None:
+        what a phone signed in as the admin keeps (devices.py)."""
+        return _sign(self.stored())
+
     def user(self):
         rec = self.stored()
         return rec["user"] if rec else None

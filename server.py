@@ -210,7 +210,7 @@ def _apply(topology):
     CARD_IDS = set(CARD_NAMES)
     TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST = (
         topology, active, inactive, every, targets, source_host)
-    LOCK.idle = topology.get("lock", {}).get("idle", 600)
+    LOCK.idle = topology.get("lock", {}).get("idle", lock.IDLE)
 
 
 # The display's lock (lock.py): a PIN, then a ticket that the requests changing something carry.
@@ -1175,11 +1175,12 @@ class Handler(BaseHTTPRequestHandler):
         the app itself; "cookie": the wall page the app opens in a WebView (devices.py)."""
         # One handler serves every request of a kept-alive connection: the answer is per request.
         if getattr(self, "_dev_for", None) is not self.headers:
-            self._dev_for, self._dev = self.headers, (None, None)
+            self._dev_for, self._dev, self._dev_rec = self.headers, (None, None), None
             auth = self.headers.get("Authorization") or ""
             if auth.startswith("Bearer "):
-                name = devices.check(auth[len("Bearer "):].strip())
-                self._dev = (name, "bearer") if name else (None, None)
+                found = devices.lookup(auth[len("Bearer "):].strip())
+                if found:
+                    self._dev, self._dev_rec = (found[1]["name"], "bearer"), found
             else:
                 for part in (self.headers.get("Cookie") or "").split(";"):
                     k, _, v = part.strip().partition("=")
@@ -1187,6 +1188,10 @@ class Handler(BaseHTTPRequestHandler):
                         name = devices.check(v)
                         self._dev = (name, "cookie") if name else (None, None)
         return self._dev
+
+    def _device_admin(self):
+        """The app with its token, signed in as the admin who is the admin now (devices.py)."""
+        return self._device()[1] == "bearer" and devices.is_admin(self._dev_rec[1], ADMIN.sign())
 
     def _host_ok(self):
         """A name in LABHUD_HOSTS, or a paired device: its token is what DNS rebinding cannot have."""
@@ -1247,6 +1252,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._unpair()
         if self.path == "/api/v1/login-pair":
             return self._login_pair()
+        if self.path in ("/api/v1/admin-login", "/api/v1/admin-logout", "/api/v1/unlock"):
+            return self._app_admin(self.path.rsplit("/", 1)[1])
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
@@ -1289,18 +1296,17 @@ class Handler(BaseHTTPRequestHandler):
         return self._host_ok() and origin in (f"http://{host}", f"https://{host}")
 
     def _unlocked(self):
-        """No PIN set, or the request carries a live ticket (lock.py), or comes from the app with
-        its token: the app asks for the phone's fingerprint or PIN itself when it opens. The wall
-        page inside the app (the cookie) is a wall like any other: the display's PIN still holds."""
-        return self._device()[1] == "bearer" or LOCK.allows(self.headers.get("X-Labhud-Unlock"))
+        """No PIN set, or the request carries a live ticket (lock.py): a display gets one with the
+        PIN, the app with /api/v1/unlock. The same PIN for both, and the same 2 minutes."""
+        return LOCK.allows(self.headers.get("X-Labhud-Unlock"))
 
     # --- apps (/api/v1) ---
 
     def _app_get(self, path):
         if path == "/api/v1/info":
-            return self._json(app_info())
+            return self._json(dict(app_info(), **self._app_rights()))
         if path == "/api/v1/state":
-            return self._json(app_state())
+            return self._json(dict(app_state(), **self._app_rights()))
         c = re.fullmatch(r"/api/v1/card/([A-Za-z0-9_.-]{1,64})", path)
         if c:
             card = next((x for x in app_state(full=True)["cards"] if x["id"] == c.group(1)), None)
@@ -1315,8 +1321,53 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v1/stream":
             return self._app_stream()
         if path == "/api/v1/devices":   # the display's ⚙ lists them; names and times, no secrets
-            return self._json({"devices": devices.listing(), "pairing": devices.enabled()})
+            return self._json({"devices": devices.listing(ADMIN.sign()), "pairing": devices.enabled()})
         return self._json({"error": "not found"}, 404)
+
+    def _app_rights(self):
+        """What this app may do: device_admin (signed in as the admin), pin (a PIN is set, so it
+        needs /api/v1/unlock before a button), unlocked (its ticket is live)."""
+        return {"device_admin": self._device_admin(), "pin": LOCK.is_on(),
+                "unlocked": self._device_admin() and self._unlocked()}
+
+    def _app_admin(self, step):
+        """The app with its token: admin-login {user, password, code} signs this phone in as the
+        admin; admin-logout signs it out; unlock {pin} -> {ticket} for a phone signed in, when the
+        display has a PIN (the ticket goes in X-Labhud-Unlock, like a display's). Slowed like the
+        display's own sign-in and PIN: the same counters."""
+        body = self._small_json()
+        if body is None or self._device()[1] != "bearer":
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        did, name = self._dev_rec[0], self._dev_rec[1]["name"]
+        if step == "admin-logout":
+            devices.set_admin(did, None)
+            LOCK.close(self.headers.get("X-Labhud-Unlock"))
+            print(f"admin: phone {name} signed out from {self.client_address[0]}", flush=True)
+            return self._json({"ok": True, **self._app_rights_after(False)})
+        if step == "admin-login":
+            if not ADMIN.is_on():
+                return self._json({"ok": False, "error": "this LabHUD has no admin to sign in as"}, 403)
+            right, wait = ADMIN.check(body.get("user"), body.get("password"), body.get("code"))
+            if not right:
+                print(f"admin: wrong sign-in from phone {name} at {self.client_address[0]}", flush=True)
+                return self._json({"ok": False, "error": "wrong user, password or code", "wait": wait}, 403)
+            devices.set_admin(did, ADMIN.sign())
+            print(f"admin: phone {name} signed in from {self.client_address[0]}", flush=True)
+            _log([(f"Admin signed in on the phone {name}", False)])
+            return self._json({"ok": True, **self._app_rights_after(True)})
+        if not self._device_admin():
+            return self._json({"ok": False, "error": "sign in as the admin first"}, 403)
+        if not LOCK.is_on():
+            return self._json({"ok": True, "ticket": None, "idle": LOCK.idle})
+        ticket, wait = LOCK.unlock(body.get("pin"))
+        if not ticket:
+            print(f"lock: wrong PIN from phone {name} at {self.client_address[0]}", flush=True)
+            return self._json({"ok": False, "error": "wrong PIN", "wait": wait}, 403)
+        return self._json({"ok": True, "ticket": ticket, "idle": LOCK.idle})
+
+    @staticmethod
+    def _app_rights_after(admin):
+        return {"device_admin": admin, "pin": LOCK.is_on(), "unlocked": admin and not LOCK.is_on()}
 
     def _small_json(self, limit=1024):
         try:
@@ -1362,19 +1413,19 @@ class Handler(BaseHTTPRequestHandler):
         return ADMIN.valid(self.headers.get("X-Labhud-Admin"))
 
     def _operator(self):
-        """The cards' buttons and maintenance: the app with its token (it asks for the phone's own
-        lock), or a display signed in as the admin and unlocked. Without an admin, nobody at a
-        display: it only shows."""
+        """The cards' buttons and maintenance: a display or a phone signed in as the admin, and
+        unlocked when there is a PIN. Without an admin, nobody: every screen only shows."""
         if self._device()[1] == "bearer":
-            return True
+            return self._device_admin() and self._unlocked()
         return ADMIN.is_on() and self._admin_ok() and self._unlocked()
 
     def _may_manage(self):
-        """⚙ on the server's side (phones, agents, the PIN): from labhud's own page (also in the
-        app's wall mode), never with the app's own token, and signed in as the admin."""
-        if not self._same_page() or self._device()[1] == "bearer":
-            return False
-        return ADMIN.is_on() and self._admin_ok()
+        """⚙ on the server's side (phones, agents, the PIN): from labhud's own page signed in as
+        the admin, or a phone signed in as the admin and unlocked (a stolen phone still needs the
+        PIN, and the admin signs it out from any screen)."""
+        if self._device()[1] == "bearer":
+            return self._device_admin() and self._unlocked()
+        return self._same_page() and ADMIN.is_on() and self._admin_ok()
 
     def _admin_step(self, step):
         """login {user, password, code} -> {ticket}; logout; check -> {user, id}; sessions;
@@ -1401,7 +1452,8 @@ class Handler(BaseHTTPRequestHandler):
         if step == "check":
             return self._json({"ok": True, "user": ADMIN.user(), "id": current, "idle": ADMIN.idle})
         if step == "sessions":
-            return self._json({"ok": True, "sessions": ADMIN.sessions(), "current": current, "idle": ADMIN.idle})
+            return self._json({"ok": True, "sessions": ADMIN.sessions(), "current": current, "idle": ADMIN.idle,
+                               "phones": [d for d in devices.listing(ADMIN.sign()) if d["admin"]]})
         if step == "revoke":
             ok = ADMIN.revoke(body.get("id"))
             print(f"admin: a session signed out from {self.client_address[0]}", flush=True)
@@ -1430,7 +1482,7 @@ class Handler(BaseHTTPRequestHandler):
         if not right:
             print(f"admin: wrong sign-in to pair from {self.client_address[0]}", flush=True)
             return self._json({"ok": False, "error": "wrong user, password or code", "wait": wait}, 403)
-        token, name = devices.pair(devices.new_code(), body.get("name"))
+        token, name = devices.pair(devices.new_code(), body.get("name"), admin=ADMIN.sign())
         if not token:
             return self._json({"ok": False, "error": "too many paired phones"}, 409)
         print(f"device paired by the admin: {name} from {self.client_address[0]}", flush=True)
@@ -1572,6 +1624,9 @@ class Handler(BaseHTTPRequestHandler):
         if not (self._same_page() and 0 <= length <= 256) or (step == "pin" and not self._may_manage()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         ticket = self.headers.get("X-Labhud-Unlock")
+        if step == "unlock" and not (ADMIN.is_on() and self._admin_ok()):
+            # a screen that is not signed in only shows: there is nothing for the PIN to open
+            return self._json({"ok": False, "error": "sign in as the admin first"}, 403)
         if step == "unlock":
             new, wait = LOCK.unlock(body.get("pin"))
             if not new:

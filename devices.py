@@ -14,6 +14,11 @@ server see the same codes and devices; without LABHUD_DATA there is no pairing.
 Only SHA-256 hashes of codes and tokens are kept: they are 128+ random bits, so a slow hash
 (like the PIN's scrypt) would add nothing. A token is "<id>.<secret>": the id finds the device,
 the secret is compared in constant time. `init.py unpair <name>` ends a device at once.
+
+A token only looks, until the phone signs in as the admin (`/api/v1/admin-login`, or pairing by
+signing in): then the device keeps the admin's signature (admin.py `sign()`), and acts while that
+signature is the admin's. A new admin (another password or authenticator) is another signature,
+so every phone goes back to looking without anything to clean up; `admin-logout` drops it at once.
 """
 
 import hashlib
@@ -72,8 +77,9 @@ def new_code(name="", now=None):
     return code
 
 
-def pair(code, name, now=None):
-    """(token, device name) for a live code, which is used up; (None, None) otherwise."""
+def pair(code, name, now=None, admin=None):
+    """(token, device name) for a live code, which is used up; (None, None) otherwise. `admin`:
+    the admin's signature, for a phone paired by signing in as the admin."""
     if not isinstance(code, str) or not CODE.fullmatch(code) or not store.enabled():
         return None, None
     now = now or time.time()
@@ -93,6 +99,8 @@ def pair(code, name, now=None):
             did = secrets.token_hex(4)
         secret = secrets.token_urlsafe(32)
         devices[did] = {"name": name, "hash": _hash(secret), "paired": int(now), "seen": int(now)}
+        if admin:
+            devices[did]["admin"] = admin
         store.save(DEVICES_KEY, devices)
     return f"{did}.{secret}", name
 
@@ -111,6 +119,12 @@ def _unique(name, devices):
 
 def check(token, now=None):
     """The device's name for a valid token, else None. Marks it seen (at most every SEEN_EVERY s)."""
+    found = lookup(token, now)
+    return found[1]["name"] if found else None
+
+
+def lookup(token, now=None):
+    """(id, record) of the device for a valid token, else None. Marks it seen."""
     m = TOKEN.fullmatch(token or "") if isinstance(token, str) else None
     if not m or not store.enabled():
         return None
@@ -126,13 +140,34 @@ def check(token, now=None):
             if did in devices:
                 devices[did]["seen"] = int(now)
                 store.save(DEVICES_KEY, devices)
-    return device["name"]
+    return did, device
 
 
-def listing():
-    """[{name, paired, seen}], oldest first: for init.py devices and /status. No hashes."""
+def is_admin(device, sign):
+    """True for a device signed in as the admin who is the admin now."""
+    return bool(sign and device and hmac.compare_digest(str(device.get("admin") or ""), sign))
+
+
+def set_admin(did, sign):
+    """Signs the device in as the admin (sign = admin.sign()), or out (None). False if it is gone."""
+    with _lock:
+        devices = store.load(DEVICES_KEY) or {}
+        if did not in devices:
+            return False
+        if sign:
+            devices[did]["admin"] = sign
+        else:
+            devices[did].pop("admin", None)
+        store.save(DEVICES_KEY, devices)
+    return True
+
+
+def listing(sign=None):
+    """[{name, paired, seen, admin}], oldest first: for init.py devices, ⚙ and /status. No hashes.
+    `admin` is true only for a phone signed in as the current admin (`sign`)."""
     devices = store.load(DEVICES_KEY) or {} if store.enabled() else {}
-    return sorted(({"name": d["name"], "paired": d.get("paired", 0), "seen": d.get("seen", 0)}
+    return sorted(({"name": d["name"], "paired": d.get("paired", 0), "seen": d.get("seen", 0),
+                    "admin": is_admin(d, sign)}
                    for d in devices.values()), key=lambda d: d["paired"])
 
 

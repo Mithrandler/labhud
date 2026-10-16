@@ -71,6 +71,23 @@ class Codes(Base):
         self.assertEqual(devices.pair("a" * 24, "x"), (None, None))
         self.assertEqual(devices.listing(), [])
 
+    def test_admin_flag(self):
+        token, _ = devices.pair(devices.new_code(now=1000), "p", now=1000)
+        did, rec = devices.lookup(token)
+        self.assertFalse(devices.is_admin(rec, "s1"))                     # a QR code alone only looks
+        self.assertTrue(devices.set_admin(did, "s1"))
+        rec = devices.lookup(token)[1]
+        self.assertTrue(devices.is_admin(rec, "s1"))
+        self.assertFalse(devices.is_admin(rec, "s2"))                     # a new admin: back to looking
+        self.assertFalse(devices.is_admin(rec, None))                     # no admin at all
+        self.assertEqual([d["admin"] for d in devices.listing("s1")], [True])
+        self.assertEqual([d["admin"] for d in devices.listing("s2")], [False])
+        devices.set_admin(did, None)
+        self.assertFalse(devices.is_admin(devices.lookup(token)[1], "s1"))
+        self.assertFalse(devices.set_admin("ffffffff", "s1"))
+        t2, _ = devices.pair(devices.new_code(now=1000), "q", now=1000, admin="s1")
+        self.assertTrue(devices.is_admin(devices.lookup(t2)[1], "s1"))
+
     def test_link(self):
         link = devices.pair_link("http://wall.lan:8095/", "abc")
         self.assertEqual(link, "labhud://pair?u=http%3A%2F%2Fwall.lan%3A8095&c=abc")
@@ -178,7 +195,10 @@ class Routes(DemoServer):
         maint = "/api/maintenance/vm-pve-100"
         self.assertEqual(self.call("POST", maint, {"minutes": 0}, host=far)[0], 403)
         self.assertEqual(self.call("POST", maint, {"minutes": 0})[0], 403)          # no Origin, no token
-        self.assertEqual(self.call("POST", maint, {"minutes": 0}, host=far, token=token)[0], 200)
+        # a QR code alone only looks: no buttons, no maintenance, until the phone signs in as the admin
+        self.assertEqual((st["device_admin"], st["unlocked"]), (False, False))
+        self.assertEqual(self.call("POST", maint, {"minutes": 0}, host=far, token=token)[0], 403)
+        self.assertEqual(self.call("POST", "/api/v1/unlock", {"pin": "1234"}, host=far, token=token)[0], 403)
         self.assertEqual(self.call("POST", maint, {"minutes": 0}, host=far, cookie=token)[0], 403)  # cookie: Origin still needed
         self.assertEqual(self.call("POST", maint, {"minutes": 0}, host=far, cookie=token, origin=True)[0], 200)
 
@@ -235,3 +255,63 @@ class Routes(DemoServer):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdminPhone(DemoServer):
+    """A phone signed in as the admin, on a display with a PIN: it needs /api/v1/unlock first."""
+    data = tempfile.TemporaryDirectory()
+    extra_env = {"LABHUD_DATA": data.name, **signin.ENV}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.ticket = signin.sign_in(cls.port, cls.host)
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls.data.cleanup()
+
+    def call(self, path, body=None, token=None, page=False, unlock=None, admin=True):
+        headers = {"Host": self.host, "Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        if page:
+            headers["Origin"] = f"http://{self.host}"
+            if admin:
+                headers["X-Labhud-Admin"] = self.ticket
+        if unlock:
+            headers["X-Labhud-Unlock"] = unlock
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("POST", path, body=json.dumps(body or {}), headers=headers)
+        r = conn.getresponse()
+        out = r.status, json.loads(r.read() or b"{}")
+        conn.close()
+        return out
+
+    def test_pin_then_buttons(self):
+        status, p = self.call("/api/v1/pair-code", page=True)
+        self.assertEqual(status, 200, p)
+        code = urllib.parse.parse_qs(urllib.parse.urlsplit(p["link"]).query)["c"][0]
+        token = self.call("/api/v1/pair", {"code": code, "name": "Pixel"})[1]["token"]
+        # the admin's signature on the device, as admin-login would leave it (a TOTP code works once)
+        env = dict(os.environ, LABHUD_DATA=self.data.name, **signin.ENV)
+        subprocess.run([sys.executable, "-c", "import sys, admin, devices; "
+                        "devices.set_admin(devices.lookup(sys.argv[1])[0], admin.Admin().sign())", token],
+                       cwd=ROOT, env=env, check=True, timeout=30)
+        maint = "/api/maintenance/vm-pve-100"
+        self.assertEqual(self.call(maint, {"minutes": 0}, token=token)[0], 200)        # no PIN yet
+        status, r = self.call("/api/lock/pin", {"new": "4321"}, page=True)
+        self.assertEqual(status, 200, r)
+        try:
+            self.assertEqual(self.call(maint, {"minutes": 0}, token=token)[0], 403)    # locked
+            self.assertEqual(self.call("/api/v1/unlock", {"pin": "0000"}, token=token)[0], 403)
+            status, u = self.call("/api/v1/unlock", {"pin": "4321"}, token=token)
+            self.assertEqual(status, 200, u)
+            self.assertEqual(self.call(maint, {"minutes": 0}, token=token, unlock=u["ticket"])[0], 200)
+            # a display not signed in has nothing for the PIN to open
+            self.assertEqual(self.call("/api/lock/unlock", {"pin": "4321"}, page=True, admin=False)[0], 403)
+            self.assertEqual(self.call("/api/lock/unlock", {"pin": "4321"}, page=True)[0], 200)
+        finally:
+            status, t = self.call("/api/lock/unlock", {"pin": "4321"}, page=True)
+            self.call("/api/lock/pin", {"old": "4321", "new": None}, page=True, unlock=t.get("ticket"))

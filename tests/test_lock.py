@@ -116,7 +116,7 @@ class Tickets(Base):
         os.environ[lock.ENV_KEY] = lock.hash_pin("5555")
         self.store.on = False
         lk = lock.Lock(clock=self.clock)
-        self.assertEqual(lk.public(), {"on": True, "idle": 600, "settable": False})
+        self.assertEqual(lk.public(), {"on": True, "idle": 120, "settable": False})
         self.assertTrue(lk.unlock("5555")[0])
         self.assertFalse(lk.set_pin("5555", "1111")[0])
 
@@ -209,7 +209,7 @@ class InitPin(unittest.TestCase):
 
 class Rules(unittest.TestCase):
     def test_idle(self):
-        self.assertEqual(load("")["lock"], {"idle": 600})
+        self.assertEqual(load("")["lock"], {"idle": 120})
         self.assertEqual(load("[lock]\nidle = 2\n")["lock"], {"idle": 120})
         with self.assertRaises(config.ConfigError) as e:
             load("[lock]\nidle = 0\nwho = 1\n")
@@ -249,7 +249,7 @@ class Routes(DemoServer):
 
     def test_flow(self):
         cfg = json.loads(self.get("/api/config")[2])
-        self.assertEqual(cfg["lock"], {"on": False, "idle": 600, "settable": True})
+        self.assertEqual(cfg["lock"], {"on": False, "idle": 120, "settable": True})
         maint = "/api/maintenance/vm-pve-100"
         self.assertEqual(self.post(maint, {"minutes": 0})[0], 200)            # the admin, no PIN
         self.assertEqual(self.post(maint, {"minutes": 0}, signed=False)[0], 403)   # not signed in: only shows

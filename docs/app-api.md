@@ -38,9 +38,13 @@ keeps the old routes for a while. Fields may be added at any time: ignore what y
 
 ### Authentication
 
-Every request carries `Authorization: Bearer <token>`. The token stands in for `LABHUD_HOSTS`, the
-Origin check and the display's PIN. Without a token the read routes answer as `/api/snapshot`
-does: only under a name in `LABHUD_HOSTS` (421 otherwise).
+Every request carries `Authorization: Bearer <token>`. The token stands in for `LABHUD_HOSTS` and
+the Origin check. Without a token the read routes answer as `/api/snapshot` does: only under a
+name in `LABHUD_HOSTS` (421 otherwise).
+
+A token only **looks** until the phone signs in as the admin (below): `info` and `state` say
+`device_admin`, `pin` (the display has a PIN) and `unlocked`. Buttons, maintenance and managing
+phones and agents need `device_admin`, and with a PIN, a live unlock ticket too.
 
 For the wall page inside a WebView, set the token as the cookie `labhud_device` for labhud's
 address instead: the page then loads under any name. It stays a wall: its buttons need their
@@ -62,7 +66,21 @@ accept that certificate and no other.
 When labhud has an admin (`info.admin`), the app can pair without a QR code:
 `POST /api/v1/login-pair` with `{"user", "password", "code", "name"}` (the code from the admin's
 authenticator app), under any Host. The answer is the same as `/api/v1/pair`; 403 for a wrong
-sign-in, with `wait` (seconds) once wrong tries are being slowed down. A code works once.
+sign-in, with `wait` (seconds) once wrong tries are being slowed down. A code works once. A phone
+paired this way is signed in as the admin already.
+
+### Signing in as the admin, and the PIN
+
+| route | body | answer |
+|---|---|---|
+| `POST /api/v1/admin-login` | `{"user", "password", "code"}` | `{ok, device_admin, pin, unlocked}`; 403 with `wait` for a wrong sign-in |
+| `POST /api/v1/admin-logout` | `{}` | `{ok, device_admin: false, …}` |
+| `POST /api/v1/unlock` | `{"pin"}` | `{ok, ticket, idle}`: send the ticket as `X-Labhud-Unlock` with every button; `ticket` is null without a PIN |
+
+The sign-in belongs to the admin who signed in: a new admin (`init.py admin`) puts every phone
+back to looking. The unlock ticket ends after `idle` seconds (120) without use, as on a display;
+wrong PINs are slowed down with the display's own counter. The display's ⚙ > Security > Signed in
+lists the phones signed in as the admin, and Remove ends a phone at once.
 
 ### Reading
 
@@ -123,7 +141,8 @@ Times in the texts (`note`, rows) are written in labhud's own time zone.
 
 ### Acting
 
-With the token, the display's own routes work from the app:
+With the token of a phone signed in as the admin (and `X-Labhud-Unlock`, with a PIN), the
+display's own routes work from the app:
 
 | route | body | |
 |---|---|---|

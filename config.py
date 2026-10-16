@@ -638,7 +638,7 @@ def _validate(raw, path):
 
     # Lock: with a PIN set (from the display's settings or init.py pin), the screen is only for
     # looking; a PIN opens it, and it closes again after `idle` minutes without a touch.
-    lock = {"idle": 600}
+    lock = {"idle": 120}
     if "lock" in raw:
         lk = raw["lock"]
         if not isinstance(lk, dict):

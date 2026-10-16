@@ -60,6 +60,7 @@ function check_admin() {
 /** Signed in or out: the corner, the card's buttons in an open panel, and ⚙ (gone when out). */
 function account_changed() {
   render_account();
+  if (typeof render_lock === "function") render_lock();
   close_account_menu();
   if (!signed_in() && $("#settings") && !$("#settings").hidden) $("#settings").hidden = true;
   if (typeof panelCard !== "undefined" && panelCard && !$("#panel").hidden) render_actions(panelCard);

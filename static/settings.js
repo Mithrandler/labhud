@@ -207,6 +207,7 @@ function open_settings() {
   touched();
   // ⚙ is the admin's (account.js): a display that is not signed in only shows
   if (!signed_in()) return open_signin();
+  if (locked()) return lock_unlock().then((open) => open && open_settings());
   const box = $("#settings");
   const body = $("#settings-body");
   const keep = box.hidden ? 0 : body.scrollTop;   // a choice redraws the panel: stay where you were

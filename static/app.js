@@ -1693,7 +1693,7 @@ function agent_containers(body, c) {
     const r = el("div", "row" + (up ? "" : " bad"));
     r.appendChild(el("span", "n", n));
     r.appendChild(el("span", "v", up ? (x.status || "running") : "STOPPED"));
-    const acts = signed_in() ? (btns[n] || []) : [];
+    const acts = may_act() ? (btns[n] || []) : [];
     if (acts.length) {
       const one = { id: `${c.id}:${n}`, name: n, agent: c.agent, agent_target: "docker:" + n,
         check: ["agent", c.agent, "docker", n], actions: acts };
@@ -1978,12 +1978,20 @@ function render_actions(c) {
   const bar = $("#panel-actions");
   bar.textContent = "";
   // the buttons are the admin's: a display that is not signed in only shows (account.js)
-  const useful = signed_in() ? useful_actions(c) : [];
+  const useful = may_act() ? useful_actions(c) : [];
   // the service's own page: only in the list view, where leaving the page is what you want
   const link = LIST_VIEW && c.url;
-  const maint = signed_in() && CFG.maintenance_buttons && c.check;
-  if (!useful.length && !link && !maint) { bar.hidden = true; return; }
+  const maint = may_act() && CFG.maintenance_buttons && c.check;
+  // signed in but only showing (the PIN's 2 minutes): one UNLOCK where the buttons would be
+  const unlock = locked() && (useful_actions(c).length || (CFG.maintenance_buttons && c.check));
+  if (!useful.length && !link && !maint && !unlock) { bar.hidden = true; return; }
   bar.hidden = false;
+  if (unlock) {
+    const b = el("button", "unlock", "🔒 UNLOCK");
+    b.type = "button";
+    b.addEventListener("click", () => lock_unlock());
+    bar.appendChild(b);
+  }
   if (link) {
     const a = el("a", "open", "OPEN ↗");
     a.href = c.url; a.target = "_blank"; a.rel = "noopener";

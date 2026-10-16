@@ -1,12 +1,12 @@
-/* The lock (lock.py on the server): with a PIN set, this screen is only for looking. The pages,
-   the rotation, night and calm go on; any touch opens a keypad instead of what it would have done.
-   The right PIN gets a ticket from labhud, sent with every request that changes something, and
-   the screen stays open while it is used; [lock] idle minutes without a touch, or the lock next to
-   ⚙, close it again.
+/* The lock (lock.py on the server): with a PIN set, a screen signed in as the admin goes back to
+   only showing after [lock] idle seconds (2 min) without a touch, or at once with the lock next to
+   ⚙. Only showing is what a screen that is not signed in does: the pages, the panels, the rotation
+   go on, without ⚙ and without the cards' buttons; the admin's 30-day session stays. The lock, ⚙
+   and the panel's UNLOCK ask for the PIN; the right one gets a ticket from labhud, sent with every
+   request that changes something. A screen that is not signed in has no lock: it only shows anyway.
 
-   The guard sits on `window` in the capture phase, so it runs before every handler in app.js and
-   settings.js and none of them has to know about it. Loaded before app.js, like settings.js; it
-   uses app.js's helpers ($, el, put, touched...) only once someone touches the screen.
+   Loaded before app.js, like settings.js; it uses app.js's helpers ($, el, put, touched...) only
+   once someone touches the screen.
 
    Over plain HTTP nothing here is a secret: the PIN is checked by the server, and the ticket only
    lives in this tab (sessionStorage), so a reload keeps it but another tab does not. */
@@ -16,13 +16,16 @@ const LOCK_RENEW = 30000;      // ms: a touch tells the server the ticket is sti
 const PAD_IDLE = 30000;        // ms: a keypad nobody types on closes by itself
 const LOCK_OFF = location.search.includes("static");   // check screenshots: never locked
 
-let LOCK = { on: false, idle: 600, settable: false, ticket: "" };
+let LOCK = { on: false, idle: 120, settable: false, ticket: "" };
 let lockUsedAt = Date.now();   // the last touch on an open screen
 let lockRenewedAt = 0;
 let pad = null;                // the keypad's state while it is open
 let lockChanging = false;      // ⚙ is changing the PIN: the stream's news of it must not lock this screen
 
-function locked() { return LOCK.on && !LOCK.ticket && !LOCK_OFF; }
+function locked() { return LOCK.on && !LOCK.ticket && !LOCK_OFF && signed_in(); }
+
+/** The cards' buttons, maintenance and ⚙: the admin's, on an open screen. */
+function may_act() { return signed_in() && !locked(); }
 
 /** The request headers with the ticket, for labhud's own routes (never a cross-origin agent). */
 function lock_headers(headers) {
@@ -43,13 +46,15 @@ function set_ticket(t) {
   } catch (e) { /* not kept: a reload asks again */ }
   lockUsedAt = lockRenewedAt = Date.now();
   render_lock();
+  // an open panel shows its buttons, or UNLOCK in their place
+  if (typeof panelCard !== "undefined" && panelCard && $("#panel") && !$("#panel").hidden) render_actions(panelCard);
 }
 
 /** From /api/config at start, and from the stream when the PIN is set or removed anywhere. */
 function lock_state(state) {
   const was = LOCK.on;
   LOCK.on = !!(state && state.on);
-  LOCK.idle = (state && state.idle) || 600;
+  LOCK.idle = (state && state.idle) || 120;
   LOCK.settable = !!(state && state.settable);
   if (!LOCK.on) set_ticket("");
   else if (!was && !LOCK.ticket) { try { LOCK.ticket = sessionStorage.getItem(LOCK_KEY) || ""; } catch (e) { /* none */ } }
@@ -63,13 +68,12 @@ function lock_state(state) {
   if ($("#settings") && !$("#settings").hidden && typeof open_settings === "function") open_settings();
 }
 
-/** Lock now: the open sheets close, so whatever was on the screen is not left usable. */
+/** Back to only showing: ⚙ and a confirmation close; an open panel stays, without its buttons. */
 function lock_close(tell = true) {
   if (tell && LOCK.ticket) lock_post("lock");
   set_ticket("");
   if (!LOCK.on) return;
-  for (const id of ["#panel", "#settings", "#confirm"]) { const n = $(id); if (n) n.hidden = true; }
-  if (typeof close_panel === "function") close_panel();
+  for (const id of ["#settings", "#confirm"]) { const n = $(id); if (n) n.hidden = true; }
 }
 
 /** A request answered 403 while a PIN is set: the ticket may have ended on the server. */
@@ -80,39 +84,27 @@ function lock_refused(status) {
 function render_lock() {
   const b = $("#lock-btn");
   if (!b) return;
-  b.hidden = !LOCK.on || LOCK_OFF;
+  b.hidden = !LOCK.on || LOCK_OFF || !signed_in();
   b.classList.toggle("open", !locked());
-  b.title = locked() ? "Locked: tap to enter the PIN" : "Lock this screen now";
+  b.title = locked() ? "Only showing: tap to enter the PIN" : "Lock this screen now";
   b.setAttribute("aria-label", b.title);
   $("#clock").classList.toggle("has-lock", !b.hidden);
 }
 
 // ---------------------------------------------------------------------------------------------
-// The guard
+// Touches: they keep an open screen open; a keyboard types into the keypad, and nowhere else
 // ---------------------------------------------------------------------------------------------
 
 function lock_guard(e) {
-  if (e.type === "keydown" && pad) {   // a keyboard types into the keypad, and nowhere else
+  if (e.type === "keydown") {
+    if (!pad) return;
     const k = /^[0-9]$/.test(e.key) ? e.key : { Backspace: "⌫", Escape: "✕" }[e.key];
     if (k) pad_key(k);
     e.stopPropagation();
     e.preventDefault();
     return;
   }
-  if (!LOCK.on || LOCK_OFF) return;
-  // the first-run tour sits above the keypad: it must stay usable, or neither can be closed
-  const own = e.target && e.target.closest && e.target.closest("#lock, #lock-btn, #tour");
-  if (!locked()) {
-    if (e.type === "pointerdown") lock_used();
-    return;
-  }
-  if (own) return;
-  e.stopPropagation();
-  if (e.cancelable && e.type !== "pointermove") e.preventDefault();
-  if (e.type === "pointerdown") {
-    if (typeof touched === "function") touched();   // a dimmed or calm screen still wakes up
-    if (!pad) lock_unlock();
-  }
+  if (LOCK.on && !LOCK_OFF && LOCK.ticket) lock_used();
 }
 
 function lock_used() {
@@ -123,9 +115,7 @@ function lock_used() {
   }
 }
 
-for (const type of ["pointerdown", "pointerup", "pointermove", "pointercancel", "click", "dblclick", "contextmenu", "wheel", "keydown"]) {
-  window.addEventListener(type, lock_guard, { capture: true, passive: false });
-}
+for (const type of ["pointerdown", "keydown"]) window.addEventListener(type, lock_guard, { capture: true, passive: false });
 
 setInterval(() => {
   if (LOCK.on && LOCK.ticket && Date.now() - lockUsedAt > LOCK.idle * 1000) lock_close();
@@ -227,7 +217,9 @@ function pad_answer(r) {
   return r.ok ? { ok: true } : { ok: false, wait: r.wait || 0, msg: r.error === "wrong PIN" ? "Wrong PIN" : r.error };
 }
 
+/** Resolves true once the screen is open (at once without a lock). */
 function lock_unlock() {
+  if (!locked()) return Promise.resolve(true);
   return pad_ask("Enter the PIN", (pin) => lock_post("unlock", { pin }).then((r) => {
     if (r.ok) set_ticket(r.ticket);
     return pad_answer(r);
@@ -263,7 +255,7 @@ async function lock_change_steps(remove) {
   if (r.ok) {
     set_ticket(r.ticket || "");
     lock_state(r.lock);
-    if (typeof show_message === "function") show_message(remove ? "✓ PIN removed" : "✓ PIN set: this screen locks after " + Math.round(LOCK.idle / 60) + " min without a touch");
+    if (typeof show_message === "function") show_message(remove ? "✓ PIN removed" : "✓ PIN set: after " + Math.round(LOCK.idle / 60) + " min without a touch, this screen only shows");
   } else if (typeof show_message === "function") show_message("✕ " + (r.error || "not changed"));
 }
 
@@ -287,7 +279,7 @@ function lock_settings(section) {
   else row.appendChild(button("Lock now", () => lock_close()));
   s.appendChild(row);
   s.appendChild(el("p", "hint", LOCK.on
-    ? `Any touch asks for the PIN; open, the screen locks again after ${Math.round(LOCK.idle / 60)} min without a touch ([lock] idle). Forgotten: init.py pin --clear.`
-    : "With a PIN, this display is only for looking until someone types it. The same PIN on every screen."));
+    ? `After ${Math.round(LOCK.idle / 60)} min without a touch ([lock] idle) every signed-in screen only shows: no ⚙, no buttons, until the PIN. The session stays. Forgotten: init.py pin --clear.`
+    : "Optional, 4 digits. With a PIN, a signed-in screen goes back to only showing after 2 min without a touch; the PIN opens it again. The same PIN on every screen and in the app."));
   if (LOCK.on && !LOCK.settable) s.appendChild(el("p", "hint", "Set in .env (LABHUD_LOCK_PIN_HASH): change it there."));
 }

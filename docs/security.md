@@ -153,22 +153,26 @@ Off unless both `LABHUD_ACTION_URL` and `LABHUD_ACTION_SECRET` are set. The disp
 app) posts to labhud, which checks the request comes from its own page (or carries a phone's
 token) and the action is offered in `config.toml`, then forwards it with an HMAC signature that
 the agent checks (fresh, never reused, from labhud's IP only). The agent runs only commands
-listed in its own file. Only a display signed in as the admin shows and accepts the buttons (and,
-with a PIN, only while unlocked); the app uses its own token. See [actions.md](actions.md).
+listed in its own file. Only a display or a phone signed in as the admin shows and accepts the
+buttons (and, with a PIN, only while unlocked). See [actions.md](actions.md).
 
 ## The lock (PIN)
 
-A display on a wall is used by whoever walks by, and it usually stays signed in as the admin. With
-a PIN set (⚙ > Security > Lock, or `init.py pin`), the screen is only for looking until someone
-types it; open, it locks again after `[lock] idle` minutes without a touch, or at once with the
-lock in the top bar. Setting or changing the PIN needs the admin.
+A display on a wall is used by whoever walks by, and it usually stays signed in as the admin. The
+PIN is optional, 4 digits, and exists only with an admin, who alone sets or changes it (⚙ >
+Security > Lock, or `init.py pin`). With a PIN, **every signed-in screen goes back to only showing
+after 2 minutes without a touch** (`[lock] idle`), or at once with the lock in the top bar: no ⚙,
+no buttons, as if signed out, while the 30-day session stays. The lock, ⚙ and the panel's UNLOCK
+ask for the PIN. A screen that is not signed in has no lock: it only shows anyway. The same PIN
+holds for the phones signed in as the admin (`/api/v1/unlock`).
 
 - Only a scrypt hash of the PIN is kept: in `LABHUD_DATA` (`labhud.db`), or in
   `LABHUD_LOCK_PIN_HASH` when there is no data folder (`init.py pin --hash` prints the line; it
   can come from a file, `LABHUD_LOCK_PIN_HASH_FILE`). Without a data folder the PIN cannot be
   changed from the screen.
-- labhud checks the PIN and answers with a ticket, kept in memory (a restart locks every screen).
-  With a PIN set, labhud refuses the maintenance buttons and actions without a live ticket.
+- labhud checks the PIN, only for a screen or phone signed in as the admin, and answers with a
+  ticket, kept in memory (a restart locks every screen). With a PIN set, labhud refuses the
+  maintenance buttons, actions and ⚙ without a live ticket.
 - Four digits are 10,000 PINs. After five wrong ones labhud checks nothing for a minute, then
   2, 4… up to an hour; each such pause goes to the log and the day's timeline.
 - Forgotten PIN: `docker exec labhud python3 /app/init.py pin --clear`.
@@ -211,15 +215,18 @@ instead (`init.py pair`, or ⚙ > Devices > Phones > Pair a phone) and then send
 
 - The pairing code is random (144 bits), works once, and only for 5 minutes. It travels in the QR
   code and in the link; whoever scans or copies it first gets the token.
-- A valid token stands in for `LABHUD_HOSTS`, the Origin check and the lock's PIN: **a token is as
-  good as standing at an unlocked display**, including the actions and maintenance buttons. The
-  app keeps it in Android's encrypted storage and asks for the phone's fingerprint or PIN when it
-  opens.
+- A valid token stands in for `LABHUD_HOSTS` and the Origin check, but **a QR code alone only
+  looks**. The phone acts (buttons, maintenance, phones, agents, the PIN) only once signed in as
+  the admin (`/api/v1/admin-login`, or pairing by signing in), and with a PIN only after
+  `/api/v1/unlock`, for 2 minutes at a time. The sign-in is tied to the admin: a new password or
+  authenticator puts every phone back to looking. The app keeps the token in Android's encrypted
+  storage.
 - Only SHA-256 hashes of codes and tokens are kept (in `LABHUD_DATA`); every phone has its own
   token, listed with when it was last seen on `/status` and by `init.py devices`.
 - A lost phone: ⚙ > Devices > Phones > **Remove** on the display, or
   `docker exec labhud python3 /app/init.py unpair "<name>"`. Its token stops working at once. A
-  phone cannot remove the others with its own token.
+  phone that only looks cannot remove the others; a phone signed in as the admin can (after the
+  PIN, when there is one).
 - The app's wall mode loads the wall page with the token as a cookie: that page is a display like
   any other, so it needs the admin signed in (and unlocked, with a PIN) for buttons and ⚙.
 - **Pair a phone** and **Remove** are in ⚙, so they need the admin signed in.

@@ -26,6 +26,7 @@ PIN = re.compile(r"\d{4}")
 STORE_KEY = "lock_pin"
 ENV_KEY = "LABHUD_LOCK_PIN_HASH"
 N, R, P = 2 ** 14, 8, 1
+IDLE = 120          # seconds without a touch before a screen goes back to only showing
 MAX_TICKETS = 8
 FAILS_PER_ROUND = 5
 FIRST_WAIT = 60
@@ -66,7 +67,7 @@ def verify(pin, stored):
 
 
 class Lock:
-    def __init__(self, idle=600, clock=time.monotonic):
+    def __init__(self, idle=IDLE, clock=time.monotonic):
         self.idle = idle
         self.clock = clock
         self.on_block = None   # called with a line of text when the wrong tries start a wait

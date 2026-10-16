@@ -201,8 +201,24 @@ class Routes(DemoServer):
         self.assertEqual(status, 200, r)
         token = r["token"]
         self.assertEqual(r["info"]["admin"], True)
-        # the app's token cannot manage phones, even with the admin's ticket
+        # paired by signing in: this phone is the admin's (no PIN here, so nothing to unlock)
+        status, me = self.call("/api/v1/unlock", {}, token=token, origin=False, host=far)
+        self.assertEqual((status, me["ticket"]), (200, None))
+        # signed out on the phone: it only looks, and cannot manage phones, even with the admin's ticket
+        status, out = self.call("/api/v1/admin-logout", {}, token=token, origin=False, host=far)
+        self.assertEqual((status, out["device_admin"]), (200, False))
         self.assertEqual(self.call("/api/v1/unpair", {"name": "Pixel"}, ticket=ticket, token=token, origin=False)[0], 403)
+        self.assertEqual(self.call("/api/v1/unlock", {}, token=token, origin=False, host=far)[0], 403)
+        # and signed in again from the app, with a fresh code
+        self.assertEqual(self.call("/api/v1/admin-login", {"user": "boss", "password": "nope nope nope", "code": "000000"},
+                                   token=token, origin=False, host=far)[0], 403)
+        third = self.fresh_code(after=second)
+        status, back = self.call("/api/v1/admin-login", {"user": "boss", "password": "correct horse 1", "code": third},
+                                 token=token, origin=False, host=far)
+        self.assertEqual((status, back.get("device_admin")), (200, True), back)
+        status, ss = self.call("/api/admin/sessions", ticket=ticket)
+        self.assertEqual([p["name"] for p in ss["phones"]], ["Pixel"])
+        self.assertEqual(self.call("/api/v1/admin-login", {}, origin=False, host=far)[0], 403)   # no token
         self.assertEqual(self.call("/api/v1/unpair", {"name": "Pixel"})[0], 403)  # not signed in
         self.assertEqual(self.call("/api/v1/unpair", {"name": "Pixel"}, ticket=ticket)[0], 200)
 
