@@ -15,6 +15,10 @@ Only SHA-256 hashes of codes and tokens are kept: they are 128+ random bits, so 
 (like the PIN's scrypt) would add nothing. A token is "<id>.<secret>": the id finds the device,
 the secret is compared in constant time. `init.py unpair <name>` ends a device at once.
 
+A phone may leave a UnifiedPush endpoint (`set_push`, POST /api/v1/push): when the app's outbox
+gets a message (notify.py) labhud POSTs a content-free wake-up there, and the app then reads the
+message itself from /api/v1/notifications, over the home network or VPN. Only https endpoints.
+
 A token only looks, until the phone signs in as the admin (`/api/v1/admin-login`, or pairing by
 signing in): then the device keeps the admin's signature (admin.py `sign()`), and acts while that
 signature is the admin's. A new admin (another password or authenticator) is another signature,
@@ -41,6 +45,8 @@ SEEN_EVERY = 300          # "last seen" is written at most this often per device
 NAME = re.compile(r"[\w .,'()+-]{1,40}")
 TOKEN = re.compile(r"([a-z0-9]{8})\.([A-Za-z0-9_-]{32,64})")
 CODE = re.compile(r"[A-Za-z0-9_-]{16,64}")
+PUSH = re.compile(r"https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*)?")
+MAX_PUSH = 512
 
 _lock = threading.Lock()
 _seen = {}                # id -> last time "last seen" was written
@@ -162,12 +168,48 @@ def set_admin(did, sign):
     return True
 
 
+def set_push(did, endpoint):
+    """The device's UnifiedPush endpoint, or "" to forget it. Raises ValueError for one that is not
+    an https address; False if the device is gone."""
+    endpoint = str(endpoint or "").strip()
+    if endpoint and (len(endpoint) > MAX_PUSH or not PUSH.fullmatch(endpoint)):
+        raise ValueError("the push endpoint must be an https:// address")
+    with _lock:
+        devices = store.load(DEVICES_KEY) or {}
+        if did not in devices:
+            return False
+        if endpoint:
+            devices[did]["push"] = endpoint
+        else:
+            devices[did].pop("push", None)
+        store.save(DEVICES_KEY, devices)
+    return True
+
+
+def push_endpoints():
+    """{endpoint: device id} of the phones that left one."""
+    devices = store.load(DEVICES_KEY) or {} if store.enabled() else {}
+    return {d["push"]: did for did, d in devices.items() if d.get("push")}
+
+
+def drop_push(endpoint):
+    """Forgets an endpoint its push server says is gone (404/410)."""
+    with _lock:
+        devices = store.load(DEVICES_KEY) or {}
+        hit = [did for did, d in devices.items() if d.get("push") == endpoint]
+        for did in hit:
+            devices[did].pop("push", None)
+        if hit:
+            store.save(DEVICES_KEY, devices)
+
+
 def listing(sign=None):
-    """[{name, paired, seen, admin}], oldest first: for init.py devices, ⚙ and /status. No hashes.
-    `admin` is true only for a phone signed in as the current admin (`sign`)."""
+    """[{name, paired, seen, admin, push}], oldest first: for init.py devices, ⚙ and /status. No
+    hashes. `admin` is true only for a phone signed in as the current admin (`sign`); `push` says
+    it has a UnifiedPush endpoint (never the endpoint: it is a capability)."""
     devices = store.load(DEVICES_KEY) or {} if store.enabled() else {}
     return sorted(({"name": d["name"], "paired": d.get("paired", 0), "seen": d.get("seen", 0),
-                    "admin": is_admin(d, sign)}
+                    "admin": is_admin(d, sign), "push": bool(d.get("push"))}
                    for d in devices.values()), key=lambda d: d["paired"])
 
 

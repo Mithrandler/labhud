@@ -22,6 +22,13 @@ still change in a minor version; such changes are listed under **Changed** with 
   disk, temperature, a host down), the rest waits and goes out as one message when they end. ⚙ >
   Alerts sets both, and the ntfy topic and token (Test, Save to `secrets.env`, Forget).
   `GET /api/v1/notifications?after=<id>`: the messages, for the app to show itself.
+- **Instant notifications in the app, through UnifiedPush.** `POST /api/v1/push {endpoint}`: a
+  phone leaves the endpoint its distributor gave it (the ntfy app is one). When a message is due
+  and `via` names the app, labhud POSTs `{"labhud":"news"}` there, with nothing of the news in it,
+  and the app reads the message itself over the home network or VPN. An endpoint its push server
+  calls gone (404, 410) is forgotten; `/api/v1/devices` says which phones have one.
+- **`type` on every card in `/api/v1/state`**: proxmox, nas, docker, vm, pc or "" (the card's
+  `kind`, else the same guess as Organize by type), for the app's Devices.
 - **A host's charts from its agent**: a card with `agent = "<name>"` charts the agent's CPU, RAM,
   disk, temperatures and network (what the agent sends) in its panel, beside its own numbers, and
   `/api/v1` gives them as the card's `charts`. The panel's charts gain **1h** (1h, 6h, 24h, 7d).

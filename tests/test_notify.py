@@ -89,5 +89,46 @@ class Notify(unittest.TestCase):
         self.assertIn("LABHUD_NOTIFY_FORMAT", notify.problem())
 
 
+
+class Wake(unittest.TestCase):
+    """The app's own notifications: a content-free POST to each phone's UnifiedPush endpoint, only
+    when `via` names the app; an endpoint its server calls gone is forgotten."""
+
+    def test_wake(self):
+        import urllib.error
+        from unittest import mock
+        sent, dropped = [], []
+
+        def urlopen(req, timeout=0):
+            sent.append((req.full_url, req.data))
+            if "gone" in req.full_url:
+                raise urllib.error.HTTPError(req.full_url, 410, "Gone", {}, None)
+            return mock.MagicMock()
+
+        endpoints = {"https://up.example/a": "d1", "https://up.example/gone": "d2"}
+        with mock.patch("devices.push_endpoints", return_value=endpoints), \
+                mock.patch("devices.drop_push", side_effect=dropped.append), \
+                mock.patch("urllib.request.urlopen", urlopen):
+            notify.wake_phones()
+        self.assertEqual(sorted(u for u, _ in sent), sorted(endpoints))
+        self.assertTrue(all(d == notify.WAKE for _, d in sent))
+        self.assertNotIn(b"title", notify.WAKE)
+        self.assertEqual(dropped, ["https://up.example/gone"])
+
+    def test_only_when_via_names_the_app(self):
+        from unittest import mock
+        saved = notify.VIA, notify.URL
+        try:
+            notify.URL = ""
+            for via, woken in (("ntfy", 0), ("app", 1), ("both", 1)):
+                notify.VIA = via
+                with mock.patch("notify.wake_phones") as wake:
+                    notify.deliver("t", "x", True)
+                    time.sleep(0.05)
+                self.assertEqual(wake.call_count, woken, via)
+        finally:
+            notify.VIA, notify.URL = saved
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,10 @@ Where the news goes is [notify] in config.toml (configure()): `via` = ntfy (the 
 quiet hours a message that is not urgent (cpu and mem rules, alerting.py) is held; when they end,
 what was held goes out as one message. The outbox keeps the last messages, for the app, whatever
 `via` says: the app shows them only when `via` names it.
+
+A phone with a UnifiedPush endpoint (devices.py) is woken when a message enters the outbox and
+`via` names the app: a POST with no news in it ({"labhud": "news"}), so neither the push server
+nor Google (when the distributor uses it) learns what happened. The app then reads the outbox.
 """
 
 import json
@@ -27,6 +31,7 @@ import os
 import queue
 import threading
 import time
+import urllib.error
 import urllib.request
 
 URL = os.environ.get("LABHUD_NOTIFY_URL", "")
@@ -136,6 +141,8 @@ def deliver(title, text, bad, card=None, now=None):
         mid = max(int(now * 1000), _outbox[-1]["id"] + 1 if _outbox else 0)
         _outbox.append({"id": mid, "time": int(now), "title": title, "text": text, "bad": bad, "card": card})
         del _outbox[:-OUTBOX_SIZE]
+    if VIA in ("app", "both"):
+        threading.Thread(target=wake_phones, daemon=True, name="push").start()
     if not to_ntfy():
         return
     try:
@@ -144,6 +151,28 @@ def deliver(title, text, bad, card=None, now=None):
     except Exception as e:  # a notification service down must not stop anything else
         message = str(e).replace(URL or "\0", "<url>").replace(AUTH or "\0", "<auth>")
         state.update(last_error=message[:160] or type(e).__name__, last_error_at=int(time.time()))
+
+
+WAKE = b'{"labhud":"news"}'
+
+
+def wake_phones():
+    """One content-free POST to every phone's UnifiedPush endpoint; one its server says is gone
+    (404, 410) is forgotten. Never raises: a push server down only delays the phone."""
+    import devices
+    for endpoint in devices.push_endpoints():
+        req = urllib.request.Request(endpoint, data=WAKE, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("TTL", "86400")
+        req.add_header("Urgency", "high")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                r.read()
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410):
+                devices.drop_push(endpoint)
+        except Exception:
+            pass
 
 
 def test(url=None, auth=None, fmt=None):

@@ -1261,7 +1261,8 @@ def write_cli_key():
 def app_state(full=False):
     with _lock:
         data = dict(_data)
-    return cardstate.state(TOPOLOGY, data, actions_on=actions_on(), full=full)
+    found = {a["name"]: a.get("found", []) for a in agents.listing()} if agents.enabled() else {}
+    return cardstate.state(TOPOLOGY, data, actions_on=actions_on(), full=full, found=found)
 
 
 def app_info():
@@ -1388,6 +1389,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._login_pair()
         if self.path in ("/api/v1/admin-login", "/api/v1/admin-logout", "/api/v1/unlock"):
             return self._app_admin(self.path.rsplit("/", 1)[1])
+        if self.path == "/api/v1/push":
+            return self._app_push()
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
@@ -1513,6 +1516,22 @@ class Handler(BaseHTTPRequestHandler):
             print(f"lock: wrong PIN from phone {name} at {self.client_address[0]}", flush=True)
             return self._json({"ok": False, "error": "wrong PIN", "wait": wait}, 403)
         return self._json({"ok": True, "ticket": ticket, "idle": LOCK.idle})
+
+    def _app_push(self):
+        """{endpoint}: this phone's UnifiedPush endpoint ("" forgets it), woken with no news in it
+        when a notification is due (notify.wake_phones). Any paired phone: it only learns that
+        there is something to read, which it may read anyway."""
+        body = self._small_json()
+        if body is None or self._device()[1] != "bearer" or not isinstance(body.get("endpoint", ""), str):
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        try:
+            if not devices.set_push(self._dev_rec[0], body.get("endpoint", "")):
+                return self._json({"ok": False, "error": "forbidden"}, 403)
+        except ValueError as e:
+            return self._json({"ok": False, "error": str(e)}, 400)
+        print(f"push: phone {self._dev_rec[1]['name']} " + ("left an endpoint" if body.get("endpoint") else "forgot its endpoint"),
+              flush=True)
+        return self._json({"ok": True})
 
     @staticmethod
     def _app_rights_after(admin):

@@ -34,6 +34,13 @@ the app, signed in as the admin, with `POST /api/setup/alerts-save`). With ntfy,
 about. The app's own come from `GET /api/v1/notifications` (below), the same messages after the
 same quiet hours.
 
+**Instant notifications without the app running** use [UnifiedPush](https://unifiedpush.org): the
+app registers with a distributor on the phone (the ntfy app is one; its Play version rides on
+Google's push) and leaves the endpoint it got with `POST /api/v1/push`. When a message enters the
+outbox and `via` names the app, labhud POSTs `{"labhud":"news"}` to every endpoint: no title, no
+text, so neither the push server nor Google learns what happened. The app wakes, reads
+`/api/v1/notifications?after=` itself over the home network or VPN, and shows it.
+
 ## The API
 
 Version 1. `GET /api/v1/info` says `"api": 1`; a later incompatible change raises the number and
@@ -79,6 +86,7 @@ paired this way is signed in as the admin already.
 | `POST /api/v1/admin-login` | `{"user", "password", "code"}` | `{ok, device_admin, pin, unlocked}`; 403 with `wait` for a wrong sign-in |
 | `POST /api/v1/admin-logout` | `{}` | `{ok, device_admin: false, …}` |
 | `POST /api/v1/unlock` | `{"pin"}` | `{ok, ticket, idle}`: send the ticket as `X-Labhud-Unlock` with every button; `ticket` is null without a PIN |
+| `POST /api/v1/push` | `{"endpoint"}` | `{ok}`: this phone's UnifiedPush endpoint (https only; `""` forgets it). Any paired phone; 400 for an address that is not https |
 
 The sign-in belongs to the admin who signed in: a new admin (`init.py admin`) puts every phone
 back to looking. The unlock ticket ends after `idle` seconds (120) without use, as on a display;
@@ -97,7 +105,7 @@ lists the phones signed in as the admin, and Remove ends a phone at once.
 | `GET /api/v1/history` | `{step, series: {key: [values]}}`: the last hours of every trend, one point per `step` seconds; `?long`: 15-minute points over 7 days |
 | `GET /api/v1/uptime` | `{step, cards: {id: [values]}, percent: {id: 99.4}}`: per card with a check, one value per 15 minutes, oldest first: the share of that time it was up (0..1), `-1` off on purpose (schedule, on demand, maintenance), `null` not known. `?range=24h` (default) or `?range=7d`; `percent` is over the range, leaving out the off and unknown slices |
 | `GET /api/v1/events` | `{events: [{t, name, bad, card?, state?}]}`, newest first |
-| `GET /api/v1/devices` | `{pairing, devices: [{name, paired, seen}]}`: the paired phones |
+| `GET /api/v1/devices` | `{pairing, devices: [{name, paired, seen, admin, push}]}`: the paired phones (`push`: it left a UnifiedPush endpoint) |
 | `GET /api/v1/notifications` | `{via, quiet, notifications: [{id, time, title, text, bad, card}]}`: the last 100 messages LabHUD sent (or would send) as notifications, oldest first, after the quiet hours did their part; `?after=<id>` only the newer ones (ids rise). Show them when `via` is `app` or `both`. The outbox lives in memory: after a restart it starts empty |
 
 `state`:
@@ -129,6 +137,9 @@ A card:
 - `bad`: red on the display (down, or a number past its critical mark), `null` while nothing about
   it is known. `problems` lists the red ones in page order.
 - `kind`: `guest` (a Proxmox guest, a small tile), `list` (rows, in `rows`) or `card`.
+- `type`: what machine it is: `proxmox`, `nas`, `docker`, `vm`, `pc`, or `""` for a card that is
+  not one (a list, a number). The card's own `kind` in the config, else a guess (⚙ > Pages >
+  Organize by type uses the same).
 - `metrics[].value` is formatted as the display shows it; `sev` is `""`, `warn` or `crit`;
   `trend` says the key has a history (`/api/v1/history`); `format` is the config's (`percent`,
   `percent1`, `celsius`, `used_of`, `bytes`, `rate`, `count`…). For `used_of` the history holds

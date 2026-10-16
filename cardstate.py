@@ -17,6 +17,8 @@ import re
 import threading
 import time
 
+import cardtype
+
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _PERCENT = re.compile(r"\.(cpu|mem|used_percent|disk\.percent)$")
 _USED_OF = re.compile(r"\.(mem_used_of|disk_used_of)$")
@@ -567,13 +569,14 @@ def sections(c, data):
 STATUS = {True: "up", False: "down", None: "unknown"}
 
 
-def card(c, data, topology, actions_on, page=None, group=None, full=False):
+def card(c, data, topology, actions_on, page=None, group=None, full=False, found=None):
     st = card_status(c, data)
     text, kind = note(c, data)
     trends = set(topology.get("trends") or ())
     out = {
         "id": c["id"], "name": c.get("name", c["id"]), "page": page, "group": group,
         "kind": "guest" if is_guest(c) else "list" if c.get("list") else "card",
+        "type": cardtype.kind(c, found),   # what machine it is (cardtype.KINDS), "" for none: the app's Devices
         "status": STATUS.get(st, st) if not isinstance(st, str) else st,
         "bad": card_bad(c, data), "summary": summary(c, data), "frozen": _frozen(c, data),
         "note": text, "note_kind": kind,
@@ -665,8 +668,9 @@ def games(topology, data, actions_on=False, full=False):
     return out
 
 
-def state(topology, data, actions_on=False, full=False):
-    """Everything an app shows: pages with their cards, the problems first, the alerts."""
+def state(topology, data, actions_on=False, full=False, found=None):
+    """Everything an app shows: pages with their cards, the problems first, the alerts. `found`:
+    {agent name: what it found} (agents.listing()), for each card's `type`."""
     pages, cards, seen = [], [], set()
     titles = {}
     for i, p in enumerate(topology["pages"]):
@@ -678,7 +682,7 @@ def state(topology, data, actions_on=False, full=False):
                 ids.append(c["id"])
                 if c["id"] not in seen:
                     seen.add(c["id"])
-                    cards.append(card(c, data, topology, actions_on, page=p["id"], group=g["id"], full=full))
+                    cards.append(card(c, data, topology, actions_on, page=p["id"], group=g["id"], full=full, found=found))
             groups.append({"id": g["id"], "title": g["title"], "cards": ids})
         pages.append({"id": p["id"], "title": p["title"], "groups": groups, **({"games": True} if p.get("games") else {})})
     every_game = games(topology, data, actions_on, full)

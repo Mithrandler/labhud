@@ -88,6 +88,23 @@ class Codes(Base):
         t2, _ = devices.pair(devices.new_code(now=1000), "q", now=1000, admin="s1")
         self.assertTrue(devices.is_admin(devices.lookup(t2)[1], "s1"))
 
+    def test_push_endpoint(self):
+        token, _ = devices.pair(devices.new_code(now=1000), "p", now=1000)
+        did = devices.lookup(token)[0]
+        for bad in ("http://ntfy.example/up1", "javascript:x", "https://", "https://a b/", "https://x/" + "a" * 600):
+            with self.assertRaises(ValueError, msg=bad):
+                devices.set_push(did, bad)
+        self.assertTrue(devices.set_push(did, "https://ntfy.example/upAbC?up=1"))
+        self.assertEqual(devices.push_endpoints(), {"https://ntfy.example/upAbC?up=1": did})
+        self.assertEqual([d["push"] for d in devices.listing()], [True])
+        self.assertNotIn("ntfy.example", json.dumps(devices.listing()))     # a capability: never listed
+        devices.drop_push("https://ntfy.example/upAbC?up=1")
+        self.assertEqual(devices.push_endpoints(), {})
+        devices.set_push(did, "https://ntfy.example/up2")
+        self.assertTrue(devices.set_push(did, ""))
+        self.assertEqual(devices.push_endpoints(), {})
+        self.assertFalse(devices.set_push("ffffffff", "https://ntfy.example/up3"))
+
     def test_link(self):
         link = devices.pair_link("http://wall.lan:8095/", "abc")
         self.assertEqual(link, "labhud://pair?u=http%3A%2F%2Fwall.lan%3A8095&c=abc")
@@ -188,6 +205,7 @@ class Routes(DemoServer):
         self.assertEqual(self.call("GET", "/api/v1/state", host=far, token="abcdefgh." + "x" * 43)[0], 421)
         status, card = self.call("GET", "/api/v1/card/host-pve", host=far, token=token)
         self.assertEqual((status, card["sections"][0]["title"]), (200, "host"))
+        self.assertEqual(card["type"], "proxmox")       # what machine it is, for the app's Devices
         self.assertEqual(self.call("GET", "/api/v1/card/nope", host=far, token=token)[0], 404)
         self.assertEqual(self.call("GET", "/api/snapshot", host=far, token=token)[0], 200)
         self.assertEqual(self.call("GET", "/", host=far, cookie=token)[0], 200)     # the wall in the WebView
@@ -201,6 +219,15 @@ class Routes(DemoServer):
         self.assertEqual(self.call("POST", "/api/v1/unlock", {"pin": "1234"}, host=far, token=token)[0], 403)
         self.assertEqual(self.call("POST", maint, {"minutes": 0}, host=far, cookie=token)[0], 403)  # cookie: Origin still needed
         self.assertEqual(self.call("POST", maint, {"minutes": 0}, host=far, cookie=token, origin=True)[0], 200)
+
+        # a UnifiedPush endpoint: only with the token, only https
+        self.assertEqual(self.call("POST", "/api/v1/push", {"endpoint": "https://up.example/x"}, host=far)[0], 403)
+        self.assertEqual(self.call("POST", "/api/v1/push", {"endpoint": "http://up.example/x"}, host=far, token=token)[0], 400)
+        self.assertEqual(self.call("POST", "/api/v1/push", {"endpoint": 5}, host=far, token=token)[0], 403)
+        self.assertEqual(self.call("POST", "/api/v1/push", {"endpoint": "https://up.example/x"}, host=far, token=token)[0], 200)
+        self.assertEqual(self.call("GET", "/api/v1/devices", host=far, token=token)[1]["devices"][0]["push"], True)
+        self.assertEqual(self.call("POST", "/api/v1/push", {"endpoint": ""}, host=far, token=token)[0], 200)
+        self.assertEqual(self.call("GET", "/api/v1/devices", host=far, token=token)[1]["devices"][0]["push"], False)
 
         listed = self.init("devices")
         self.assertIn("Pixel 6a", listed.stdout)
