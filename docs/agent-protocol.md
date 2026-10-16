@@ -21,7 +21,7 @@ agent                                                    labhud
   │◀────────────────────── allow {caps, targets} (signed) ─│
   │── state {...}  every 30 s and on change ──────────────▶│
   │◀──────────────── command {cmd, cap, verb, target} ─────│
-  │── result {cmd, ok, error} ────────────────────────────▶│
+  │── result {cmd, ok, error, output} ────────────────────▶│
 ```
 
 The agent always dials; nothing listens on the host. labhud sends a WebSocket ping every 25 s;
@@ -140,12 +140,16 @@ part means "this capability is not here", an empty one "found, nothing in it".
 `sensors` uses the flat keys of the Python agent (`agents/labhud-agent.py`) and of
 host-temp-api: the power estimate is the CPU package from RAPL + the GPUs + a fixed base the
 agent is given (`LABHUD_AGENT_BASE_W`), and `cost_day` only with `LABHUD_AGENT_PRICE_KWH`. `guests` has the shape of the Proxmox source (`sources/proxmox.py`), so cards treat both
-the same. `units` lists the loaded `.service` units, at most 200.
+the same. `units` lists the loaded `.service` units, at most 200. `sensors.net_rx` / `net_tx` are
+bytes a second over the physical interfaces. A container has `"update": true` when its registry has
+another digest for its tag (checked for the ticked containers, 2 minutes after the start and then
+every 6 hours, through the engine and its logins), and `"updating": true` while one runs.
 `neighbours` is the ARP table, to choose Wake-on-LAN targets from.
 
 `result` — the end of a command: `{"type":"result","cmd":"<id>","ok":true}` or
 `{"type":"result","cmd":"<id>","ok":false,"error":"<one line>"}`. A command that only starts
-something long (a package update) answers `ok` at once and reports the end as an `event`.
+something long (a package update, a container's update) answers `ok` at once and reports the end
+as an `event`. A read verb (`logs`) answers with `output`: text, at most 48 KiB (the newest part).
 
 `event` — `{"type":"event","text":"pve2: packages updated (12)","bad":false}`, for the timeline.
 
@@ -169,7 +173,7 @@ stops (`systemctl` will not restart it: it exits with status 0 and the unit has
 | cap | targets | verbs | done through |
 |---|---|---|---|
 | `sensors` | — | — (state only) | `/proc`, hwmon, `nvidia-smi`, RAPL, `statvfs` |
-| `docker` | container names | `start` `stop` `restart` | `/var/run/docker.sock` |
+| `docker` | container names | `start` `stop` `restart` `update` `logs` | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only |
 | `systemd` | unit names | `start` `stop` `restart` | D-Bus `org.freedesktop.systemd1` |
 | `host` | `host` | `reboot` `shutdown` `update` | D-Bus `login1`; `update` = a transient unit running apt-get/dnf |
 | `wol` | MAC addresses (`aa:bb:…`, lowercase) | `wake` | UDP broadcast to port 9 |
