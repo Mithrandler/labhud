@@ -1,7 +1,7 @@
 """Paired agents (labhud-agent, Go): one per host, dialling labhud on /api/agent/ws. The protocol
 is in docs/agent-protocol.md, its cryptography in agentproto.py.
 
-Pairing follows devices.py: ⚙ > Agents makes a one-time code, valid PAIR_MINUTES, of which only
+Pairing follows devices.py: ⚙ > Devices > Agents makes a one-time code, valid PAIR_MINUTES, of which only
 code_id and pair_secret are kept (never the code). An agent is saved with its key only after its
 first signed frame checks out. Everything lives in the store (LABHUD_DATA); without it there are
 no agents.
@@ -217,7 +217,7 @@ def online(aid):
 
 
 def listing():
-    """For ⚙ > Agents: everything but the keys, with what each agent last reported."""
+    """For ⚙ > Devices > Agents: everything but the keys, with what each agent last reported."""
     out = []
     for aid, a in _load().items():
         st = _state.get(aid) or {}
@@ -473,7 +473,7 @@ class Session:
             raise Refused("bad pairing request")
         secret = _take_code(msg.get("code_id"), self.now())
         if not secret:
-            raise Refused("the code is wrong or expired: make a new one in ⚙ > Agents")
+            raise Refused("the code is wrong or expired: make a new one in ⚙ > Devices > Agents")
         existing = _load()
         aid = secrets.token_hex(4)
         while aid in existing:
@@ -570,7 +570,7 @@ def release(releases=""):
 
 
 def install_lines(base, code, image="", releases=""):
-    """What ⚙ > Agents > Add an agent shows: the commands that work with this labhud as it is.
+    """What ⚙ > Devices > Agents > Add an agent shows: the commands that work with this labhud as it is.
     With a release pinned, one curl line downloads and checks the agent, and the image exists.
     Without one the installer cannot download anything, so the line installs a binary you built
     or copied, against the SHA-256 you got where you made it; a container only with `image` set."""

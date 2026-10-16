@@ -107,6 +107,6 @@ labhud forwards only the actions on a card and the choices written here.
 
 Signing proves the press came through labhud, not who pressed. Who may press is labhud's part:
 a display shows the buttons only when signed in as the admin (top right), its PIN (`[lock]`, ⚙ >
-Security) gates them on top of that, and an app needs a paired token (⚙ > Phones). Keep labhud itself on your LAN or behind a VPN, and keep
+Security) gates them on top of that, and an app needs a paired token (⚙ > Devices > Phones). Keep labhud itself on your LAN or behind a VPN, and keep
 destructive actions (shutdown, stop) to what you would be fine with a guest at the display
 pressing once it is unlocked.

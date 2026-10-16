@@ -207,7 +207,7 @@ signing in with the same three (or from a QR code shown in ⚙) and then acts wi
 ## Paired phones (the LabHUD app)
 
 The app is not labhud's own page, so it cannot pass the Host and Origin checks. It is paired once
-instead (`init.py pair`, or ⚙ > Phones > Pair a phone) and then sends a token of its own.
+instead (`init.py pair`, or ⚙ > Devices > Phones > Pair a phone) and then sends a token of its own.
 
 - The pairing code is random (144 bits), works once, and only for 5 minutes. It travels in the QR
   code and in the link; whoever scans or copies it first gets the token.
@@ -217,7 +217,7 @@ instead (`init.py pair`, or ⚙ > Phones > Pair a phone) and then sends a token 
   opens.
 - Only SHA-256 hashes of codes and tokens are kept (in `LABHUD_DATA`); every phone has its own
   token, listed with when it was last seen on `/status` and by `init.py devices`.
-- A lost phone: ⚙ > Phones > **Remove** on the display, or
+- A lost phone: ⚙ > Devices > Phones > **Remove** on the display, or
   `docker exec labhud python3 /app/init.py unpair "<name>"`. Its token stops working at once. A
   phone cannot remove the others with its own token.
 - The app's wall mode loads the wall page with the token as a cookie: that page is a display like

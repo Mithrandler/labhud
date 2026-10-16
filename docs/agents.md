@@ -17,7 +17,7 @@ APIs, never through a shell or scripts you write. The agent is
 | `pve` | the local API (`https://localhost:8006`, a token made at install) | start, shut down, reboot VMs and LXCs |
 | `ptero` | the panel's client API (a key given at install) | start, stop, restart game servers |
 
-Each capability is found by the agent itself and stays **off until you tick it** in ⚙ > Agents,
+Each capability is found by the agent itself and stays **off until you tick it** in ⚙ > Devices > Agents,
 and then only on the **targets you tick**: each container, service, guest, server or MAC. The
 agent checks the same allowlist again before it touches anything. There is no hard stop for
 guests and no kill for game servers, on purpose.
@@ -32,7 +32,7 @@ the old one is switched off.
 `LABHUD_DATA` is needed (labhud keeps the agents and their keys there), and the admin signed in:
 ⚙ is the admin's.
 
-1. ⚙ > Agents > **Add an agent** shows a one-time code (5 minutes, once) and the command to run
+1. ⚙ > Devices > Agents > **Add an agent** shows a one-time code (5 minutes, once) and the command to run
    on the host, as root. Which command depends on whether this labhud pins a release of the
    agent (`agents/agent-release.json`, filled in when labhud is released):
 
@@ -66,7 +66,7 @@ the old one is switched off.
    a `docker run` with the host's network (Wake-on-LAN, the ARP table), `/` read-only at `/host`
    (sensors, disk, name), and the Docker and D-Bus sockets. Leave out a socket and that
    capability is simply not there. Update it from your container tool like any image.
-3. The agent appears in ⚙ > Agents with what it found. Tick what it may do, then on what.
+3. The agent appears in ⚙ > Devices > Agents with what it found. Tick what it may do, then on what.
 
 labhud never sends an agent code or updates: a new version comes from your package or image
 tooling, and ⚙ only shows which version each agent runs.
@@ -112,5 +112,5 @@ can be a card's metric. The buttons reach the app through `/api/v1` as well; not
 
 ## Removing one
 
-⚙ > Agents > **Remove** deletes its key in labhud at once and tells the agent, which deletes its
+⚙ > Devices > Agents > **Remove** deletes its key in labhud at once and tells the agent, which deletes its
 own and stops. To bring it back, pair it again with a new code.

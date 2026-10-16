@@ -39,7 +39,7 @@ an agent that hears nothing for 60 s reconnects, waiting 1 s, 2 s, 4 s … up to
 
 ## Pairing
 
-The admin makes a code in ⚙ > Agents: 18 random bytes, URL-safe base64 (24 characters, 144
+The admin makes a code in ⚙ > Devices > Agents: 18 random bytes, URL-safe base64 (24 characters, 144
 bits), valid **5 minutes, once**. It reaches the agent in the install line, never through the
 WebSocket. labhud keeps only
 

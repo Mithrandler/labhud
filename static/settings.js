@@ -582,7 +582,7 @@ function toggle_hidden(key) {
 function close_settings() { $("#settings").hidden = true; touched(); }
 
 // ---------------------------------------------------------------------------------------------
-// ⚙ > Agents: the paired agents, what each found, what each may do (agents.py)
+// ⚙ > Devices > Agents: the paired agents, what each found, what each may do (agents.py)
 // ---------------------------------------------------------------------------------------------
 
 const CAP_TEXT = {

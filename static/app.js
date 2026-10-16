@@ -248,7 +248,7 @@ function overlay_open() {
 }
 
 /** The reload a good config.toml asks for, or a tick in ⚙ that changed the cards' buttons. Not
- * while something is open: a tick in ⚙ > Agents would close ⚙ and drop you on the first page.
+ * while something is open: a tick in ⚙ > Devices > Agents would close ⚙ and drop you on the first page.
  * It waits until that is closed, then reloads once. */
 let reloadPending = false;
 function reload_when_free() {
@@ -1676,7 +1676,7 @@ function section(body, title, rows) {
 }
 
 /** The containers the guest's own agent reports, stopped ones first. A container ticked in
-    ⚙ > Agents has its buttons on its row (signed in), each one a card of its own for the
+    ⚙ > Devices > Agents has its buttons on its row (signed in), each one a card of its own for the
     confirmation and the progress, so "starting…" watches that container and not the guest. */
 function agent_containers(body, c) {
   const all = get(`agents.${c.agent}.containers`) || {};

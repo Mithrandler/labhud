@@ -1119,7 +1119,7 @@ AGENT_FILES = {"/agent/install.sh": os.path.join(AGENTS, "install.sh"),
 # Where install-agent.sh downloads labhud-agent from (a mirror, or a forge of your own); the
 # checksums stay labhud's own (agents/agent-release.json), whatever the address.
 AGENT_RELEASES = os.environ.get("LABHUD_AGENT_RELEASES", "")
-# The image `docker run` uses in ⚙ > Agents. Without a release pinned it is shown only when set here.
+# The image `docker run` uses in ⚙ > Devices > Agents. Without a release pinned it is shown only when set here.
 AGENT_IMAGE = os.environ.get("LABHUD_AGENT_IMAGE", "")
 
 
@@ -1477,7 +1477,7 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
 
     def _agents_admin(self, op):
-        """⚙ > Agents: the list, a pairing code, what each agent may do, removing one. From labhud's
+        """⚙ > Devices > Agents: the list, a pairing code, what each agent may do, removing one. From labhud's
         own page, as the admin when there is one (like pairing a phone). One answer for every refusal."""
         body = self._small_json(64 * 1024)
         if body is None or not self._may_manage():

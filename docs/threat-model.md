@@ -86,7 +86,7 @@ HTTP (`setupmode.py`).
 |---|---|---|
 | A LAN device posts to the agent | HMAC with a secret only labhud and the agent know, plus the agent's IP allowlist | nothing, while the secret stays secret |
 | Replaying a captured request | 30-second window, nonce, each signature accepted once | nothing |
-| A stolen phone presses buttons | the app's own lock if chosen (screen lock or fingerprint); Remove in ⚙ > Phones ends its token | without the app lock, an unlocked phone is as good as standing at an unlocked display |
+| A stolen phone presses buttons | the app's own lock if chosen (screen lock or fingerprint); Remove in ⚙ > Devices > Phones ends its token | without the app lock, an unlocked phone is as good as standing at an unlocked display |
 | Injecting a command | the agent runs only commands written in its TOML file; the name only selects one | nothing |
 | Someone at the display presses SHUT DOWN | the PIN, if set (`[lock]`); a confirmation dialog | without a PIN nobody is identified. Keep destructive actions to what a guest may press |
 | Someone at the display guesses the PIN | 5 wrong PINs stop the checks for 1 min, doubling up to 1 h; each pause is in the timeline | 10,000 PINs: a patient guesser gets through in weeks, and it shows in the history long before |
