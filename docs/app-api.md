@@ -89,6 +89,7 @@ lists the phones signed in as the admin, and Remove ends a phone at once.
 | `GET /api/v1/info` | `api`, `version`, `title`, `demo`, `actions` (signed actions on), `maintenance_buttons`, `pairing`, `admin` (signing in to pair works), `trends` (the keys that have history), `uptime` (`/api/v1/uptime` answers) |
 | `GET /api/v1/state` | the whole state, below |
 | `GET /api/v1/card/<id>` | one card as in `state`, plus `sections` (its panel) |
+| `GET /api/v1/game/<id>` | one game server as in a games page's `servers`, plus `who` (the players' names, when the game gives them) |
 | `GET /api/v1/stream` | SSE: `event: state` with the same document as `/api/v1/state`, at once and on every change (at most once a second), `: ping` every 20 s |
 | `GET /api/v1/history` | `{step, series: {key: [values]}}`: the last hours of every trend, one point per `step` seconds; `?long`: 15-minute points over 7 days |
 | `GET /api/v1/uptime` | `{step, cards: {id: [values]}, percent: {id: 99.4}}`: per card with a check, one value per 15 minutes, oldest first: the share of that time it was up (0..1), `-1` off on purpose (schedule, on demand, maintenance), `null` not known. `?range=24h` (default) or `?range=7d`; `percent` is over the range, leaving out the off and unknown slices |
@@ -136,6 +137,13 @@ A card:
   danger, choices?}`. Ask `confirm` before sending; with `choices`, offer those instead
   (`{label, action, danger}`), each sent as its own action.
 - `sections` (only from `/api/v1/card/<id>`): the panel, `[{title, rows: [[name, value, bad]]}]`.
+
+A page with `games: true` has no fixed cards: its `servers` are the game servers, as the wall's
+tiles show them (the same function, checked by a test): `{id, name, game, state, running, title,
+line, players, max, address, ram_mb, ram_max_mb, uptime, map, version, actions}`. `title` and
+`line` are the tile's two lines ("Minecraft", "3/20 players" or "stopped"); `actions` are like a
+card's, from the Pterodactyl agent when it has the server ticked; `players`, `max`, `map` and
+`version` are null when the game has no public query or did not answer.
 
 Times in the texts (`note`, rows) are written in labhud's own time zone.
 

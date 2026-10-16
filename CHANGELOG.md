@@ -9,6 +9,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [0.2.16] - unreleased
 
 ### Added
+- **Game servers in the app's API.** A games page in `/api/v1/state` carries `servers`: each game
+  server as the wall's tile shows it (title, line, players, address, RAM, uptime, buttons), from the
+  same function as the wall's (`game_card()`, checked against `cardstate.py` by the parity test);
+  `GET /api/v1/game/<id>` adds who is playing.
 - **Agents** ([docs/agents.md](docs/agents.md)): labhud-agent, one per host, dials labhud on
   `/api/agent/ws` and acts only through the host's own APIs: Docker, systemd, reboot and package
   updates, Wake-on-LAN, Proxmox guests, Pterodactyl servers. Paired from a one-time code in the

@@ -1311,6 +1311,13 @@ class Handler(BaseHTTPRequestHandler):
         if c:
             card = next((x for x in app_state(full=True)["cards"] if x["id"] == c.group(1)), None)
             return self._json(card) if card else self._json({"error": "no such card"}, 404)
+        g = re.fullmatch(r"/api/v1/game/([A-Za-z0-9_-]{1,64})", path)
+        if g:
+            with _lock:
+                data = dict(_data)
+            found = [x for xs in cardstate.games(TOPOLOGY, data, actions_on(), full=True).values()
+                     for x in xs if x["id"] == g.group(1)]
+            return self._json(found[0]) if found else self._json({"error": "no such game server"}, 404)
         if path == "/api/v1/history":
             return self._json(history(long="long" in self.path.partition("?")[2]))
         if path == "/api/v1/uptime":

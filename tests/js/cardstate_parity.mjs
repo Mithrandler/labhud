@@ -6,7 +6,8 @@ import fs from "fs";
 const src = fs.readFileSync(new URL("../../static/app.js", import.meta.url), "utf8");
 const NAMES = ["get", "bytes", "used_of", "rate", "duration", "format", "bad_pressure", "severity",
   "raw_severity", "maintenance_until", "quiet_off", "off_label", "clock", "card_status", "raw_status",
-  "card_bad", "is_guest", "summary", "detail_row", "when", "short_time", "action_label", "useful_actions"];
+  "card_bad", "is_guest", "summary", "detail_row", "when", "short_time", "action_label", "useful_actions",
+  "game_buttons", "game_card"];
 
 function extract(name) {
   const start = src.search(new RegExp(`^function ${name}\\(`, "m"));
@@ -26,6 +27,7 @@ const body = `
   const nf1 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const LAST_SEV = {};
   const SEV_RANK = { "": 0, warn: 1, crit: 2 };
+  ${src.match(/^const AGENT_VERBS = [^;]+;/m)[0]}
   const MONTHS = ${JSON.stringify(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])};
   ${NAMES.map(extract).join("\n")}
   const rounds = [];
@@ -40,6 +42,12 @@ const body = `
         actions: useful_actions(c).map((a) => [a, action_label(a)]),
       };
     }
+    // the games pages: each server's tile, as game_card() makes it in mount_games()
+    for (const p of CFG.pages) if (p.games) (get(p.games) || []).forEach((sv, i) => {
+      const g = game_card(sv, i);
+      out["games:" + p.id + ":" + i] = { title: g.title, line: g.line, running: g.check[1],
+        actions: useful_actions(g).map((a) => [a, action_label(a)]) };
+    });
   }
   return rounds;`;
 process.stdout.write(JSON.stringify(new Function("input", body)(input)));

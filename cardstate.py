@@ -545,6 +545,57 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False):
     return out
 
 
+# --- game servers (a page with `games`): the display's game_card() in app.js ---
+
+def _game_buttons(data, ident):
+    """A game server's buttons from an agent that has it ticked (Pterodactyl), else None."""
+    for a in (data.get("agents") or {}).values():
+        b = ((a.get("buttons") or {}).get("ptero") or {}) if isinstance(a, dict) else {}
+        if ident in b:
+            return b[ident]
+    return None
+
+
+def game(sv, i, data, topology, actions_on=False, full=False):
+    """{id, name, game, state, running, line, players, max, address, ram_mb, ram_max_mb, uptime,
+    map, version, actions}: one tile of the games page; `full` adds who is playing."""
+    running = sv.get("state") == "running"
+    q = sv.get("query") if isinstance(sv.get("query"), dict) else None
+    ident = sv.get("id") or ""
+    players = q.get("players") if q else None
+    if not running:
+        line = "stopped"
+    elif players is not None:
+        line = f"{_js(players)}{'/' + _js(q['max']) if q.get('max') else ''} players"
+    else:
+        line = "running"
+    name = sv.get("game") or sv.get("name") or "server"
+    names = (_game_buttons(data, ident) or [f"game-{v}-{ident}" for v in ("start", "stop", "restart")]) if ident else []
+    c = {"id": f"game{i}", "name": name, "check": ["known", running], "actions": names}
+    out = {"id": ident, "name": sv.get("name") or name, "game": sv.get("game") or "", "state": sv.get("state") or "",
+           "running": running, "title": sv.get("game") or sv.get("name") or "?", "line": line,
+           "players": players, "max": q.get("max") if q else None, "address": sv.get("address") or "",
+           "ram_mb": round(sv.get("ram_mb") or 0), "ram_max_mb": sv.get("ram_max_mb"),
+           "uptime": round(sv.get("uptime_s") or 0), "map": q.get("map") if q else None,
+           "version": q.get("version") if q else None,
+           "actions": [_action(a, c, topology.get("actions") or {}) for a in useful_actions(c, data, actions_on)]}
+    if full:
+        out["who"] = [n for n in (q.get("names") or []) if isinstance(n, str)] if q else []
+    return out
+
+
+def games(topology, data, actions_on=False, full=False):
+    """{page id: [game, ...]} for every page with `games`."""
+    out = {}
+    for p in topology["pages"]:
+        if p.get("games"):
+            servers = get(data, p["games"])
+            out[p["id"]] = [game(sv, i, data, topology, actions_on, full)
+                            for i, sv in enumerate(servers if isinstance(servers, list) else [])
+                            if isinstance(sv, dict)][:15]
+    return out
+
+
 def state(topology, data, actions_on=False, full=False):
     """Everything an app shows: pages with their cards, the problems first, the alerts."""
     pages, cards, seen = [], [], set()
@@ -561,6 +612,10 @@ def state(topology, data, actions_on=False, full=False):
                     cards.append(card(c, data, topology, actions_on, page=p["id"], group=g["id"], full=full))
             groups.append({"id": g["id"], "title": g["title"], "cards": ids})
         pages.append({"id": p["id"], "title": p["title"], "groups": groups, **({"games": True} if p.get("games") else {})})
+    every_game = games(topology, data, actions_on, full)
+    for page in pages:
+        if page.get("games"):
+            page["servers"] = every_game[page["id"]]
     problems = [c["id"] for c in cards if c["bad"]]
     alerts_cfg = topology.get("alerts") or {}
     alerts = get(data, alerts_cfg["path"]) if alerts_cfg.get("path") else None

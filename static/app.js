@@ -1168,6 +1168,22 @@ function game_buttons(id) {
   return null;
 }
 
+/** One game server as a tile shows it: its two lines, and the card behind it (state, buttons).
+    cardstate.py `game()` says the same for the app (tests/js/cardstate_parity.mjs). */
+function game_card(sv, i) {
+  const running = sv.state === "running";
+  // The numbers are in `query` (null when the game has no public query or did not answer), not on the server.
+  const q = sv.query || null;
+  const id = sv.id || "";
+  return {
+    id: "game" + i, name: sv.game || sv.name || "server", panel: "game", game: sv, ident: id,
+    check: ["known", running],
+    actions: id ? (game_buttons(id) || ["game-start-" + id, "game-stop-" + id, "game-restart-" + id]) : [],
+    title: sv.game || sv.name || "?",
+    line: running ? (q && q.players != null ? q.players + (q.max ? "/" + q.max : "") + " players" : "running") : "stopped",
+  };
+}
+
 /** A games page: the grid comes live from the server list at `path` (Pterodactyl), so it has no
     fixed cards in the topology. */
 function mount_games(host, path) {
@@ -1178,16 +1194,8 @@ function mount_games(host, path) {
     d.appendChild(g); d.appendChild(s);
     d.hidden = true;
     host.appendChild(d);
-    // A game's card changes on every update, so its state and actions are read on demand,
-    // from `dataset`, not frozen at build time.
-    const card = {
-      id: "game" + i, name: "server", panel: "game", game: null,
-      get check() { return ["known", d.dataset.running === "1"]; },
-      get actions() {
-        const id = d.dataset.ident;
-        return id ? (game_buttons(id) || ["game-start-" + id, "game-stop-" + id, "game-restart-" + id]) : [];
-      },
-    };
+    // The tile keeps one card object (bind_touch holds it); each update refreshes what is in it.
+    const card = { id: "game" + i, name: "server", panel: "game", game: null, check: ["known", false], actions: [] };
     bind_touch(d, card);
     tiles.push({ d, g, s, card });
   }
@@ -1197,17 +1205,11 @@ function mount_games(host, path) {
       const sv = servers[i];
       if (!sv) { if (!x.d.hidden) x.d.hidden = true; return; }
       if (x.d.hidden) x.d.hidden = false;
-      put(x.g, sv.game || sv.name || "?");
-      const running = sv.state === "running";
-      // The numbers are in `query` (null when the game has no public query or did not answer), not on the server.
-      const q = sv.query || null;
-      const players = q && q.players != null ? q.players + (q.max ? "/" + q.max : "") + " players" : "running";
-      put(x.s, running ? players : "stopped");
-      cls(x.d, "on", running);
-      x.d.dataset.ident = sv.id || "";
-      x.d.dataset.running = running ? "1" : "0";
-      x.card.name = sv.game || sv.name || "server";
-      x.card.game = sv;
+      const gc = game_card(sv, i);
+      put(x.g, gc.title);
+      put(x.s, gc.line);
+      cls(x.d, "on", gc.check[1]);
+      Object.assign(x.card, { name: gc.name, game: sv, check: gc.check, actions: gc.actions });
     });
   });
 }

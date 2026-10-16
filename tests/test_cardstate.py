@@ -53,13 +53,28 @@ class Parity(DemoServer):
         # warn (85), crit (95), crit kept by the hysteresis (89), back to fine (50), then random moves
         snaps = [data, shifted(data, cfg, 0, to=85), shifted(data, cfg, 0, to=95), shifted(data, cfg, 0, to=89),
                  shifted(data, cfg, 0, to=50), shifted(data, cfg, 40), shifted(data, cfg, 36), shifted(data, cfg, -30), maint]
+        # a game server ticked on a Pterodactyl agent: its buttons come from the agent
+        ptero = copy.deepcopy(data)
+        ptero["agents"] = {"_t": 1, "ptero": {"buttons": {"ptero": {
+            "a1f3": [f"agent-9dfe8f36-ptero-a1f3-{v}" for v in ("start", "stop", "restart")]}}}}
+        snaps.append(ptero)
 
-        rounds = json.loads(subprocess.run([NODE, HARNESS], input=json.dumps({"cfg": cfg, "snapshots": snaps}),
-                                           capture_output=True, text=True, check=True, timeout=30).stdout)
+        run = subprocess.run([NODE, HARNESS], input=json.dumps({"cfg": cfg, "snapshots": snaps}),
+                             capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 0, run.stderr[:2000])
+        rounds = json.loads(run.stdout)
         cardstate._last_sev.clear()
         seen = set()
         for n, (snap, js) in enumerate(zip(snaps, rounds)):
-            by_id = {c["id"]: c for c in cardstate.state(cfg, snap, actions_on=True)["cards"]}
+            st = cardstate.state(cfg, snap, actions_on=True)
+            by_id = {c["id"]: c for c in st["cards"]}
+            tiles = {k: v for k, v in js.items() if k.startswith("games:")}
+            js = {k: v for k, v in js.items() if k not in tiles}
+            got_tiles = {f"games:{p['id']}:{i}": {"title": g["title"], "line": g["line"], "running": g["running"],
+                                                  "actions": [[a["name"], a["label"]] for a in g["actions"]]}
+                         for p in st["pages"] if p.get("games") for i, g in enumerate(p["servers"])}
+            self.assertTrue(tiles)
+            self.assertEqual(got_tiles, tiles)
             self.assertEqual(set(by_id), set(js))
             for cid, want in js.items():
                 got = by_id[cid]
@@ -90,6 +105,19 @@ class Parity(DemoServer):
         self.assertTrue(cards["events"]["rows"])
         self.assertEqual(out["problems"], [c["id"] for c in out["cards"] if c["bad"]])
         self.assertEqual([p["id"] for p in out["pages"]], [p["id"] for p in cfg["pages"]])
+        games = next(p for p in out["pages"] if p.get("games"))
+        mc = games["servers"][0]
+        self.assertEqual((mc["id"], mc["game"], mc["line"], mc["players"], mc["max"]), ("a1f3", "Minecraft", "3/20 players", 3, 20))
+        self.assertEqual(mc["who"], ["alex", "sam", "kim"])
+        short = next(p for p in cardstate.state(cfg, data)["pages"] if p.get("games"))
+        self.assertNotIn("who", short["servers"][0])
+
+    def test_game_route(self):
+        status, _, body = self.get("/api/v1/game/a1f3")
+        g = json.loads(body)
+        self.assertEqual((status, g["name"], g["running"]), (200, "mc", True))
+        self.assertIn("who", g)
+        self.assertEqual(self.get("/api/v1/game/nope")[0], 404)
 
 
 class Formats(unittest.TestCase):
