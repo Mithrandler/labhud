@@ -328,6 +328,35 @@ class Buttons(Server):
         c.close()
 
 
+class Logs(Server):
+    """POST /api/setup/logs: a ticked container's last lines, for the admin only."""
+
+    def test_logs(self):
+        c, session, aid, key = self.pair(name="logbox")
+        origin = f"http://{self.host}"
+        self.manage("caps", {"id": aid, "caps": ["docker"]})
+        self.manage("targets", {"id": aid, "cap": "docker", "targets": ["jellyfin"]})
+        c.read_signed(key, session), c.read_signed(key, session)
+        self.assertEqual(self.post_json("/api/setup/logs", {"agent": "logbox", "target": "plex"}, origin)[0], 502)
+        answer = {}
+        t = threading.Thread(target=lambda: answer.update(r=self.post_json("/api/setup/logs", {"agent": "logbox", "target": "jellyfin"}, origin)))
+        t.start()
+        cmd = c.read_signed(key, session)
+        self.assertEqual((cmd["verb"], cmd["target"]), ("logs", "jellyfin"))
+        c.send_signed(key, session, aid, {"type": "result", "cmd": cmd["cmd"], "ok": True, "output": "line 1\nline 2\n"})
+        t.join(5)
+        self.assertEqual(answer["r"][0], 200)
+        self.assertEqual(json.loads(answer["r"][1]), {"ok": True, "output": "line 1\nline 2\n"})
+        self.assertEqual(self.post_json("/api/setup/logs", {"agent": "nobody", "target": "jellyfin"}, origin)[0], 404)
+        self.assertEqual(self.post_json(f"/action/agent-{aid}-docker-jellyfin-logs", {}, origin)[0], 403)  # not an action
+        ticket, self.ticket = self.ticket, None
+        try:
+            self.assertEqual(self.post_json("/api/setup/logs", {"agent": "logbox", "target": "jellyfin"}, origin)[0], 403)
+        finally:
+            self.ticket = ticket
+        c.close()
+
+
 class Names(unittest.TestCase):
     def setUp(self):
         self.real = agents.store
@@ -344,7 +373,7 @@ class Names(unittest.TestCase):
     def test_round_trip(self):
         for cap, target in (("docker", "jellyfin"), ("docker", "Plex_1"), ("systemd", "nginx.service"),
                             ("wol", "aa:bb:cc:dd:ee:ff"), ("host", "host")):
-            for verb in agents.VERBS[cap]:
+            for verb in agents.acts(cap):
                 name = agents.action_name("a1b2c3d4", cap, target, verb)
                 self.assertLessEqual(len(name), 64)
                 self.assertRegex(name, r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -353,6 +382,7 @@ class Names(unittest.TestCase):
     def test_resolve_refuses(self):
         self.assertIsNone(agents.resolve("agent-a1b2c3d4-docker-plex-restart"))       # not ticked
         self.assertIsNone(agents.resolve("agent-a1b2c3d4-docker-jellyfin-exec"))      # no such verb
+        self.assertIsNone(agents.resolve("agent-a1b2c3d4-docker-jellyfin-logs"))      # a read, not a button
         self.assertIsNone(agents.resolve("agent-a1b2c3d4-pve-101-start"))             # cap not ticked
         self.assertIsNone(agents.resolve("agent-ffffffff-docker-jellyfin-restart"))   # no such agent
         self.assertIsNone(agents.resolve("vm-pve-101-start"))
@@ -361,7 +391,7 @@ class Names(unittest.TestCase):
         host = agents.card_actions({"id": "n", "agent": "n100"})
         self.assertEqual([n.rsplit("-", 1)[1] for n in host], ["reboot", "shutdown", "update"])
         one = agents.card_actions({"id": "j", "agent": "n100", "agent_target": "docker:jellyfin"})
-        self.assertEqual(one, [f"agent-a1b2c3d4-docker-jellyfin-{v}" for v in ("start", "stop", "restart")])
+        self.assertEqual(one, [f"agent-a1b2c3d4-docker-jellyfin-{v}" for v in ("start", "stop", "restart", "update")])
         self.assertEqual(agents.card_actions({"id": "p", "agent": "n100", "agent_target": "docker:plex"}), [])
         self.assertEqual(agents.card_actions({"id": "x", "agent": "nobody"}), [])
 
@@ -372,7 +402,7 @@ class Names(unittest.TestCase):
     def test_snapshot_buttons(self):
         b = agents.snapshot()["n100"]["buttons"]
         self.assertEqual(sorted(b), ["docker", "systemd"])          # wol and host are not listed by pages
-        self.assertEqual(b["docker"]["jellyfin"], [f"agent-a1b2c3d4-docker-jellyfin-{v}" for v in ("start", "stop", "restart")])
+        self.assertEqual(b["docker"]["jellyfin"], [f"agent-a1b2c3d4-docker-jellyfin-{v}" for v in ("start", "stop", "restart", "update")])
         self.assertNotIn("plex", b["docker"])                         # only what is ticked
         for names in b["docker"].values():
             for n in names:
@@ -544,6 +574,19 @@ class Commands(unittest.TestCase):
         t.start()
         self.assertEqual(agents.command(self.aid, "docker", "restart", "jellyfin"), (False, "no such container"))
         t.join()
+
+    def test_read_gives_the_output(self):
+        self.allow()
+
+        def answer():
+            cmd = self.agent_read()
+            self.assertEqual((cmd["cap"], cmd["verb"], cmd["target"]), ("docker", "logs", "jellyfin"))
+            self.agent_send({"type": "result", "cmd": cmd["cmd"], "ok": True, "output": "x" * 10 + "y" * agents.MAX_OUTPUT})
+        t = threading.Thread(target=answer)
+        t.start()
+        self.assertEqual(agents.read(self.aid, "docker", "logs", "jellyfin"), (True, "", "y" * agents.MAX_OUTPUT))
+        t.join()
+        self.assertEqual(agents.read(self.aid, "docker", "logs", "plex"), (False, "not allowed", ""))
 
     def test_no_answer(self):
         self.allow()

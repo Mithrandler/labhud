@@ -10,7 +10,7 @@ APIs, never through a shell or scripts you write. The agent is
 | capability | on the host it uses | labhud can |
 |---|---|---|
 | `sensors` | `/proc`, hwmon, `nvidia-smi`, RAPL | show CPU, memory, disk, load, uptime, CPU temperature, GPUs, power |
-| `docker` | the socket (`/var/run/docker.sock`) | start, stop, restart containers |
+| `docker` | the socket (`/var/run/docker.sock`) | start, stop, restart, update containers; read their logs (the admin) |
 | `systemd` | D-Bus (`org.freedesktop.systemd1`) | start, stop, restart services |
 | `host` | D-Bus (`login1`, a transient unit) | reboot, shut down, update packages |
 | `wol` | a UDP broadcast | wake other machines on its network |
@@ -82,6 +82,13 @@ tooling, and ⚙ only shows which version each agent runs.
   down) while it is away.
 - `agent_target = "<capability>:<target>"` next to `agent`: the card controls one target
   instead, and its dot follows that target's state.
+- A **container** ticked under `docker`, on its row in a guest's panel (the guest card has
+  `agent`) or on a card of its own (`agent_target = "docker:<name>"`): **update available**
+  when its registry has a newer image than the one it runs (the agent checks 2 minutes after it
+  starts, then every 6 hours), and then **UPDATE**: the agent pulls the image and makes the
+  container again with the same settings, keeping the old one until the new one runs (and
+  putting it back if it does not). "updating…" until the agent says how it went, in the
+  timeline. The admin also gets **LOGS**: its last 200 lines under the row, with Refresh.
 - `wake = "<agent>:<mac>"`: WAKE from another agent, one that is up while this machine is off
   (the MAC ticked under its Wake-on-LAN). It adds to whatever the card's own `agent` gives, so a
   Proxmox host can have its sensors and SHUT DOWN from its own agent and WAKE from a neighbour's.

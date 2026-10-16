@@ -7,7 +7,8 @@ const src = fs.readFileSync(new URL("../../static/app.js", import.meta.url), "ut
 const NAMES = ["get", "bytes", "used_of", "rate", "duration", "format", "bad_pressure", "severity",
   "raw_severity", "maintenance_until", "quiet_off", "off_label", "clock", "card_status", "raw_status",
   "card_bad", "is_guest", "summary", "detail_row", "when", "short_time", "action_label", "useful_actions",
-  "action_verb", "action_rank", "action_danger", "order_actions", "game_buttons", "game_card"];
+  "action_verb", "action_rank", "action_danger", "order_actions", "game_buttons", "game_card", "card_container",
+  "container_rows", "agent_status"];
 
 function extract(name) {
   const start = src.search(new RegExp(`^function ${name}\\(`, "m"));
@@ -29,6 +30,7 @@ const body = `
   const SEV_RANK = { "": 0, warn: 1, crit: 2 };
   ${src.match(/^const AGENT_VERBS = [^;]+;/m)[0]}
   ${src.match(/^const ACTION_RANK = [^;]+;/m)[0]}
+  ${src.match(/^const AGENT_UP = \{[^}]+\};/m)[0]}
   const MONTHS = ${JSON.stringify(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])};
   ${NAMES.map(extract).join("\n")}
   const rounds = [];
@@ -41,6 +43,7 @@ const body = `
         status: card_status(c), bad: card_bad(c), summary: summary(c),
         metrics: (c.metrics || []).map(([p, , f]) => [format(get(p), f), severity(p, f, get(p))]),
         actions: useful_actions(c).map((a) => [a, action_label(a), action_danger(a)]),
+        containers: container_rows(c).map((r) => [r.name, r.up, r.status, r.update, r.updating, r.actions]),
       };
     }
     // the games pages: each server's tile, as game_card() makes it in mount_games()

@@ -85,11 +85,17 @@ class Parity(DemoServer):
                     self.assertEqual(got["summary"], want["summary"])
                     self.assertEqual([[m["value"], m["sev"]] for m in got["metrics"]], want["metrics"])
                     self.assertEqual([[a["name"], a["label"], a["danger"]] for a in got["actions"]], want["actions"])
+                    rows = cardstate.containers(next(c for cs in cfg["cards"].values() for c in cs if c["id"] == cid), snap)
+                    self.assertEqual([[r["name"], r["up"], r["status"], r["update"], r["updating"], r["actions"]] for r in rows],
+                                     want["containers"])
+                    seen.update(("container", r[3], r[4], bool(r[5])) for r in want["containers"])
                 seen.update(m[1] for m in want["metrics"])
                 seen.add(("bad", want["bad"]))
                 seen.add(("status", str(want["status"])))
         # the snapshots really went through every case being compared
-        self.assertTrue({"warn", "crit", "", ("bad", True), ("bad", False), ("status", "maintenance")} <= seen, seen)
+        self.assertTrue({"warn", "crit", "", ("bad", True), ("bad", False), ("status", "maintenance"),
+                         ("container", True, False, True), ("container", True, True, False),
+                         ("container", False, False, True), ("container", False, False, False)} <= seen, seen)
 
     def test_sections_and_rows(self):
         cfg = json.loads(self.get("/api/config")[2])
@@ -173,6 +179,37 @@ class GameTrack(unittest.TestCase):
                              capture_output=True, text=True, timeout=20)
         self.assertEqual(run.returncode, 0, run.stderr[:1000])
         self.assertEqual(json.loads(run.stdout), {"verb": "starting", "before": False, "after": True})
+
+
+class ContainerCard(unittest.TestCase):
+    """A card that is one container: UPDATE only with a newer image, no buttons while updating."""
+
+    def test_update_only_when_available(self):
+        names = [f"agent-a1b2c3d4-docker-jellyfin-{v}" for v in ("start", "stop", "restart", "update")]
+        c = {"id": "j", "agent": "n100", "agent_target": "docker:jellyfin", "check": ["agent", "n100", "docker", "jellyfin"],
+             "actions": names}
+        data = lambda **x: {"agents": {"n100": {"online": True, "containers": {"jellyfin": dict(state="running", **x)}}}}  # noqa: E731
+        verbs = lambda d: [a.rsplit("-", 1)[1] for a in cardstate.useful_actions(c, d, True)]  # noqa: E731
+        self.assertEqual(verbs(data()), ["restart", "stop"])
+        self.assertEqual(verbs(data(update=True)), ["update", "restart", "stop"])
+        self.assertEqual(verbs(data(update=True, updating=True)), [])
+        host = dict(c, agent_target="host:host", actions=["agent-a1b2c3d4-host-host-update"])
+        self.assertEqual(cardstate.useful_actions(host, data(), True), ["agent-a1b2c3d4-host-host-update"])
+
+
+class UpdateTrack(unittest.TestCase):
+    """UPDATE on a container is followed until the agent says how it ended, about that container."""
+
+    def test_until_the_agents_event(self):
+        if not NODE:
+            self.skipTest("no node")
+        run = subprocess.run([NODE, os.path.join(ROOT, "tests", "js", "update_track.mjs")],
+                             capture_output=True, text=True, timeout=20)
+        self.assertEqual(run.returncode, 0, run.stderr[:1000])
+        ok, bad = json.loads(run.stdout)
+        self.assertEqual(ok, {"verb": "updating", "timeout": 720, "before": [False, ""], "after": [True, ""]})
+        self.assertEqual(bad, {"verb": "updating", "timeout": 720, "before": [False, ""],
+                               "after": [False, "jellyfin: update failed: pull jellyfin/jellyfin:latest: denied"]})
 
 
 if __name__ == "__main__":

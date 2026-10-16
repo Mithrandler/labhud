@@ -37,9 +37,10 @@ PING_EVERY = 25
 SEEN_EVERY = 300
 COMMAND_WAIT = 45
 EVENTS_PER_MINUTE = 10
+MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this much, the newest part)
 
 VERBS = {
-    "docker": ("start", "stop", "restart"),
+    "docker": ("start", "stop", "restart", "update", "logs"),
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
@@ -47,6 +48,14 @@ VERBS = {
     "ptero": ("start", "stop", "restart"),
 }
 CAPS = ("sensors",) + tuple(VERBS)
+# verbs that read instead of act: never a button or an action name, only read() (for the admin)
+READS = {"docker": ("logs",)}
+
+
+def acts(cap):
+    """The verbs of a capability that are buttons (everything but the reads)."""
+    return tuple(v for v in VERBS[cap] if v not in READS.get(cap, ()))
+
 TARGET = {
     "docker": re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}"),
     "systemd": re.compile(r"[A-Za-z0-9:_.@-]{1,250}\.(service|timer|socket|target|mount|path)"),
@@ -268,7 +277,7 @@ LISTED = ("docker", "systemd", "ptero")
 
 def buttons(aid, a):
     """{cap: {target: [action names]}} for the ticked targets the pages list themselves."""
-    return {cap: {t: [action_name(aid, cap, t, v) for v in VERBS[cap]] for t in _wings(a, cap, a.get("targets", {}).get(cap, []))}
+    return {cap: {t: [action_name(aid, cap, t, v) for v in acts(cap)] for t in _wings(a, cap, a.get("targets", {}).get(cap, []))}
             for cap in LISTED if cap in a.get("caps", [])}
 
 
@@ -302,7 +311,7 @@ def resolve(name):
         return None
     aid, cap, ref, verb = m.groups()
     a = get(aid)
-    if not a or verb not in VERBS[cap] or cap not in a.get("caps", []):
+    if not a or verb not in acts(cap) or cap not in a.get("caps", []):
         return None
     hits = [t for t in a.get("targets", {}).get(cap, []) if tref(t) == ref]
     return (aid, cap, hits[0], verb) if len(hits) == 1 else None
@@ -322,7 +331,7 @@ def card_actions(card):
         for aid, a in agents.items():
             if ("pve" in a.get("caps", []) and (_state.get(aid) or {}).get("node") == chk[1]
                     and str(chk[2]) in a.get("targets", {}).get("pve", [])):
-                out += [action_name(aid, "pve", str(chk[2]), v) for v in VERBS["pve"]]
+                out += [action_name(aid, "pve", str(chk[2]), v) for v in acts("pve")]
                 break
     if card.get("agent"):
         aid, a = by_name(card["agent"])
@@ -330,7 +339,7 @@ def card_actions(card):
         if a and cap in VERBS and cap in a.get("caps", []) and target in a.get("targets", {}).get(cap, []):
             # a guest card has START / SHUT DOWN / REBOOT from Proxmox already: its own agent
             # adds only UPDATE, not a second REBOOT that means something else
-            verbs = ("update",) if chk and chk[0] == "proxmox" and cap == "host" else VERBS[cap]
+            verbs = ("update",) if chk and chk[0] == "proxmox" and cap == "host" else acts(cap)
             out += [action_name(aid, cap, target, v) for v in verbs]
     if card.get("wake"):
         by, _, mac = card["wake"].partition(":")
@@ -362,9 +371,16 @@ def command(aid, cap, verb, target, wait=COMMAND_WAIT):
     """(ok, error): sends one command and waits for its result."""
     if not allowed(aid, cap, verb, target):
         return False, "not allowed"
+    return read(aid, cap, verb, target, wait)[:2]
+
+
+def read(aid, cap, verb, target, wait=COMMAND_WAIT):
+    """(ok, error, output): one command and its result's output (a read verb's text, else "")."""
+    if not allowed(aid, cap, verb, target):
+        return False, "not allowed", ""
     s = _live.get(aid)
     if not s:
-        return False, "the agent is offline"
+        return False, "the agent is offline", ""
     return s.command(cap, verb, target, wait)
 
 
@@ -410,13 +426,13 @@ class Session:
 
     def command(self, cap, verb, target, wait):
         cmd = secrets.token_hex(8)
-        slot = [threading.Event(), (False, "no answer from the agent")]
+        slot = [threading.Event(), (False, "no answer from the agent", "")]
         self._waiting[cmd] = slot
         try:
             self.send({"type": "command", "cmd": cmd, "cap": cap, "verb": verb, "target": target})
         except websock.Closed:
             self._waiting.pop(cmd, None)
-            return False, "the agent is offline"
+            return False, "the agent is offline", ""
         slot[0].wait(wait)
         self._waiting.pop(cmd, None)
         return slot[1]
@@ -471,7 +487,7 @@ class Session:
         finally:
             self.ws.close()
             for slot in list(self._waiting.values()):
-                slot[1] = (False, "the agent went offline")
+                slot[1] = (False, "the agent went offline", "")
                 slot[0].set()
             if self.aid:
                 with _lock:
@@ -541,7 +557,8 @@ class Session:
             slot = self._waiting.get(msg.get("cmd"))
             if slot:
                 err = str(msg.get("error") or "failed")[:200]
-                slot[1] = (True, "") if msg.get("ok") is True else (False, err)
+                out = msg.get("output") if isinstance(msg.get("output"), str) else ""
+                slot[1] = (True, "", out[-MAX_OUTPUT:]) if msg.get("ok") is True else (False, err, "")
                 slot[0].set()
         elif kind == "event":
             self._events = [t for t in self._events if now - t < 60]

@@ -392,6 +392,23 @@ body.p-games #content {
   border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
 #panel-body .row-actions button.danger { border-color: var(--red); color: var(--red); }
 #panel-body .row:has(.row-actions) { align-items: center; }
+#panel-body .row-actions button.on { border-color: var(--accent); color: var(--accent); }
+/* narrow: a container's buttons go under its name and state, on the right */
+@media (max-width: 600px) {
+  #panel-body .row:has(.row-actions) { flex-wrap: wrap; row-gap: 4px; }
+  #panel-body .row-actions { flex-basis: 100%; justify-content: flex-end; margin-left: 0; }
+}
+/* "update available" / "updating…" beside a container's state */
+#panel-body .v .badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+  font-weight: 700; letter-spacing: .03em; color: var(--accent); border: 1px solid var(--accent); vertical-align: 1px; }
+/* a container's last lines, under its row (the admin's LOGS) */
+#panel-body .logs { margin: 2px 0 8px; border: 1px solid var(--line); border-radius: 6px; background: #000; }
+#panel-body .logs-text { margin: 0; padding: 6px 8px; max-height: 40vh; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  font: 11px/1.35 ui-monospace, "DejaVu Sans Mono", monospace; color: var(--text); }
+#panel-body .logs-bar { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-top: 1px solid var(--line); }
+#panel-body .logs-bar .hint { flex: 1; font-size: 11px; color: var(--muted); }
+#panel-body .logs-bar button { font: inherit; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 6px;
+  border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
 
 /* ======================= action confirmation ======================= */
 

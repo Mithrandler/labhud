@@ -257,7 +257,40 @@ def agents():
         "disk": round(_wave(92.4, 0.5, 4 * 86400), 1), "cpu_temp": round(_wave(56, 7, 86400, 0.1) + _wave(0, 3, 1500)),
         "net_rx": int(_wave(2.2e6, 1.4e6, 86400, 0.6) + _wave(0, 4e5, 900)),
         "net_tx": int(_wave(0.8e6, 0.5e6, 86400, 0.6) + _wave(0, 1.5e5, 1200)),
-        "load1": round(_wave(1.2, 0.8, 1800), 2), "uptime": 86400 * 3}}}
+        "load1": round(_wave(1.2, 0.8, 1800), 2), "uptime": 86400 * 3},
+        "containers": {name: dict(x, image=img) for name, (img, x) in DEMO_CONTAINERS.items()},
+        "buttons": {"docker": {name: [f"agent-{DEMO_AGENT}-docker-{name}-{v}" for v in ("start", "stop", "restart", "update")]
+                               for name in DEMO_CONTAINERS if name != "portainer"}}}}
+
+
+# The docker VM's containers: one with a newer image, one being updated, one stopped, one not ticked.
+DEMO_AGENT = "d0c4e100"
+DEMO_CONTAINERS = {
+    "jellyfin": ("jellyfin/jellyfin:10.10.3", {"state": "running", "status": "Up 3 days (healthy)", "health": "healthy", "update": True}),
+    "sonarr": ("lscr.io/linuxserver/sonarr:latest", {"state": "running", "status": "Up 3 days"}),
+    "radarr": ("lscr.io/linuxserver/radarr:latest", {"state": "running", "status": "Up 3 days", "update": True, "updating": True}),
+    "qbittorrent": ("lscr.io/linuxserver/qbittorrent:latest", {"state": "running", "status": "Up 3 days"}),
+    "flaresolverr": ("ghcr.io/flaresolverr/flaresolverr:latest", {"state": "exited", "status": "Exited (1) 2 hours ago"}),
+    "portainer": ("portainer/portainer-ce:2.21.4", {"state": "running", "status": "Up 3 days"}),
+}
+
+
+def logs(name):
+    """A container's last lines, made up (the demo's POST /api/setup/logs)."""
+    now = time.time()
+    lines = {
+        "jellyfin": ["[INF] [{}] Emby.Server.Implementations.ScheduledTasks.TaskManager: Scan Media Library Completed",
+                     "[INF] [{}] MediaBrowser.MediaEncoding.Transcoding.TranscodeManager: FFmpeg exited with code 0",
+                     "[WRN] [{}] Jellyfin.Networking.Manager.NetworkManager: Unable to bind to 0.0.0.0:1900"],
+        "flaresolverr": ["{} INFO     FlareSolverr 3.3.21", "{} INFO     Testing web browser installation...",
+                         "{} ERROR    Error: Chrome failed to start: exited abnormally"],
+    }.get(name, ["{} [Info] RssSyncService: RSS Sync Completed. Reports found: 100, Reports grabbed: 0",
+                 "{} [Info] DownloadDecisionMaker: Processing 100 releases"])
+    out = []
+    for i in range(40):
+        t = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now - (40 - i) * 97))
+        out.append(lines[i % len(lines)].format(t))
+    return "\n".join(out) + "\n"
 
 
 FETCHERS = {"proxmox": (proxmox, 10), "temp": (temp, 10), "synology": (synology, 30), "pbs": (pbs, 60),

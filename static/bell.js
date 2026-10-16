@@ -69,7 +69,7 @@ function track_text(t, now) {
   if (t.phase === "sending") return [`${t.label}`, "sending…", time];
   if (t.phase === "waiting") return [`${t.label}`, `${t.verb}…`, time];
   if (t.phase === "done") return [`${t.label}`, t.doneText, time];
-  if (t.phase === "timeout") return [`${t.label}`, `no change after ${ACTION_TIMEOUT / 60} min`, time];
+  if (t.phase === "timeout") return [`${t.label}`, `no change after ${(t.timeout || ACTION_TIMEOUT) / 60} min`, time];
   return [`${t.label}`, t.error || "refused", time];
 }
 

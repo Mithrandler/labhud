@@ -143,6 +143,10 @@ A card:
   danger, choices?}`. Ask `confirm` before sending; with `choices`, offer those instead
   (`{label, action, danger}`), each sent as its own action.
 - `sections` (only from `/api/v1/card/<id>`): the panel, `[{title, rows: [[name, value, bad]]}]`.
+- `containers` and `agent` (only from `/api/v1/card/<id>`, a card whose own agent has Docker):
+  `[{name, up, status, update, updating, actions}]`, stopped ones first, `actions` as above (UPDATE
+  only with `update`, none while `updating`). The admin reads one's last lines with
+  `POST /api/setup/logs {agent, target}` → `{ok, output}` (only ticked containers).
 - `charts` (a card with an agent of its own): its agent's numbers that have a history, for the
   host's charts beside `metrics` with `trend` (leave out a label the metrics already chart).
 

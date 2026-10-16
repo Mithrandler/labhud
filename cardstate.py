@@ -366,8 +366,22 @@ AGENT_VERBS = {"start": "START", "stop": "STOP", "restart": "RESTART", "shutdown
                "reboot": "REBOOT", "update": "UPDATE", "wake": "WAKE"}
 
 
+def _container(c, data):
+    """The container a card with `agent_target = "docker:<name>"` is, as its agent reports it."""
+    cap, _, target = (c.get("agent_target") or "").partition(":")
+    if cap != "docker" or not c.get("agent"):
+        return None
+    x = (get(data, f"agents.{c['agent']}.containers") or {}).get(target)
+    return x if isinstance(x, dict) else {}
+
+
 def useful_actions(c, data, enabled):
     every = [a for a in c.get("actions") or [] if enabled or a.startswith("agent-")]
+    # a container: UPDATE only when its registry has a newer image, nothing while it is updated
+    x = _container(c, data)
+    if x is not None:
+        every = [] if x.get("updating") is True else \
+            [a for a in every if action_verb(a) != "update" or x.get("update") is True]
     starts = lambda a: (a.endswith("-start") or a.startswith(("wol-", "game-start-"))  # noqa: E731
                         or (a.startswith("agent-") and a.endswith("-wake")))
     stops = lambda a: bool(re.search(r"-(shutdown|reboot)$", a) or re.fullmatch(r"agent-.+-(stop|restart)", a)) \
@@ -412,6 +426,25 @@ def _action(name, c, actions):
     if own.get("choices"):
         out["choices"] = [{"label": ch["label"], "action": ch["action"],
                            "danger": action_danger(ch["action"])} for ch in own["choices"]]
+    return out
+
+
+def containers(c, data):
+    """The containers of a card's own agent (a guest's panel), stopped ones first, each with its
+    buttons: app.js `container_rows`. Each row is a card of its own for the buttons' rules."""
+    every = get(data, f"agents.{c.get('agent')}.containers") if c.get("agent") else None
+    if not isinstance(every, dict):
+        return []
+    btns = (get(data, f"agents.{c['agent']}.buttons") or {}).get("docker") or {}
+    out = []
+    for n in sorted(every, key=lambda n: (every[n].get("state") == "running", n.lower(), n)):
+        x = every[n] if isinstance(every[n], dict) else {}
+        up = x.get("state") == "running"
+        one = {"id": f"{c['id']}:{n}", "name": n, "agent": c["agent"], "agent_target": "docker:" + n,
+               "check": ["agent", c["agent"], "docker", n], "actions": list(btns.get(n) or [])}
+        out.append({"name": n, "up": up, "status": (x.get("status") or "running") if up else "STOPPED",
+                    "update": x.get("update") is True, "updating": x.get("updating") is True,
+                    "card": one, "actions": useful_actions(one, data, True)})
     return out
 
 
@@ -572,6 +605,12 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False):
             if isinstance(rows, list) else []
     if full:
         out["sections"] = sections(c, data)
+        rows = containers(c, data)
+        if rows:   # the guest's containers from its own agent; their logs: POST /api/setup/logs (admin)
+            out["agent"] = c["agent"]
+            out["containers"] = [dict({k: v for k, v in r.items() if k != "card"},
+                                      actions=[_action(a, r["card"], topology.get("actions") or {}) for a in r["actions"]])
+                                 for r in rows]
     return out
 
 

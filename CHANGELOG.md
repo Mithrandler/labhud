@@ -6,7 +6,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
-## [0.2.16] - unreleased
+## [0.3.0] - unreleased
 
 ### Added
 - **Alert rules on hosts, set in ⚙ > Alerts.** `[[alert]]` rules (`alerting.py`): a host's CPU,
@@ -25,7 +25,17 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **A host's charts from its agent**: a card with `agent = "<name>"` charts the agent's CPU, RAM,
   disk, temperatures and network (what the agent sends) in its panel, beside its own numbers, and
   `/api/v1` gives them as the card's `charts`. The panel's charts gain **1h** (1h, 6h, 24h, 7d).
-- The demo's docker VM has a made-up agent (charts, a disk alert).
+- **Containers: update available, UPDATE, LOGS.** A container ticked on an agent shows **update
+  available** when its registry has a newer image (the agent checks 2 minutes after it starts,
+  then every 6 hours), then **UPDATE**: the agent pulls it and makes the container again with
+  the same settings, the old one kept until the new one runs. The press is followed until the
+  agent's own word on it ("updated", or why not), "updating…" meanwhile. The admin gets
+  **LOGS** on each ticked container: its last 200 lines under the row, with Refresh. On a
+  guest's rows and on a card with `agent_target = "docker:<name>"`; in `/api/v1/card/<id>` as
+  `containers`, and `POST /api/setup/logs {agent, target}` for the admin. On a narrow screen a
+  container's buttons go under its name.
+- The demo's docker VM has a made-up agent (charts, a disk alert, containers with an update and
+  logs).
 - ⚙ > Sources names your own JSON sources: "Live agent (your own JSON)" with what it feeds, not
   just "live"; `LABHUD_JSON_<NAME>_TITLE` names any of them.
 - **⚙ > Advanced: the config file, edited in ⚙.** The editor opens inside ⚙ (no new tab, which a

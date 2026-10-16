@@ -1434,7 +1434,10 @@ const AGENT_VERBS = { start: "START", stop: "STOP", restart: "RESTART", shutdown
 /** Hides the actions that make no sense right now: we do not stop what is already stopped. */
 function useful_actions(c) {
   // no action agent: only the agents' own buttons
-  const all = (c.actions || []).filter((a) => CFG.action_url || /^agent-/.test(a));
+  let all = (c.actions || []).filter((a) => CFG.action_url || /^agent-/.test(a));
+  // a container: UPDATE only when its registry has a newer image, nothing while it is updated
+  const x = card_container(c);
+  if (x) all = x.updating === true ? [] : all.filter((a) => action_verb(a) !== "update" || x.update === true);
   const alive = card_status(c);
   const starts = (a) => /-start$/.test(a) || /^wol-/.test(a) || /^game-start-/.test(a) || /^agent-.+-wake$/.test(a);
   const stops = (a) => /-(shutdown|reboot)$/.test(a) || /^shutdown-/.test(a) || /^game-(stop|restart)-/.test(a) ||
@@ -1442,6 +1445,15 @@ function useful_actions(c) {
   const keep = alive === true ? all.filter((a) => !starts(a))
     : all.filter((a) => !stops(a));   // what is not a stop (a report, an update) works either way
   return order_actions(keep);
+}
+
+/** The container a card with agent_target = "docker:<name>" is, as its agent reports it ({} when
+    not reported); null for any other card. cardstate.py `_container`. */
+function card_container(c) {
+  const t = /^docker:(.+)$/.exec(c.agent_target || "");
+  if (!t || !c.agent) return null;
+  const x = (get(`agents.${c.agent}.containers`) || {})[t[1]];
+  return x && typeof x === "object" ? x : {};
 }
 
 /** The verb an action's name ends in ("" for the config's own, like "report"). Taken from the
@@ -1553,6 +1565,9 @@ function track_goal(name, c) {
     if (m[3] === "shutdown") return { verb: "shutting down", doneText: "off", want: () => g().running === false };
     return { verb: "rebooting", doneText: "back up", want: () => g().running === true && (g().uptime || 1e9) < Date.now() / 1000 - since };
   }
+  // a container's update runs on its agent: done or failed is the agent's event about it
+  m = /^agent-.+-docker-.+-update$/.exec(name);
+  if (m && c && c.agent_target) return update_goal(c);
   m = /^agent-.+-(start|wake|stop|shutdown)$/.exec(name);
   if (m && c) {
     if (m[1] === "start" || m[1] === "wake") return { verb: m[1] === "wake" ? "waking up" : "starting", doneText: "up", want: () => card_status(c) === true };
@@ -1561,6 +1576,19 @@ function track_goal(name, c) {
   if (/^wol-/.test(name) && c) return { verb: "waking up", doneText: "up", want: () => card_status(c) === true };
   if (/^shutdown-/.test(name) && c) return { verb: "shutting down", doneText: "off", want: () => card_status(c) === false || quiet_off(card_status(c)) };
   return { verb: "", doneText: "accepted", want: null };
+}
+
+/** A container's UPDATE: the agent answers at once and says how it ended in an event
+    ("<agent>: jellyfin updated (…)", "… update failed: …"), which comes with the events. */
+function update_goal(c) {
+  const target = c.agent_target.slice("docker:".length);
+  const since = Date.now() / 1000 - 5;
+  const head = `${c.agent}: ${target} `;
+  const ended = () => ((get("events.recent") || []).find((e) => e.t >= since && typeof e.name === "string" &&
+    (e.name.startsWith(head) || e.name.startsWith(`${c.agent}: ${target}:`)) && /updated|update failed|newest image/.test(e.name)));
+  // the agent gives a pull 10 minutes, then up to a minute to start the new one
+  return { verb: "updating", doneText: "updated", timeout: 12 * 60, want: () => { const e = ended(); return !!e && !e.bad; },
+    failed: () => { const e = ended(); return e && e.bad ? e.name.slice(c.agent.length + 2) : ""; } };
 }
 
 /** What "done" looks like for a game server, found by its id in the live list. */
@@ -1593,8 +1621,10 @@ function log_action(name, result, took) {
 function check_tracks() {
   for (const t of TRACKS) {
     if (t.end || t.phase !== "waiting") continue;
-    if (t.want()) finish(t, "done");
-    else if (Date.now() - t.started > ACTION_TIMEOUT * 1000) finish(t, "timeout");
+    const failed = t.failed && t.failed();
+    if (failed) finish(t, "refused", failed);
+    else if (t.want()) finish(t, "done");
+    else if (Date.now() - t.started > (t.timeout || ACTION_TIMEOUT) * 1000) finish(t, "timeout");
   }
 }
 
@@ -1617,7 +1647,7 @@ function open_panel(c) {
   touched();
 }
 
-function close_panel() { panelCard = null; $("#panel").hidden = true; }
+function close_panel() { panelCard = null; LOGS = {}; $("#panel").hidden = true; }
 
 function section(body, title, rows) {
   if (!rows.length) return;
@@ -1632,40 +1662,99 @@ function section(body, title, rows) {
   body.appendChild(l);
 }
 
-/** The containers the guest's own agent reports, stopped ones first. A container ticked in
-    ⚙ > Devices > Agents has its buttons on its row (signed in), each one a card of its own for the
-    confirmation and the progress, so "starting…" watches that container and not the guest. */
-function agent_containers(body, c) {
-  const all = get(`agents.${c.agent}.containers`) || {};
-  const names = Object.keys(all).sort((a, b) =>
-    (all[a].state === "running") - (all[b].state === "running") || a.localeCompare(b));
-  if (!names.length) return;
-  const running = names.filter((n) => all[n].state === "running").length;
+/** The containers of a card's own agent, stopped ones first, each with the buttons it gets:
+    a card of its own (`card`) for the buttons' rules, the confirmation and the progress, so
+    "starting…" watches that container and not the guest. cardstate.py `containers`. */
+function container_rows(c) {
+  const all = (c.agent && get(`agents.${c.agent}.containers`)) || {};
   const btns = (get(`agents.${c.agent}.buttons`) || {}).docker || {};
-  body.appendChild(el("h3", null, `docker containers (${running}/${names.length})`));
-  const l = el("div", "list");
-  for (const n of names) {
-    const x = all[n];
+  return Object.keys(all).sort((a, b) =>
+    (all[a].state === "running") - (all[b].state === "running") || a.localeCompare(b)).map((n) => {
+    const x = all[n] || {};
     const up = x.state === "running";
-    const r = el("div", "row" + (up ? "" : " bad"));
-    r.appendChild(el("span", "n", n));
-    r.appendChild(el("span", "v", up ? (x.status || "running") : "STOPPED"));
-    const acts = may_act() ? (btns[n] || []) : [];
-    if (acts.length) {
-      const one = { id: `${c.id}:${n}`, name: n, agent: c.agent, agent_target: "docker:" + n,
-        check: ["agent", c.agent, "docker", n], actions: acts };
-      const box = el("span", "row-actions");
-      for (const a of useful_actions(one)) {
-        const b = el("button", action_danger(a) ? "danger" : "", action_label(a));
-        b.type = "button";
-        b.addEventListener("click", () => ask_confirmation(one, a));
-        box.appendChild(b);
-      }
-      r.appendChild(box);
+    const one = { id: `${c.id}:${n}`, name: n, agent: c.agent, agent_target: "docker:" + n,
+      check: ["agent", c.agent, "docker", n], actions: btns[n] || [] };
+    return { name: n, up, status: up ? (x.status || "running") : "STOPPED", update: x.update === true,
+      updating: x.updating === true, card: one, actions: useful_actions(one) };
+  });
+}
+
+/** The containers the guest's own agent reports. A container ticked in ⚙ > Devices > Agents has
+    its buttons on its row (signed in); the admin also gets LOGS, its last lines under the row. */
+function agent_containers(body, c) {
+  const rows = container_rows(c);
+  if (!rows.length) return;
+  body.appendChild(el("h3", null, `docker containers (${rows.filter((r) => r.up).length}/${rows.length})`));
+  const l = el("div", "list");
+  for (const x of rows) {
+    const r = el("div", "row" + (x.up ? "" : " bad"));
+    r.appendChild(el("span", "n", x.name));
+    const v = el("span", "v", x.status);
+    if (x.updating) v.appendChild(el("span", "badge", "updating…"));
+    else if (x.update) v.appendChild(el("span", "badge", "update available"));
+    r.appendChild(v);
+    const box = el("span", "row-actions");
+    if (signed_in() && x.card.actions.length) box.appendChild(logs_button(c.agent, x.name));
+    for (const a of may_act() ? x.actions : []) {
+      const b = el("button", action_danger(a) ? "danger" : "", action_label(a));
+      b.type = "button";
+      b.addEventListener("click", () => ask_confirmation(x.card, a));
+      box.appendChild(b);
     }
+    if (box.children.length) r.appendChild(box);
     l.appendChild(r);
+    logs_box(l, c.agent, x.name);
   }
   body.appendChild(l);
+}
+
+// A container's logs, open under its row: kept here so the panel's redraws (on every update)
+// keep them. Read from the agent (POST /api/setup/logs, the admin only), never on their own.
+let LOGS = {};   // "agent/container" -> {text, error, loading, at}
+
+function logs_button(agent, name) {
+  const key = `${agent}/${name}`;
+  const b = el("button", LOGS[key] ? "on" : "", "LOGS");
+  b.type = "button";
+  b.addEventListener("click", () => {
+    if (LOGS[key]) delete LOGS[key];
+    else read_logs(agent, name);
+    fill_panel();
+  });
+  return b;
+}
+
+function read_logs(agent, name) {
+  const key = `${agent}/${name}`;
+  LOGS[key] = Object.assign(LOGS[key] || {}, { loading: true });
+  setup_post("logs", { agent, target: name }).then((r) => {
+    if (!LOGS[key]) return;   // closed meanwhile
+    LOGS[key] = r.ok ? { text: r.output || "", at: Date.now() } : { error: r.error === "forbidden" ? "sign in as the admin" : r.error || "failed" };
+    fill_panel();
+  });
+}
+
+function logs_box(list, agent, name) {
+  const key = `${agent}/${name}`;
+  const st = LOGS[key];
+  if (!st) return;
+  const box = el("div", "logs");
+  const pre = el("pre", "logs-text", st.error ? "✕ " + st.error : st.text == null ? "reading…" : st.text || "(no lines)");
+  box.appendChild(pre);
+  const bar = el("div", "logs-bar");
+  bar.appendChild(el("span", "hint", st.loading ? "reading…" : st.at ? "read at " + clock(st.at / 1000) : ""));
+  const again = el("button", null, "Refresh");
+  again.type = "button";
+  again.addEventListener("click", () => { read_logs(agent, name); fill_panel(); });
+  const shut = el("button", null, "Close");
+  shut.type = "button";
+  shut.addEventListener("click", () => { delete LOGS[key]; fill_panel(); });
+  bar.appendChild(again);
+  bar.appendChild(shut);
+  box.appendChild(bar);
+  list.appendChild(box);
+  // the newest lines are at the bottom
+  requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; });
 }
 
 /** Fills the panel and returns whether anything came out beyond a plain "status: running" — a row
@@ -1696,6 +1785,26 @@ function fill_panel() {
     body.appendChild(row);
   }
   const afterStatus = body.children.length;
+
+  // ---- a container from an agent (agent_target = "docker:<name>"): its image, and its logs ----
+  const ct = card_container(c);
+  if (ct) {
+    const name = c.agent_target.slice("docker:".length);
+    section(body, "container", [["image", ct.image || "—"], ["state", ct.status || ct.state || "—", ct.state && ct.state !== "running"],
+      ...(ct.updating ? [["update", "updating…"]] : ct.update ? [["update", "available"]] : [])]);
+    const ticked = ((get(`agents.${c.agent}.buttons`) || {}).docker || {})[name];
+    if (signed_in() && ticked) {
+      const l = el("div", "list");
+      const r = el("div", "row");
+      r.appendChild(el("span", "n", "logs"));
+      const box = el("span", "row-actions");
+      box.appendChild(logs_button(c.agent, name));
+      r.appendChild(box);
+      l.appendChild(r);
+      logs_box(l, c.agent, name);
+      body.appendChild(l);
+    }
+  }
 
   // ---- Proxmox guest: its numbers, plus the Docker containers on it ----
   if (c.check && c.check[0] === "proxmox") {
