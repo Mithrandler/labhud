@@ -36,6 +36,7 @@ import editmode
 import events
 import lock
 import mqtt
+import layout
 import onboard
 import notify
 import qr
@@ -1317,7 +1318,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
@@ -1662,6 +1663,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "path": path, "restart": True})
             if op == "config":
                 return self._json({"ok": True, "config": managed.read_config()})
+            if op in ("layout", "organize"):
+                found = {a["name"]: a.get("found", []) for a in agents.listing()} if agents.enabled() else {}
+                raw = managed.read_config()
+                if op == "layout":
+                    return self._json({"ok": True, **layout.view(raw, found)})
+                return self._json({"ok": True, **layout.organize(raw, str(body.get("page") or ""), found)})
+            if op == "layout-save":
+                managed.save_config(layout.apply(managed.read_config(), body.get("pages")))
+                print(f"setup: pages laid out from {who}", flush=True)
+                return self._json({"ok": True})
             if op == "text":
                 with open(CONFIG_PATH, encoding="utf-8") as f:
                     text = f.read()

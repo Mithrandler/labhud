@@ -62,6 +62,16 @@ still change in a minor version; such changes are listed under **Changed** with 
   (on a narrow screen the red ones get a row of their own). The verb comes from the action's name,
   so a container called "stopwatch" is not red; YES in the confirmation is red only for those.
   `/api/v1` gives the app the same order and `danger` (parity-tested).
+- **⚙ > Pages: pages and groups for every screen, from the page.** Hold a card or a group's title
+  and drag it (a finger too: the hold tells a drag from a scroll), or use its ⋯ menu (up, down, to
+  another group or page, rename, kind); + Group, + Page; nothing changes until Save, and the
+  screens take it when ⚙ closes. **Organize by type** proposes one page's groups as Proxmox, NAS &
+  backup, Docker hosts, VMs & LXC, PCs & other, guessed from each card (a host panel, a NAS or
+  backup by name, an agent with Docker, a guest); cards that are not machines stay in their groups,
+  and a card's new `kind` key corrects the guess. A layout that would lose or repeat a card is
+  refused. Needs the config kept by labhud (⚙ > Advanced > Take over). Routes
+  `/api/setup/{layout,layout-save,organize}`. A group holding guests of several Proxmox nodes
+  writes the node beside each guest's name.
 - **A bell instead of the bars over the cards.** What was pressed and the alerts are in one list
   under a bell beside the account, with a count on it (red with an alert or a failure not yet
   seen). A short toast at the bottom says it for 4 seconds (pressed, done, failed, a new alert,
@@ -71,6 +81,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 - A game server started or stopped from its tile is followed by its id: "starting…" no longer
   waits the full 5 minutes when the list is sorted again under it (the running ones go first, so
   the tile then shows another server).
+- ⚙'s tabs: **Look** (now with Night and Calm), **Pages**, **Alerts** (what a screen does when
+  something goes wrong) under Display; Devices, Security, Advanced under LabHUD.
 - The menu under the admin's name is now Settings and Sign out; Edit config moved to ⚙ > Advanced.
 - **HTTPS by default.** At the first start labhud makes its own certificate (ECDSA P-256,
   self-signed, 10 years) into `LABHUD_DATA/tls/` with `openssl` (now in the image) and answers

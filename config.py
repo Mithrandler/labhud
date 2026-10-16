@@ -39,7 +39,8 @@ PAGE_KEYS = {"id", "title", "group", "games"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
              "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links",
-             "agent", "agent_target", "wake"}
+             "agent", "agent_target", "wake", "kind"}
+CARD_KINDS = ("proxmox", "nas", "docker", "vm", "pc")   # cardtype.KINDS: for ⚙ > Pages > Organize by type
 # agent_target = "<capability>:<target>": what a card controls through its agent (agents.py)
 AGENT_TARGET = {"docker": r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
                 "systemd": r"[A-Za-z0-9:_.@-]{1,250}\.(service|timer|socket|target|mount|path)",
@@ -163,6 +164,11 @@ def _card(ck, where, c):
     out = {"id": cid, "name": ck.need(where, c, "name", str, "a string")}
     if (sub := ck.opt(where, c, "subtitle", str, "a string")) is not None:
         out["subtitle"] = sub
+    if (kind := ck.opt(where, c, "kind", str, "a string")) is not None:
+        if kind not in CARD_KINDS:
+            ck.err(where, f"kind must be one of {', '.join(CARD_KINDS)}, got {kind!r}")
+        else:
+            out["kind"] = kind
     if (check := _check(ck, where, c)) is not None:
         out["check"] = check
     if ck.opt(where, c, "large", bool, "true or false"):

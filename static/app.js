@@ -544,6 +544,8 @@ function mount() {
     // Proxmox guests sit two per row, like tiles: with one full row each, a host with eight
     // guests is taller than the column and would be cut.
     let box = null;
+    // guests of more than one node in the group (grouped by kind): each says which node it is on
+    const nodes = new Set(cards.filter(is_guest).map((c) => c.check[1]));
     for (const c of cards) {
       if (is_guest(c)) {
         if (!box) {
@@ -554,7 +556,7 @@ function mount() {
           box.appendChild(gh);
           body.appendChild(box);
         }
-        box.appendChild(make_card(c));
+        box.appendChild(make_card(c, false, nodes.size > 1));
       } else {
         box = null;
         body.appendChild(make_card(c, c === merged));
@@ -770,8 +772,8 @@ function has_details(c) {
 }
 
 /** `merged`: the card is named like its group, whose heading already shows its name and dot. */
-function make_card(c, merged = false) {
-  if (is_guest(c)) return make_guest_card(c);
+function make_card(c, merged = false, node = false) {
+  if (is_guest(c)) return make_guest_card(c, node);
 
   const n = el("div", "card " + (c.large ? "large" : "small") + (merged ? " merged" : ""));
   n.dataset.id = c.id;
@@ -843,12 +845,13 @@ function make_card(c, merged = false) {
   return n;
 }
 
-function make_guest_card(c) {
+function make_guest_card(c, node = false) {
   const n = el("div", "card guest");
   n.dataset.id = c.id;
   const head = el("div", "head");
   add_dot(head, c);
   head.appendChild(el("span", "name", c.name));
+  if (node) head.appendChild(el("span", "node", c.check[1]));
   n.appendChild(head);
   // "CPU 12%" and "RAM 45%" with small grey labels: in a landscape row the labels then take little
   // room, and the guest's name keeps it. Built once; an update only rewrites the numbers.

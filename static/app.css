@@ -348,6 +348,8 @@ body.p-games #content {
   .group { padding-left: 3px; padding-right: 3px; }
   .card.guest .disk { display: none; }
 }
+/* the node a guest is on, beside its name, when its group holds guests of several nodes */
+.card.guest .head .node { margin-left: 5px; font-size: .78em; font-weight: 400; color: var(--muted); }
 
 /* ======================= the detail panel ======================= */
 
@@ -720,6 +722,51 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
   border: 1px solid var(--line); background: transparent; color: var(--accent, var(--text)); cursor: pointer; }
 
 /* ⚙ > Pages: one column per page, side by side; a narrow screen scrolls sideways */
+/* ⚙ > Pages > Pages and groups (pages.js): one column per page, groups in it, cards as chips */
+#settings .lay-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 6px; }
+#settings .lay-bar .grow { flex: 1; }
+#settings .lay-bar select { font: 500 13px/1 var(--font); color: var(--text); background: var(--block); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 6px; }
+#settings .lay-bar .choice[disabled] { opacity: .4; }
+#settings .lay-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 8px; overflow-x: auto;
+  align-items: start; padding-bottom: 4px; }
+#settings .lay-page { background: var(--block); border: 1px solid var(--line); border-radius: 8px; padding: 6px; min-width: 0;
+  display: flex; flex-direction: column; gap: 6px; }
+#settings .lay-page.drop-in { border-color: var(--title); }
+#settings .lay-page-head, #settings .lay-group-head { display: flex; align-items: center; gap: 6px; }
+#settings .lay-page-head .t { flex: 1; font-weight: 700; font-size: 13px; color: var(--title); letter-spacing: .4px; }
+#settings .lay-group { background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 5px 6px 6px; }
+#settings .lay-group.drop-in { border-color: var(--title); background: #12202e; }
+#settings .lay-group.drop-before { box-shadow: 0 -3px 0 var(--title); }
+#settings .lay-group.drop-after { box-shadow: 0 3px 0 var(--title); }
+#settings .lay-group-head { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+#settings .lay-group-head .grip { color: var(--muted); font-size: 13px; }
+#settings .lay-group-head .t { flex: 1; font-weight: 600; font-size: 12px; color: var(--text); text-transform: uppercase; letter-spacing: .4px; }
+#settings .lay-cards { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; min-height: 30px; }
+#settings .lay-card { display: inline-flex; align-items: center; gap: 4px; padding: 3px 2px 3px 8px; border-radius: 6px;
+  background: var(--block); border: 1px solid var(--line); font-size: 12px; color: var(--text); cursor: grab;
+  touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+#settings .lay-card.own { border-color: #3c5470; }
+#settings .lay-card .node { font-size: 10px; color: var(--muted); }
+#settings .lay-card.drop-before { box-shadow: -3px 0 0 var(--title); }
+#settings .lay-card.drop-after { box-shadow: 3px 0 0 var(--title); }
+#settings .lay-dragging { opacity: .3; }
+#settings .lay-more { appearance: none; border: 0; background: transparent; color: var(--sub); font-size: 15px; line-height: 1;
+  padding: 4px 6px; border-radius: 5px; cursor: pointer; }
+#settings .lay-more:hover { background: var(--line); }
+#settings .lay-empty { margin: 4px 2px; }
+#settings .lay-add { align-self: flex-start; }
+#settings .lay-add-page { align-self: start; }
+#settings .lay-title { flex: 1; min-width: 0; font: 600 13px/1 var(--font); color: var(--text); background: var(--bg);
+  border: 1px solid var(--title); border-radius: 5px; padding: 5px 6px; }
+#settings .lay-preview { border: 1px solid var(--title); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; background: #0e1824; }
+#settings .lay-preview > b { display: block; font-size: 13px; margin-bottom: 4px; }
+#settings .lay-prev-row { display: flex; gap: 8px; font-size: 12px; padding: 3px 0; border-top: 1px solid var(--line); }
+#settings .lay-prev-row .g { flex: none; width: 110px; color: var(--title); font-weight: 600; }
+#settings .lay-prev-row .c { color: var(--sub); }
+.lay-ghost { position: fixed; left: 0; top: 0; z-index: 70; pointer-events: none; opacity: .92; box-shadow: 0 8px 24px rgba(0,0,0,.7);
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: var(--card);
+  border: 1px solid var(--title); color: var(--text); font: 600 12px/1.2 var(--font); }
 #settings .page-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(168px, 1fr); gap: 8px;
   overflow-x: auto; margin-top: 6px; padding-bottom: 4px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 #settings .page-col { background: var(--block); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px 8px; min-width: 0; }

@@ -220,6 +220,22 @@ class Routes(unittest.TestCase):
             self.assertIn('"EXTRA"', f.read())
         with open(self.cfg) as f:
             self.assertNotIn("EXTRA", f.read())   # the mounted file is left alone
+        # ⚙ > Pages: the layout, a move, organize
+        code, v = self.post("layout")
+        self.assertEqual([p["id"] for p in v["pages"]], ["main", "more"])
+        pages = [{"id": p["id"], "title": p["title"], "groups": [{"id": g["id"], "title": g["title"],
+                  "cards": [c["id"] for c in g["cards"]]} for g in p["groups"]]} for p in v["pages"]]
+        pages[0]["groups"][0]["cards"].append(pages[1]["groups"][0]["cards"].pop())
+        code, r = self.post("layout-save", {"pages": pages})
+        self.assertTrue(r["ok"], r)
+        code, v = self.post("layout")
+        self.assertEqual([p["id"] for p in v["pages"]], ["main"])   # MORE emptied, so left out
+        self.assertEqual([c["id"] for c in v["pages"][0]["groups"][0]["cards"]], ["c", "d"])
+        pages[0]["groups"][0]["cards"].pop()
+        code, r = self.post("layout-save", {"pages": pages[:1]})
+        self.assertEqual((code, r["ok"]), (409, False))                # d would be lost
+        code, o = self.post("organize", {"page": "main"})
+        self.assertEqual([g["title"] for g in o["pages"][0]["groups"]], ["PCs & other"])
 
 
 if __name__ == "__main__":

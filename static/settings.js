@@ -269,10 +269,13 @@ function open_settings() {
   choices(rot, [[true, "On"], [false, "Off"]], S.rotate, (v) => { S.rotate = v; save_settings(); });
   choices(rot, [10, 20, 30, 60].map((n) => [n, n + " s"]), S.period, (v) => { S.period = v; save_settings(); });
   rot.appendChild(el("p", "hint", "Which pages rotate: the tick at the top of each page below."));
-  if (tab === "pages") page_columns(section("Shown on this screen", "pages", true));
+  if (tab === "pages") {
+    layout_settings(section("Pages and groups · every screen", "pages", true));
+    page_columns(section("Shown on this screen", "pages", true));
+  }
 
   // --- night and calm ---
-  const nt = section("Night", "night");
+  const nt = section("Night", "look");
   const server = CFG.night;
   const night = night_cfg();
   choices(nt, [["config", server ? `As configured (${server.from}:00–${server.to}:00)` : "As configured (off)"], ["on", "On"], ["off", "Off"]],
@@ -302,7 +305,7 @@ function open_settings() {
   }
   choices(nt, [[true, "A new problem lights it up"], [false, "Stays dim"]], S.wake, (v) => { S.wake = v; save_settings(); });
 
-  const cm = section("Calm (only a clock when nothing is red)", "night");
+  const cm = section("Calm (only a clock when nothing is red)", "look");
   const calmServer = CFG.calm;
   choices(cm, [["config", calmServer ? `As configured (after ${Math.round(calmServer.after / 60)} min)` : "As configured (off)"], ["on", "On"], ["off", "Off"]],
     S.calm ? (S.calm.on ? "on" : "off") : "config", (v) => {
@@ -334,7 +337,7 @@ function open_settings() {
   lay.appendChild(el("p", "hint", "How much room the cards leave around their text."));
 
   // --- screen on, signal ---
-  const scr = section("Screen and alerts", "night");
+  const scr = section("When something goes wrong", "alerts");
   choices(scr, [[false, "Screen may sleep"], [true, "Keep the screen on"]], S.awake, (v) => { S.awake = v; save_settings(); apply_awake(); });
   if (S.awake && !window.isSecureContext) {
     scr.appendChild(el("p", "hint", "Over plain HTTP this uses a silent video: it starts after the first touch."));
@@ -419,12 +422,12 @@ function page_columns(s) {
 /** The tabs, in two groups: what this browser shows (kept here), and what LabHUD keeps for every
  * screen and the app. A slim bar of icons on the left; at the bottom on a portrait screen. */
 const SETTINGS_GROUPS = [
-  ["This screen", [["look", "Look"], ["pages", "Pages"], ["night", "Night & alerts"]]],
+  ["Display", [["look", "Look"], ["pages", "Pages"], ["alerts", "Alerts"]]],
   ["LabHUD", [["devices", "Devices"], ["security", "Security"], ["advanced", "Advanced"]]],
 ];
 const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, tabs]) => tabs);
 // the names before 0.3 (kept by browsers, and ?static&settings=<tab>)
-const TAB_ALIAS = { display: "look", screen: "night", phones: "devices", agents: "devices" };
+const TAB_ALIAS = { display: "look", night: "look", screen: "alerts", phones: "devices", agents: "devices" };
 
 function settings_tab_key(k) {
   k = TAB_ALIAS[k] || k;
@@ -435,7 +438,7 @@ function settings_tab_key(k) {
 const TAB_ICONS = {
   look: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18c1 0 1.5-.8 1.5-1.6 0-1.2-1-1.6-1-2.6 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
   pages: '<rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="6" rx="1.5"/><rect x="14" y="14" width="7" height="6" rx="1.5"/>',
-  night: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/><path d="M17 3v3M15.5 4.5h3"/>',
+  alerts: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   devices: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>',
   security: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
   advanced: '<path d="M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16"/>',
