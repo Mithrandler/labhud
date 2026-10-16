@@ -18,6 +18,8 @@
 #                       when given, else against the checksum labhud pins)
 #   --sha256 HEX        the expected SHA-256 of --binary, from where it was built
 #   --ptero-url URL     a Pterodactyl panel; its client API key is asked for (not on the command line)
+#   --ptero-pin HEX     the SHA-256 of the panel's certificate, for a self-signed one
+#                       (python3 init.py fingerprint https://panel… on labhud prints it)
 #   --base-w W, --price-kwh P   for the power estimate (see the agent's README)
 #   --uninstall         stops and removes the agent, its key and settings (and its Proxmox user)
 #
@@ -33,7 +35,7 @@ DIR=/etc/labhud-agent
 BIN=/usr/local/bin/labhud-agent
 UNIT=/etc/systemd/system/labhud-agent.service
 
-URL="" CODE="" NAME="" BINARY="" WANT="" PTERO_URL="" BASE_W="" PRICE="" UNINSTALL=""
+URL="" CODE="" NAME="" BINARY="" WANT="" PTERO_URL="" PTERO_PIN="" BASE_W="" PRICE="" UNINSTALL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --url) URL="${2:-}"; shift 2 ;;
@@ -42,6 +44,7 @@ while [ $# -gt 0 ]; do
     --binary) BINARY="${2:-}"; shift 2 ;;
     --sha256) WANT="${2:-}"; shift 2 ;;
     --ptero-url) PTERO_URL="${2:-}"; shift 2 ;;
+    --ptero-pin) PTERO_PIN="${2:-}"; shift 2 ;;
     --base-w) BASE_W="${2:-}"; shift 2 ;;
     --price-kwh) PRICE="${2:-}"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -143,6 +146,7 @@ if [ -n "$PTERO_URL" ]; then
   [ -n "$KEY" ] || { echo "no key given" >&2; exit 1; }
   set_conf LABHUD_PTERO_URL "${PTERO_URL%/}"
   set_conf LABHUD_PTERO_KEY "$KEY"
+  [ -z "$PTERO_PIN" ] || set_conf LABHUD_PTERO_PIN "$PTERO_PIN"
 fi
 
 cat > "$UNIT" <<EOF
