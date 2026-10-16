@@ -179,7 +179,7 @@ function open_signin() {
   if (!admin_on()) {
     body.appendChild(el("p", null, "This LabHUD has no admin yet, so every screen only shows."));
     body.appendChild(el("p", "hint", "Make one on the server, with a password and an authenticator app:"));
-    body.appendChild(el("p", "cmd", "docker exec -it labhud python3 /app/init.py admin"));
+    body.appendChild(copy_line("docker exec -it labhud python3 /app/init.py admin", "cmd"));
     box.hidden = false;
     touched();
     return;

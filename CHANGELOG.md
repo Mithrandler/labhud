@@ -29,6 +29,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   config's `game-*` actions and the action agent are no longer needed for it.
 - The snapshot's `agents.<name>.buttons`: the ticked targets' action names, for pages that list
   containers, units or game servers themselves.
+- **Copy** buttons beside everything there is to copy: the agent's code and install commands, a
+  phone's pairing link, the admin command, the setup page's commands, key and files. They work on
+  plain http too (where the browser has no clipboard API).
 - Card key `wake = "<agent>:<mac>"`: WAKE from another agent, next to the buttons of the card's own
   `agent` (a host that is off cannot wake itself).
 - ⚙ > Agents > Wake-on-LAN takes a MAC typed in: a machine that is off is not in the agent's ARP

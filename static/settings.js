@@ -473,7 +473,7 @@ function pair_phone(host) {
     const svg = new DOMParser().parseFromString(r.svg, "image/svg+xml").documentElement;
     host.appendChild(document.importNode(svg, true));
     host.appendChild(el("p", "hint", `Scan it in the app (Add server). It works once, within ${r.minutes} minutes.`));
-    host.appendChild(el("p", "pair-link", r.link));
+    host.appendChild(copy_line(r.link, "pair-link"));
     wait_for_pairing(host.parentNode.querySelector(".devices"));
   }).catch(() => { host.textContent = ""; host.appendChild(el("p", "hint", "Could not reach LabHUD.")); });
   touched();
@@ -708,20 +708,21 @@ function add_agent(show, list) {
       return r.error === "forbidden" ? admin_forbidden(say) : say(r.error || "Refused.");
     }
     const before = list.querySelectorAll(".agent").length;
-    show.appendChild(el("p", "hint", "The code: " + r.code));
+    show.appendChild(el("p", "hint", "The code:"));
+    show.appendChild(copy_line(r.code));
     if (r.released) {
       show.appendChild(el("p", "hint", `On the host, as root: it downloads labhud-agent ${r.version} (${r.builds.join(", ")}), `
         + "checks it against the SHA-256 this LabHUD pins and installs it as a systemd service."));
-      show.appendChild(el("p", "pair-link agent-line", r.install));
+      show.appendChild(copy_line(r.install, "agent-line"));
     } else {
       show.appendChild(el("p", "hint", `This LabHUD pins no labhud-agent release yet, so the installer cannot download one. `
         + "Build the agent (see its README) or copy the binary to the host as ./labhud-agent, then, as root, run this with "
         + "YOUR_SHA256 replaced by the checksum you got where you built it (not one worked out on the host from the same file):"));
-      show.appendChild(el("p", "pair-link agent-line", r.install));
+      show.appendChild(copy_line(r.install, "agent-line"));
     }
     if (r.docker) {
       show.appendChild(el("p", "hint", "Or as a container:"));
-      show.appendChild(el("p", "pair-link agent-line", r.docker));
+      show.appendChild(copy_line(r.docker, "agent-line"));
     }
     const left = el("p", "hint");
     show.appendChild(left);

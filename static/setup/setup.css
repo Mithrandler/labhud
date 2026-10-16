@@ -64,3 +64,4 @@ button:disabled { opacity: .5; cursor: wait; }
 .svc form { padding: 0 14px 14px; }
 .svc .hint { color: var(--muted); font-size: 12px; }
 .qr svg { display: block; width: 220px; height: auto; margin: 8px 0; border-radius: 6px; }
+button.copy { padding: 4px 10px; font-size: 12px; margin: 4px 0 8px; }

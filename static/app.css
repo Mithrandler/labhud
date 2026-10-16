@@ -160,8 +160,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #signin .said { min-height: 1em; margin: 0; font-size: 12px; color: var(--red); }
 #signin p { font-size: 13px; line-height: 1.4; margin: 0 0 8px; }
 #signin .hint { font-size: 11px; color: var(--muted); margin: 0; }
-#signin .cmd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--block); padding: 8px; border-radius: 6px;
-  user-select: all; word-break: break-all; }
+#signin .copy-line code { font-size: 12px; }
 #clock .time { display: block; font-size: 19px; font-weight: 700; letter-spacing: .5px; }
 #clock .date { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
 
@@ -550,7 +549,7 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings .choice.on { color: var(--text); border-color: var(--title); box-shadow: inset 0 0 0 1px var(--title); }
 #settings .choice.swatch::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--sw); margin-right: 6px; vertical-align: -1px; }
 #settings .pair-qr svg { display: block; width: min(100%, 280px); height: auto; margin: 6px 0; border-radius: 4px; }
-#settings .pair-link { font-size: 10px; color: var(--sub); word-break: break-all; margin: 4px 0 0; }
+#settings .pair-link code { font-size: 10px; color: var(--sub); }
 #settings .admin-form { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 #settings .admin-form input { font: 14px var(--font); color: var(--text); background: var(--block); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
 #settings .admin-form .choice { align-self: flex-start; }
@@ -562,7 +561,6 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings .agent .device { border-top: 0; }
 #settings .agent .device-name { display: flex; align-items: center; gap: 6px; }
 #settings .agent-targets h4 { font-size: 11px; font-weight: 500; color: var(--sub); margin: 8px 0 4px; }
-#settings .agent-line { font-family: ui-monospace, monospace; font-size: 11px; user-select: all; }
 #settings .choice.pending { opacity: 0.5; }
 #settings .agent-add-mac { display: flex; gap: 6px; margin-top: 6px; }
 #settings .agent-add-mac .agent-filter { margin: 0; flex: 1; }
@@ -672,3 +670,11 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
   #lock .keys { grid-column: 2; grid-row: 1 / span 3; grid-template-columns: repeat(3, 64px); gap: 6px; }
   #lock .keys button { height: 46px; font-size: 20px; }
 }
+
+/* a command, a code or a link to copy, with its button (copy_line) */
+.copy-line { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0; padding: 8px; border-radius: 6px;
+  background: var(--block); border: 1px solid var(--line); }
+.copy-line code { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 11px; color: var(--text);
+  word-break: break-all; white-space: pre-wrap; user-select: all; }
+.copy-line button.copy { flex: none; font: inherit; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: transparent; color: var(--accent, var(--text)); cursor: pointer; }

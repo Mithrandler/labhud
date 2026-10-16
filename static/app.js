@@ -148,6 +148,37 @@ function el(tag, cls, text) {
   return n;
 }
 
+/** Puts text on the clipboard. navigator.clipboard exists only over HTTPS (or on localhost), and a
+    display is often on plain http://host:8095, so a hidden textarea and execCommand stand in. */
+function copy_text(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => false);
+  const t = el("textarea");
+  t.value = text;
+  t.setAttribute("readonly", "");
+  t.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+  document.body.appendChild(t);
+  t.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  t.remove();
+  return Promise.resolve(ok);
+}
+
+/** A line to copy (a command, a code, a link) with a Copy button beside it. */
+function copy_line(text, cls) {
+  const box = el("div", "copy-line" + (cls ? " " + cls : ""));
+  const t = el("code", null, text);
+  const b = el("button", "copy", "Copy");
+  b.type = "button";
+  b.addEventListener("click", () => copy_text(text).then((ok) => {
+    put(b, ok ? "Copied ✓" : "Select it");
+    if (!ok) { const r = document.createRange(); r.selectNodeContents(t); getSelection().removeAllRanges(); getSelection().addRange(r); }
+    setTimeout(() => put(b, "Copy"), 2000);
+  }));
+  box.append(t, b);
+  return box;
+}
+
 /** Writes to the DOM only when the value actually changed. */
 function put(node, text) {
   if (node.textContent !== text) node.textContent = text;

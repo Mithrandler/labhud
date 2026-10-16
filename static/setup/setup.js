@@ -356,3 +356,33 @@ $("r-write").addEventListener("click", async (ev) => {
   }
   show("code");
 })();
+
+// A Copy button after each command, key and file shown, reading the text when pressed (the review's
+// files are filled in later). navigator.clipboard needs HTTPS or localhost; plain http falls back.
+function copy_text(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => false);
+  const t = document.createElement("textarea");
+  t.value = text;
+  t.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+  document.body.appendChild(t);
+  t.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  t.remove();
+  return Promise.resolve(ok);
+}
+for (const src of document.querySelectorAll("main pre, #a-secret, #pve-fp")) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "ghost copy";
+  b.textContent = "Copy";
+  b.addEventListener("click", (e) => {
+    e.preventDefault();   // inside a <label>: do not tick its checkbox
+    copy_text(src.textContent).then((ok) => {
+      b.textContent = ok ? "Copied ✓" : "Select it";
+      if (!ok) { const r = document.createRange(); r.selectNodeContents(src); getSelection().removeAllRanges(); getSelection().addRange(r); }
+      setTimeout(() => { b.textContent = "Copy"; }, 2000);
+    });
+  });
+  src.after(b);
+}
