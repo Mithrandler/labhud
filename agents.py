@@ -15,6 +15,7 @@ state, the list), on_event(text, bad) for the timeline, and tls_fp, its certific
 
 import hashlib
 import json
+import os
 import re
 import secrets
 import threading
@@ -520,3 +521,50 @@ def pinger(stop):
                 s.ws.ping()
             except websock.Closed:
                 s.ws.close()
+
+
+# ---------------------------------------------------------------------------------------------
+# Installing: the release labhud pins (agents/agent-release.json) and the lines ⚙ shows
+# ---------------------------------------------------------------------------------------------
+
+RELEASE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "agent-release.json")
+IMAGE = "ghcr.io/mithrandler/labhud-agent:latest"
+
+
+def release(releases=""):
+    """The placeholders /agent/install-agent.sh is served with: the version, where it downloads
+    from (`releases`, LABHUD_AGENT_RELEASES, else the file's) and the SHA-256 of each build, which
+    stay labhud's own whatever the address. Empty sums: nothing is released yet."""
+    try:
+        with open(RELEASE_FILE, encoding="utf-8") as f:
+            r = json.load(f)
+    except (OSError, ValueError):
+        r = {}
+    sums = r.get("sha256") or {}
+    return {"@AGENT_VERSION@": str(r.get("version", "")), "@AGENT_RELEASES@": releases or r.get("releases", ""),
+            "@AGENT_SHA256_AMD64@": sums.get("amd64", ""), "@AGENT_SHA256_ARM64@": sums.get("arm64", "")}
+
+
+def install_lines(base, code, image="", releases=""):
+    """What ⚙ > Agents > Add an agent shows: the commands that work with this labhud as it is.
+    With a release pinned, one curl line downloads and checks the agent, and the image exists.
+    Without one the installer cannot download anything, so the line installs a binary you built
+    or copied, against the SHA-256 you got where you made it; a container only with `image` set."""
+    rel = release(releases)
+    pinned = [a for a in ("amd64", "arm64") if rel[f"@AGENT_SHA256_{a.upper()}@"]]
+    script = f"{base}/agent/install-agent.sh"
+    out = {"version": rel["@AGENT_VERSION@"], "released": bool(pinned), "builds": pinned}
+    if pinned:
+        out["install"] = f"curl -fsSL {script} | sudo sh -s -- --url {base} --code {code}"
+    else:
+        out["install"] = (f"curl -fsSL {script} -o install-agent.sh && sudo sh install-agent.sh --url {base} "
+                          f"--code {code} --binary ./labhud-agent --sha256 YOUR_SHA256")
+    image = image or (IMAGE if pinned else "")
+    # host network: Wake-on-LAN and the ARP table; / read-only: the host's sensors and disk; the
+    # sockets: Docker and systemd
+    out["docker"] = (f"docker run -d --name labhud-agent --restart unless-stopped --network host "
+                     f"-v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock "
+                     f"-v /run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket "
+                     f"-v labhud-agent:/etc/labhud-agent "
+                     f"-e LABHUD_URL={base} -e LABHUD_AGENT_CODE={code} {image}") if image else ""
+    return out

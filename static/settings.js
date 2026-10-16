@@ -689,10 +689,21 @@ function add_agent(show, list) {
       return r.error === "forbidden" ? admin_forbidden(say) : say(r.error || "Refused.");
     }
     const before = list.querySelectorAll(".agent").length;
-    show.appendChild(el("p", "hint", "On the host, as root (a systemd service):"));
-    show.appendChild(el("p", "pair-link agent-line", r.install));
-    show.appendChild(el("p", "hint", "Or as a container:"));
-    show.appendChild(el("p", "pair-link agent-line", r.docker));
+    show.appendChild(el("p", "hint", "The code: " + r.code));
+    if (r.released) {
+      show.appendChild(el("p", "hint", `On the host, as root: it downloads labhud-agent ${r.version} (${r.builds.join(", ")}), `
+        + "checks it against the SHA-256 this LabHUD pins and installs it as a systemd service."));
+      show.appendChild(el("p", "pair-link agent-line", r.install));
+    } else {
+      show.appendChild(el("p", "hint", `This LabHUD pins no labhud-agent release yet, so the installer cannot download one. `
+        + "Build the agent (see its README) or copy the binary to the host as ./labhud-agent, then, as root, run this with "
+        + "YOUR_SHA256 replaced by the checksum you got where you built it (not one worked out on the host from the same file):"));
+      show.appendChild(el("p", "pair-link agent-line", r.install));
+    }
+    if (r.docker) {
+      show.appendChild(el("p", "hint", "Or as a container:"));
+      show.appendChild(el("p", "pair-link agent-line", r.docker));
+    }
     const left = el("p", "hint");
     show.appendChild(left);
     const until = Date.now() + r.minutes * 60000;

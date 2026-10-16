@@ -29,27 +29,44 @@ the old one is switched off.
 
 ## Adding one
 
-`LABHUD_DATA` is needed (labhud keeps the agents and their keys there). With an admin set up,
-everything below needs the admin.
+`LABHUD_DATA` is needed (labhud keeps the agents and their keys there), and the admin signed in:
+⚙ is the admin's.
 
-1. ⚙ > Agents > **Add an agent** shows a one-time code (5 minutes, once) and two ways to use it.
-2. **As a service**, on the host, as root:
+1. ⚙ > Agents > **Add an agent** shows a one-time code (5 minutes, once) and the command to run
+   on the host, as root. Which command depends on whether this labhud pins a release of the
+   agent (`agents/agent-release.json`, filled in when labhud is released):
+
+   **A release is pinned** (the normal case once labhud-agent is published). One line downloads
+   the agent for the host's architecture, checks it against the SHA-256 labhud pins, and
+   installs it:
 
    ```
    curl -fsSL http://labhud:8095/agent/install-agent.sh | sudo sh -s -- --url http://labhud:8095 --code <code>
    ```
 
-   It downloads the agent for the host's architecture and checks it against the SHA-256 labhud
-   itself pins (`agents/agent-release.json`), writes `/etc/labhud-agent/config` (mode 600) and a
-   systemd unit, and starts it. On Proxmox VE it also makes a user `labhud@pve` with only
-   `VM.PowerMgmt`, `VM.Audit` and `Sys.Audit`, and a token for it that stays on the host. For a
-   Pterodactyl panel add `--ptero-url https://panel…`: the client API key is asked for, not
-   given on the command line. Run it again to upgrade; `--uninstall` removes everything.
-3. **As a container**: the `docker run` shown there, with the host's network (Wake-on-LAN, the
-   ARP table), `/` read-only at `/host` (sensors, disk, name), and the Docker and D-Bus sockets.
-   Leave out a socket and that capability is simply not there. Update it from your container
-   tool like any image.
-4. The agent appears in ⚙ > Agents with what it found. Tick what it may do, then on what.
+   **No release is pinned** (a labhud built from `main`, or before the agent's first release).
+   The installer refuses to download anything it cannot check, so you bring the binary: build it
+   (`CGO_ENABLED=0 go build ./cmd/labhud-agent` in labhud-agent, see its README) or copy one,
+   put it on the host as `./labhud-agent`, and give the SHA-256 you got **where you built it**
+   (one worked out on the host from the same file proves nothing):
+
+   ```
+   curl -fsSL http://labhud:8095/agent/install-agent.sh -o install-agent.sh
+   sudo sh install-agent.sh --url http://labhud:8095 --code <code> --binary ./labhud-agent --sha256 <sha256>
+   ```
+
+   ⚙ shows the right one, with the code already in it. Either way the installer writes
+   `/etc/labhud-agent/config` (mode 600) and a systemd unit and starts it. On Proxmox VE it also
+   makes a user `labhud@pve` with only `VM.PowerMgmt`, `VM.Audit` and `Sys.Audit`, and a token for
+   it that stays on the host. For a Pterodactyl panel add `--ptero-url https://panel…`: the client
+   API key is asked for, not given on the command line. `--base-w` and `--price-kwh` set the power
+   estimate. Run it again to upgrade (no `--code` needed: the agent keeps its key); `--uninstall`
+   removes everything.
+2. **As a container** instead: with a release pinned (or `LABHUD_AGENT_IMAGE` set), ⚙ also shows
+   a `docker run` with the host's network (Wake-on-LAN, the ARP table), `/` read-only at `/host`
+   (sensors, disk, name), and the Docker and D-Bus sockets. Leave out a socket and that
+   capability is simply not there. Update it from your container tool like any image.
+3. The agent appears in ⚙ > Agents with what it found. Tick what it may do, then on what.
 
 labhud never sends an agent code or updates: a new version comes from your package or image
 tooling, and ⚙ only shows which version each agent runs.

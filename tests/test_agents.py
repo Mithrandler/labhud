@@ -217,9 +217,28 @@ class Server(DemoServer):
 
     def test_code_lines(self):
         r = self.manage("code")[1]
-        self.assertIn("/agent/install-agent.sh | sudo sh -s -- --url", r["install"])
-        self.assertIn("--network host", r["docker"])
-        self.assertIn(r["code"], r["docker"])
+        pinned = any(agents.release()[f"@AGENT_SHA256_{a}@"] for a in ("AMD64", "ARM64"))
+        self.assertEqual(r["released"], pinned)
+        self.assertIn(r["code"], r["install"])
+        if pinned:   # one line downloads and checks; the image is there too
+            self.assertIn("/agent/install-agent.sh | sudo sh -s -- --url", r["install"])
+            self.assertIn("--network host", r["docker"])
+            self.assertIn(r["code"], r["docker"])
+        else:        # nothing to download: a binary of your own, checked against your checksum
+            self.assertIn("--binary ./labhud-agent --sha256 YOUR_SHA256", r["install"])
+            self.assertEqual(r["docker"], "")
+
+    def test_code_lines_once_released(self):
+        real = agents.release
+        agents.release = lambda releases="": dict(real(releases), **{"@AGENT_SHA256_AMD64@": "a" * 64})
+        try:
+            r = agents.install_lines("http://wall:8095", "CODE1")
+        finally:
+            agents.release = real
+        self.assertEqual((r["released"], r["builds"]), (True, ["amd64"]))
+        self.assertEqual(r["install"], "curl -fsSL http://wall:8095/agent/install-agent.sh | sudo sh -s -- "
+                                       "--url http://wall:8095 --code CODE1")
+        self.assertTrue(r["docker"].endswith("ghcr.io/mithrandler/labhud-agent:latest"))
 
     # --- after pairing ---
 

@@ -35,6 +35,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 - ⚙ has its tabs in two groups, **This screen** (Display, Screen) and **LabHUD** (Phones, Agents,
   Security), a column on the left or a row on a narrow screen. The sign-in form left ⚙.
 - Setting or changing the PIN needs the admin.
+- ⚙ > Agents > Add an agent shows the command that works with this labhud: the one-line `curl`
+  (and the `docker run`) once a release of the agent is pinned, otherwise the installer with
+  `--binary` and `--sha256`, and why. With `--binary`, a `--sha256` given wins over the pinned one.
 
 ### Fixed
 - A tick in ⚙ > Agents that changed a card's buttons reloaded the display at once, closing ⚙

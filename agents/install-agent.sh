@@ -3,17 +3,20 @@
 #
 #   curl -fsSL http://<labhud>:8095/agent/install-agent.sh | sudo sh -s -- --url http://<labhud>:8095 --code <code>
 #
-# The code comes from ⚙ > Agents > Add an agent (once, 5 minutes). The binary is downloaded from
-# the release and checked against the SHA-256 labhud itself pins (agents/agent-release.json),
-# not against a file next to the binary. Run again to upgrade: the agent keeps its key.
+# The code comes from ⚙ > Agents > Add an agent (once, 5 minutes), which shows this line with the
+# code in it. The binary is downloaded from the release and checked against the SHA-256 labhud
+# itself pins (agents/agent-release.json), not against a file next to the binary. When labhud
+# pins no release (built from main, or before the agent's first release) nothing is downloaded:
+# bring the binary with --binary and the SHA-256 you got where you built it with --sha256.
+# Run again to upgrade: the agent keeps its key.
 #
 # Options:
 #   --url URL           labhud's address (required)
 #   --code CODE         the pairing code (not needed when /etc/labhud-agent/key exists)
 #   --name NAME         the name in labhud (default: the host name)
-#   --binary FILE       use this file instead of downloading (still checked: --sha256 when
-#                       labhud pins no checksum for this version)
-#   --sha256 HEX        the expected SHA-256 of --binary
+#   --binary FILE       use this file instead of downloading (still checked: against --sha256
+#                       when given, else against the checksum labhud pins)
+#   --sha256 HEX        the expected SHA-256 of --binary, from where it was built
 #   --ptero-url URL     a Pterodactyl panel; its client API key is asked for (not on the command line)
 #   --base-w W, --price-kwh P   for the power estimate (see the agent's README)
 #   --uninstall         stops and removes the agent, its key and settings (and its Proxmox user)
@@ -81,11 +84,14 @@ case "$PINNED" in @*) PINNED="" ;; esac
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 if [ -n "$BINARY" ]; then
+  [ -f "$BINARY" ] || { echo "--binary $BINARY: no such file" >&2; exit 2; }
   cp "$BINARY" "$TMP"
-  [ -n "$PINNED" ] || PINNED="$WANT"
-  [ -n "$PINNED" ] || { echo "labhud pins no checksum for this build: give --sha256" >&2; exit 1; }
+  [ -z "$WANT" ] || PINNED="$WANT"
+  [ -n "$PINNED" ] || { echo "labhud pins no checksum for this build: give --sha256 (from where you built it)" >&2; exit 1; }
 else
-  [ -n "$PINNED" ] || { echo "labhud pins no checksum for labhud-agent $VERSION/$ARCH: use --binary and --sha256" >&2; exit 1; }
+  [ -n "$PINNED" ] || { printf '%s\n' "This labhud pins no release of labhud-agent $VERSION ($ARCH), so there is nothing to download." \
+    "Build it (see the labhud-agent README) or copy it here, then run this again with" \
+    "  --binary ./labhud-agent --sha256 <the SHA-256 from where you built it>" >&2; exit 1; }
   FROM="$RELEASES/v$VERSION/labhud-agent-linux-$ARCH"
   echo "Downloading labhud-agent $VERSION ($ARCH)…"
   if command -v curl >/dev/null; then curl -fsSL "$FROM" -o "$TMP"; else wget -qO "$TMP" "$FROM"; fi
