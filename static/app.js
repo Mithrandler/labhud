@@ -393,7 +393,7 @@ function render_calm() {
   if (!calm || LIST_VIEW) { if (!$("#calm").hidden) $("#calm").hidden = true; return; }
   const now = Date.now();
   const anyBad = Object.values(CARD_BY_ID).some((c) => card_bad(c) === true);
-  const alerting = !$("#alerts").hidden;
+  const alerting = alerts_now().length > 0;
   const busy = anyBad || alerting || focusCard || now < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden;
   if (busy) calmSince = now;
   const on = location.search.includes("calm") || now - calmSince >= calm.after * 1000;
@@ -1277,35 +1277,6 @@ function dismissed() {
   } catch (e) { return {}; }
 }
 
-function render_alerts() {
-  const bar = $("#alerts");
-  if (bar.dataset.id === "message") return;   // an action message takes priority for a few seconds
-  const dis = dismissed();
-  const all = (CFG.alerts && get(CFG.alerts.path) || []).filter((a) => !dis[a.id]);
-  if (!all.length) {
-    if (!bar.hidden) { bar.hidden = true; bar.textContent = ""; bar.dataset.id = ""; }
-    document.body.classList.remove("with-alert");
-    return;
-  }
-  const a = all[0];
-  if (bar.dataset.id !== a.id) {
-    bar.textContent = "";
-    bar.appendChild(el("span", "txt", a.text + (all.length > 1 ? `  (+${all.length - 1})` : "")));
-    const b = el("button", null, "OK");
-    b.type = "button";
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const x = dismissed(); x[a.id] = Date.now();
-      try { localStorage.setItem(DISMISSED_KEY, JSON.stringify(x)); } catch (err) { /* private mode */ }
-      bar.dataset.id = ""; render_alerts();
-    });
-    bar.appendChild(b);
-    bar.dataset.id = a.id;
-  }
-  bar.hidden = false;
-  document.body.classList.add("with-alert");
-}
-
 function mark_menu_alerts() {
   const dis = dismissed();
   const any = (CFG.alerts && get(CFG.alerts.path) || []).some((a) => !dis[a.id]);
@@ -1540,7 +1511,7 @@ let trackTimer = null;
 
 function send_action(name, c) {
   const t = { name, label: track_label(name, c), started: Date.now(), phase: "sending", ...track_goal(name, c) };
-  TRACKS = [t, ...TRACKS.filter((x) => x.name !== name)].slice(0, 3);
+  TRACKS = [t, ...TRACKS.filter((x) => x.name !== name)].slice(0, 10);
   render_tracks();
   fetch("/action/" + encodeURIComponent(name), { method: "POST", headers: lock_headers() })
     .then((r) => { lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
@@ -1622,50 +1593,6 @@ function check_tracks() {
     if (t.want()) finish(t, "done");
     else if (Date.now() - t.started > ACTION_TIMEOUT * 1000) finish(t, "timeout");
   }
-}
-
-function render_tracks() {
-  const bar = $("#actions-bar");
-  const now = Date.now();
-  // a finished one stays 10 s (a failure 30 s, or until tapped): that is the toast at the end
-  TRACKS = TRACKS.filter((t) => !t.end || now - t.end < (t.phase === "done" ? 10000 : 30000));
-  bar.hidden = !TRACKS.length;
-  cls(document.body, "with-actions", TRACKS.length > 0);
-  bar.textContent = "";
-  for (const t of TRACKS) {
-    const row = el("div", "track " + t.phase);
-    const secs = Math.round(((t.end || now) - t.started) / 1000);
-    const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-    let text;
-    if (t.phase === "sending") text = `${t.label} · sending…`;
-    else if (t.phase === "waiting") text = `${t.label} · ✓ accepted · ${t.verb}… ${time}`;
-    else if (t.phase === "done") text = `✓ ${t.label} ${t.doneText} · ${time}`;
-    else if (t.phase === "timeout") text = `✕ ${t.label}: no change after ${ACTION_TIMEOUT / 60} min — check the server`;
-    else text = `✕ ${t.label}: ${t.error}`;
-    row.appendChild(el("span", "txt", text));
-    // the bar fills over the expected time and waits near the end: progress, not a promise
-    const fill = el("i");
-    const part = t.end ? 1 : t.phase === "sending" ? 0.05 : Math.min(0.95, 0.1 + secs / 120);
-    fill.style.width = (100 * part).toFixed(1) + "%";
-    row.appendChild(fill);
-    row.addEventListener("click", () => { if (t.end) { TRACKS = TRACKS.filter((x) => x !== t); render_tracks(); } });
-    bar.appendChild(row);
-  }
-  const active = TRACKS.length > 0;   // a finished one still needs the clock to expire
-  if (active && !trackTimer) trackTimer = setInterval(() => { check_tracks(); render_tracks(); }, 1000);
-  if (!active && trackTimer) { clearInterval(trackTimer); trackTimer = null; }
-}
-
-let messageTimer = null;
-function show_message(text) {
-  const bar = $("#alerts");
-  bar.textContent = "";
-  bar.appendChild(el("span", "txt", text));
-  bar.dataset.id = "message";
-  bar.hidden = false;
-  document.body.classList.add("with-alert");
-  clearTimeout(messageTimer);
-  messageTimer = setTimeout(() => { bar.dataset.id = ""; render_alerts(); }, 6000);
 }
 
 // ---------------------------------------------------------------------------------------------

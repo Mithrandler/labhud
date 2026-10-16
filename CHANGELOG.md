@@ -62,6 +62,12 @@ still change in a minor version; such changes are listed under **Changed** with 
   (on a narrow screen the red ones get a row of their own). The verb comes from the action's name,
   so a container called "stopwatch" is not red; YES in the confirmation is red only for those.
   `/api/v1` gives the app the same order and `danger` (parity-tested).
+- **A bell instead of the bars over the cards.** What was pressed and the alerts are in one list
+  under a bell beside the account, with a count on it (red with an alert or a failure not yet
+  seen). A short toast at the bottom says it for 4 seconds (pressed, done, failed, a new alert,
+  ⚙'s messages) and can be closed. The bar of running actions (which stayed up to 5 minutes and
+  could not be closed) and the alert banner are gone; OK on an alert in the bell dismisses it as
+  before.
 - A game server started or stopped from its tile is followed by its id: "starting…" no longer
   waits the full 5 minutes when the list is sorted again under it (the running ones go first, so
   the tile then shows another server).

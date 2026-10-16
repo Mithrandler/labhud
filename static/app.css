@@ -41,7 +41,6 @@
 :root {
   --topbar: 40px;
   --strip: 32px;
-  --alert: 0px;   /* height of the alert banner, 0 when there is none */
   --bg: #000;
   --card: #121214;
   --block: #1c1c1f;
@@ -185,7 +184,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
    split; `--cols` says how many columns the page has, `gap` how far apart they are. */
 #content {
   --cols: 5;
-  position: fixed; left: 0; right: 0; top: calc(var(--topbar) + var(--alert)); bottom: var(--strip);
+  position: fixed; left: 0; right: 0; top: var(--topbar); bottom: var(--strip);
   display: flex; align-items: flex-start; gap: 6px;
   padding: 5px 7px 2px;
   overflow: hidden;   /* nothing scrolls: everything must fit at a glance */
@@ -349,20 +348,6 @@ body.p-games #content {
   .group { padding-left: 3px; padding-right: 3px; }
   .card.guest .disk { display: none; }
 }
-
-#alerts {
-  position: fixed; left: 0; right: 0; top: var(--topbar); z-index: 27;
-  display: flex; align-items: center; gap: 8px; padding: 2px 10px;
-  background: #3a0d1c; border-bottom: 1px solid var(--red);
-  font-size: 11px; color: #ffd9e2;
-}
-/* When there is an alert, the content box SHRINKS by the banner's height — it does not get padding
-   inside. With padding, the columns would think they have the full height and the last card in
-   each would be cut silently. */
-body.with-alert { --alert: 22px; }
-#alerts .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#alerts button { appearance: none; border: 1px solid var(--red); background: transparent; color: var(--red);
-  font: 700 10px/1 var(--font); padding: 4px 8px; border-radius: 4px; }
 
 /* ======================= the detail panel ======================= */
 
@@ -655,20 +640,53 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 .panel-links { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
 .panel-links a { color: var(--title); text-decoration: none; font-size: 12px; font-weight: 500; padding: 6px 10px;
   border: 1px solid var(--line); border-radius: 7px; background: var(--block); }
-/* Actions being followed: floats under the top bar (and the alert), over the page and the panel,
-   for as long as an action runs plus a few seconds at the end. Tapping a finished one closes it. */
-#actions-bar { position: fixed; left: 8px; right: 8px; top: calc(var(--topbar) + var(--alert) + 4px); z-index: 60;
-  display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
-#actions-bar .track { position: relative; overflow: hidden; pointer-events: auto; border-radius: 8px; padding: 7px 10px;
-  background: var(--card); border: 1px solid var(--title); font-size: 13px; font-weight: 500; color: var(--text);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .6); }
-#actions-bar .track .txt { position: relative; z-index: 1; }
-#actions-bar .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--title); opacity: .18;
-  transition: width 1s linear; }
-#actions-bar .track.done { border-color: var(--green); }
-#actions-bar .track.done i { background: var(--green); }
-#actions-bar .track.timeout, #actions-bar .track.refused { border-color: var(--red); color: #ffd9e2; }
-#actions-bar .track.timeout i, #actions-bar .track.refused i { background: var(--red); }
+/* The bell (bell.js): beside the account, faint like it; the badge is what draws the eye. */
+#bell { appearance: none; position: relative; border: 0; background: transparent; color: var(--title); opacity: .55;
+  padding: 4px; line-height: 0; cursor: pointer; }
+#bell svg { display: block; }
+#bell.busy, #bell.hot, #bell[aria-expanded="true"] { opacity: 1; }
+#bell .badge { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px;
+  background: var(--title); color: #000; font: 700 10px/15px var(--font); text-align: center; }
+#bell.hot .badge { background: var(--red); color: #fff; }
+#bell.busy svg { animation: bell-ring 2s ease-in-out infinite; transform-origin: 50% 15%; }
+@keyframes bell-ring { 0%, 70%, 100% { transform: rotate(0); } 78% { transform: rotate(12deg); } 86% { transform: rotate(-10deg); } 94% { transform: rotate(5deg); } }
+#bell-menu { position: fixed; top: calc(var(--topbar) + 4px); right: 8px; z-index: 48; width: min(380px, calc(100vw - 16px));
+  max-height: calc(100vh - var(--topbar) - var(--strip) - 16px); overflow-y: auto;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+#bell-menu h4 { margin: 6px 2px 4px; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: var(--sub); }
+#bell-menu .empty { margin: 2px 2px 6px; font-size: 12px; color: var(--muted); }
+#bell-menu .row { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; padding: 8px;
+  border-radius: 7px; background: var(--block); margin-bottom: 4px; font-size: 13px; }
+#bell-menu .row > * { position: relative; z-index: 1; }
+#bell-menu .row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#bell-menu .row .txt b { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bell-menu .row .what { font-size: 11px; color: var(--sub); }
+#bell-menu .row .time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+#bell-menu .row .mark { width: 14px; text-align: center; color: var(--title); }
+#bell-menu .row.done .mark { color: var(--green); }
+#bell-menu .row.timeout .mark, #bell-menu .row.refused .mark { color: var(--red); }
+#bell-menu .row.timeout .what, #bell-menu .row.refused .what { color: #ffb3c1; }
+#bell-menu .row i { position: absolute; z-index: 0; left: 0; top: 0; bottom: 0; background: var(--title); opacity: .16; transition: width 1s linear; }
+#bell-menu .row.alert { background: #3a0d1c; border: 1px solid var(--red); color: #ffd9e2; }
+#bell-menu .row.alert .txt { display: block; white-space: normal; }
+#bell-menu button { appearance: none; flex: none; border: 1px solid var(--border); background: transparent; color: var(--text);
+  font: 700 11px/1 var(--font); padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+#bell-menu .row.alert button { border-color: var(--red); color: var(--red); }
+#bell-menu .row .x { border: 0; color: var(--muted); padding: 4px 6px; }
+#bell-menu .clear { display: block; margin: 6px 0 0 auto; }
+/* The toast: bottom centre, above the strip, one at a time, gone after 4 s (or ✕) */
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--strip) + 12px); z-index: 58;
+  max-width: calc(100vw - 24px); display: flex; align-items: center; gap: 10px; padding: 9px 8px 9px 14px;
+  background: var(--card); border: 1px solid var(--title); border-radius: 10px; color: var(--text);
+  font-size: 13px; font-weight: 500; box-shadow: 0 6px 20px rgba(0,0,0,.7); animation: toast-in .2s ease-out; }
+#toast.ok { border-color: var(--green); }
+#toast.bad { border-color: var(--red); color: #ffd9e2; }
+#toast.warn { border-color: var(--warn); }
+#toast .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#toast .x { appearance: none; flex: none; border: 0; background: transparent; color: var(--muted); font-size: 14px; padding: 2px 6px; cursor: pointer; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { #bell.busy svg, #toast { animation: none; } }
 
 /* The lock's keypad (lock.js): over everything, big keys for a finger. */
 #lock { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .86); display: flex; align-items: center; justify-content: center; }
