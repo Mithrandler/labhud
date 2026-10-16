@@ -206,6 +206,8 @@ class Routes(DemoServer):
         status, card = self.call("GET", "/api/v1/card/host-pve", host=far, token=token)
         self.assertEqual((status, card["sections"][0]["title"]), (200, "host"))
         self.assertEqual(card["type"], "proxmox")       # what machine it is, for the app's Devices
+        types = {c["id"]: c["type"] for c in st["cards"]}
+        self.assertEqual((types["vm-pve-101"], types["nas"], types["router"], types["events"]), ("vm", "nas", "pc", ""))
         self.assertEqual(self.call("GET", "/api/v1/card/nope", host=far, token=token)[0], 404)
         self.assertEqual(self.call("GET", "/api/snapshot", host=far, token=token)[0], 200)
         self.assertEqual(self.call("GET", "/", host=far, cookie=token)[0], 200)     # the wall in the WebView

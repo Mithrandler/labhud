@@ -569,6 +569,18 @@ def sections(c, data):
 STATUS = {True: "up", False: "down", None: "unknown"}
 
 
+def machine(c, found=None):
+    """cardtype.kind() for a card as the topology holds it: its check (ping, tcp, a Proxmox guest)
+    is the config's `ping`, `tcp` or `proxmox` key again, which is what the guess reads."""
+    raw = dict(c)
+    check = c.get("check") or []
+    if check and check[0] in ("ping", "tcp"):
+        raw.setdefault(check[0], check[1])
+    elif check and check[0] == "proxmox" and len(check) >= 3:
+        raw.setdefault("proxmox", f"{check[1]}/{check[2]}")
+    return cardtype.kind(raw, found)
+
+
 def card(c, data, topology, actions_on, page=None, group=None, full=False, found=None):
     st = card_status(c, data)
     text, kind = note(c, data)
@@ -576,7 +588,7 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False, found
     out = {
         "id": c["id"], "name": c.get("name", c["id"]), "page": page, "group": group,
         "kind": "guest" if is_guest(c) else "list" if c.get("list") else "card",
-        "type": cardtype.kind(c, found),   # what machine it is (cardtype.KINDS), "" for none: the app's Devices
+        "type": machine(c, found),   # what machine it is (cardtype.KINDS), "" for none: the app's Devices
         "status": STATUS.get(st, st) if not isinstance(st, str) else st,
         "bad": card_bad(c, data), "summary": summary(c, data), "frozen": _frozen(c, data),
         "note": text, "note_kind": kind,
