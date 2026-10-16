@@ -516,31 +516,41 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings-bar button { appearance: none; border: 0; background: transparent; color: var(--sub); font-size: 22px; line-height: 1; padding: 0 6px; }
 /* The tabs in two groups (This screen / LabHUD): a column on the left, a row on top when narrow */
 #settings-main { flex: 1; min-height: 0; display: flex; }
-#settings-tabs { flex: none; width: 168px; display: flex; flex-direction: column; gap: 2px; padding: 8px 8px 12px;
-  border-right: 1px solid var(--line); overflow-y: auto; }
-#settings-tabs .settings-group { font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
-  color: var(--muted); padding: 12px 10px 6px; }
-#settings-tabs .settings-group:first-child { padding-top: 4px; }
-#settings-tabs .settings-tab { appearance: none; border: 0; background: transparent; color: var(--sub); font: 600 13px/1 var(--font);
-  letter-spacing: .3px; text-align: left; padding: 10px; border-radius: 6px; border-left: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+/* The tabs: a slim bar of icons. On a landscape phone (the wall) the label sits under the icon in
+   a 76 px bar; on a wide screen beside it, with the group names; on a portrait screen at the bottom. */
+#settings-tabs { flex: none; width: 76px; display: flex; flex-direction: column; gap: 2px; padding: 6px 6px 10px;
+  border-right: 1px solid var(--line); overflow-y: auto; scrollbar-width: none; }
+#settings-tabs .settings-group { display: none; }
+#settings-tabs .settings-group:not(:first-child) { display: block; height: 1px; margin: 6px 8px; background: var(--line); font-size: 0; }
+#settings-tabs .settings-tab { appearance: none; border: 0; background: transparent; color: var(--sub); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; border-radius: 8px;
+  font: 600 10px/1.15 var(--font); letter-spacing: .2px; text-align: center; }
+#settings-tabs .settings-tab svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round; flex: none; }
 #settings-tabs .settings-tab:hover { background: var(--card); }
-#settings-tabs .settings-tab.on { color: var(--text); background: var(--block); border-left-color: var(--title); }
-@media (max-width: 640px) {
-  #settings-main { flex-direction: column; }
-  #settings-tabs { width: auto; flex-direction: row; align-items: center; padding: 0 8px; border-right: 0;
-    border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-  #settings-tabs .settings-group { display: none; }
-  /* a thin line where the second group starts */
-  #settings-tabs .settings-group:not(:first-child) { display: block; width: 1px; height: 18px; padding: 0; margin: 0 4px;
-    background: var(--line); font-size: 0; flex: none; }
-  #settings-tabs .settings-tab { border-radius: 0; border-left: 0; border-bottom: 2px solid transparent; padding: 12px 10px 10px;
-    background: transparent; }
-  #settings-tabs .settings-tab.on { border-bottom-color: var(--title); background: transparent; }
+#settings-tabs .settings-tab.on { color: var(--title); background: var(--block); }
+@media (min-width: 1100px) and (min-height: 560px) {
+  #settings-tabs { width: 168px; padding: 8px 8px 12px; }
+  #settings-tabs .settings-group { display: block; font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+    color: var(--muted); padding: 12px 10px 6px; height: auto; margin: 0; background: none; }
+  #settings-tabs .settings-group:first-child { padding-top: 4px; }
+  #settings-tabs .settings-group:not(:first-child) { font-size: 10px; height: auto; margin: 0; background: none; }
+  #settings-tabs .settings-tab { flex-direction: row; gap: 10px; padding: 9px 10px; font-size: 13px; text-align: left; }
+  #settings-tabs .settings-tab svg { width: 18px; height: 18px; }
 }
-/* columns like a newspaper, not grid rows: a short section does not leave a hole beside a tall one */
+@media (orientation: portrait) and (max-width: 700px) {
+  #settings-main { flex-direction: column-reverse; }
+  #settings-tabs { width: auto; flex-direction: row; justify-content: space-around; padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    border-right: 0; border-top: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; }
+  #settings-tabs .settings-group:not(:first-child) { width: 1px; height: auto; margin: 8px 2px; }
+  #settings-tabs .settings-tab { flex: 1; min-width: 56px; }
+}
+/* A fluid grid: as many columns of at least 300 px as fit; the long lists (agents, pages) span it. */
 #settings-scroll { flex: 1; min-width: 0; overflow-y: auto; padding: 8px 12px 16px; }
-#settings-body { columns: 300px auto; column-gap: 16px; }
-#settings-body > * { break-inside: avoid; margin: 0 0 10px; }
+#settings-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; align-items: start; }
+#settings-body > .wide, #settings-body > .reset, #settings-body > .hint { grid-column: 1 / -1; }
+#settings-body > .reset { justify-self: start; }
+#settings-body > .hint { margin: 0; }
 #settings .set { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 10px; }
 #settings h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: var(--sub); }
 #settings .choices { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0; }
@@ -562,7 +572,6 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings .agent .device-name { display: flex; align-items: center; gap: 6px; }
 #settings .agent-targets h4 { font-size: 11px; font-weight: 500; color: var(--sub); margin: 8px 0 4px; }
 #settings .choice.pending { opacity: 0.5; }
-#settings .agent-targets > .choice.small { font-size: 11px; padding: 4px 10px; margin: 0 0 6px; }
 #settings .agent-add-mac { display: flex; gap: 6px; margin-top: 6px; }
 #settings .agent-add-mac .agent-filter { margin: 0; flex: 1; }
 #settings .agent-filter { width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 6px 8px; border-radius: 6px;
@@ -580,9 +589,8 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings .slider .val { min-width: 40px; text-align: right; font-weight: 700; }
 #settings select { font: 500 13px var(--font); color: var(--text); background: var(--block); border: 1px solid var(--line); border-radius: 6px; padding: 5px; }
 #settings .hint { color: var(--muted); font-size: 11px; margin: 4px 0 0; }
-#settings .reset { column-span: all; display: block; appearance: none; font: 500 13px var(--font); color: var(--warn);
+#settings .reset { display: block; appearance: none; font: 500 13px var(--font); color: var(--warn);
   background: transparent; border: 1px solid var(--warn); border-radius: 7px; padding: 8px 12px; cursor: pointer; }
-#settings-body > .hint { column-span: all; }
 
 /* ⚙ density: only the spacing changes; layout() refits the page. */
 body.density-compact .stack { gap: 3px; }
@@ -679,3 +687,39 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
   word-break: break-all; white-space: pre-wrap; user-select: all; }
 .copy-line button.copy { flex: none; font: inherit; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;
   border: 1px solid var(--line); background: transparent; color: var(--accent, var(--text)); cursor: pointer; }
+
+/* ⚙ > Pages: one column per page, side by side; a narrow screen scrolls sideways */
+#settings .page-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(168px, 1fr); gap: 8px;
+  overflow-x: auto; margin-top: 6px; padding-bottom: 4px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+#settings .page-col { background: var(--block); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px 8px; min-width: 0; }
+#settings .page-head { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+#settings .page-title { font-weight: 700; font-size: 12px; letter-spacing: .5px; color: var(--text); }
+
+/* ⚙ > Devices > Agents: the list on the left, the open agent on the right */
+#settings .agents-split { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 12px; margin-top: 4px; }
+#settings .agents-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+#settings .agents { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+#settings .agent-item { appearance: none; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+  padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--block); color: var(--sub); font: inherit; }
+#settings .agent-item.on { border-color: var(--title); box-shadow: inset 0 0 0 1px var(--title); color: var(--text); }
+#settings .agent-name { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings .agent-facts { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings .agents-side > .choice { align-self: flex-start; }
+#settings .agents-detail { min-width: 0; border-left: 1px solid var(--line); padding-left: 12px; }
+#settings .agents-detail .device { border-top: 0; padding-top: 0; }
+#settings .agents-detail h4 { font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); margin: 10px 0 4px; }
+#settings .cap-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+#settings .cap-tab { appearance: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--sub);
+  font: 600 12px/1 var(--font); padding: 8px 10px 7px; cursor: pointer; }
+#settings .cap-tab.on { color: var(--text); border-bottom-color: var(--title); }
+#settings .target-tools { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+#settings .target-tools .agent-filter { margin: 0; flex: 1; max-width: 320px; }
+#settings .target-tools .choice.small { margin: 0; }
+#settings .choices.targets .choice { font-size: 12px; padding: 6px 9px; }
+@media (max-width: 700px) {
+  #settings .agents-split { grid-template-columns: 1fr; }
+  #settings .agents { flex-direction: row; flex-wrap: wrap; }
+  #settings .agents-detail { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 8px; }
+}

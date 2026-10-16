@@ -48,8 +48,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **A display that is not signed in only shows**: no ⚙, no buttons on the cards, no maintenance,
   and labhud refuses them. Without an admin every display only shows (`init.py admin` makes one).
   The app is unchanged: it acts with its own token.
-- ⚙ has its tabs in two groups, **This screen** (Display, Screen) and **LabHUD** (Phones, Agents,
-  Security), a column on the left or a row on a narrow screen. The sign-in form left ⚙.
+- **⚙ rearranged to use the whole screen.** A slim bar of icons (with the names beside them on a wide
+  screen, at the bottom on a portrait one) and five tabs: **Look** (theme, text, density), **Pages**
+  (the rotation, and one column per page with its groups and cards to show or hide), **Night &
+  alerts**, **Devices** (agents and phones) and **Security**. The sections fill a fluid grid instead
+  of fixed columns. Agents are a list with the open agent beside it: what it may do, then its
+  targets under a tab per capability, with a filter and Tick all. The old tab names still open the
+  right tab (`?static&settings=agents`).
 - Setting or changing the PIN needs the admin.
 - ⚙ > Agents > Add an agent shows the command that works with this labhud: the one-line `curl`
   (and the `docker run`) once a release of the agent is pinned, otherwise the installer with
