@@ -1566,14 +1566,11 @@ function track_label(name, c) {
     A report or an update has no state to watch: done when the agent accepts it. */
 function track_goal(name, c) {
   let m = /^game-(start|stop|restart)-(.+)$/.exec(name);
-  if (m) {
-    const id = m[2];
-    const server = () => { const p = CFG.pages.find((x) => x.games); return ((p && get(p.games)) || []).find((sv) => String(sv.id) === id); };
-    const since = Date.now() / 1000;
-    if (m[1] === "start") return { verb: "starting", doneText: "running", want: () => (server() || {}).state === "running" };
-    if (m[1] === "stop") return { verb: "stopping", doneText: "stopped", want: () => { const sv = server(); return !!sv && sv.state !== "running" && sv.state !== "starting"; } };
-    return { verb: "restarting", doneText: "running again", want: () => { const sv = server(); return !!sv && sv.state === "running" && (sv.uptime_s || 0) < Date.now() / 1000 - since; } };
-  }
+  if (m) return game_goal(m[1], m[2]);
+  // a game server's buttons from its agent (Pterodactyl): followed by the server's id, not by the
+  // tile, whose slot shows another server once the list is sorted again (running ones first)
+  m = /^agent-.+-(start|stop|restart)$/.exec(name);
+  if (m && c && c.game && c.game.id) return game_goal(m[1], String(c.game.id));
   m = /^vm-([A-Za-z0-9]+)-(\d+)-(start|shutdown|reboot)$/.exec(name);
   if (m) {
     const g = () => get(`proxmox.${m[1]}.guests.${m[2]}`) || {};
@@ -1590,6 +1587,15 @@ function track_goal(name, c) {
   if (/^wol-/.test(name) && c) return { verb: "waking up", doneText: "up", want: () => card_status(c) === true };
   if (/^shutdown-/.test(name) && c) return { verb: "shutting down", doneText: "off", want: () => card_status(c) === false || quiet_off(card_status(c)) };
   return { verb: "", doneText: "accepted", want: null };
+}
+
+/** What "done" looks like for a game server, found by its id in the live list. */
+function game_goal(verb, id) {
+  const server = () => { const p = CFG.pages.find((x) => x.games); return ((p && get(p.games)) || []).find((sv) => String(sv.id) === id); };
+  const since = Date.now() / 1000;
+  if (verb === "start") return { verb: "starting", doneText: "running", want: () => (server() || {}).state === "running" };
+  if (verb === "stop") return { verb: "stopping", doneText: "stopped", want: () => { const sv = server(); return !!sv && sv.state !== "running" && sv.state !== "starting"; } };
+  return { verb: "restarting", doneText: "running again", want: () => { const sv = server(); return !!sv && sv.state === "running" && (sv.uptime_s || 0) < Date.now() / 1000 - since; } };
 }
 
 function finish(t, how, error) {

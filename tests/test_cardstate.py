@@ -162,5 +162,18 @@ class ActionOrder(unittest.TestCase):
         self.assertEqual(json.loads(run.stdout), [ORDERED, [False] * 5 + [True] * 5])
 
 
+class GameTrack(unittest.TestCase):
+    """START on a game tile is followed by the server's id: "starting…" ends when that server runs,
+    even though the list was sorted again and the tile now shows another one."""
+
+    def test_followed_by_id(self):
+        if not NODE:
+            self.skipTest("no node")
+        run = subprocess.run([NODE, os.path.join(ROOT, "tests", "js", "game_track.mjs")],
+                             capture_output=True, text=True, timeout=20)
+        self.assertEqual(run.returncode, 0, run.stderr[:1000])
+        self.assertEqual(json.loads(run.stdout), {"verb": "starting", "before": False, "after": True})
+
+
 if __name__ == "__main__":
     unittest.main()

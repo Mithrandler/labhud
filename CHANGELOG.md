@@ -62,6 +62,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   (on a narrow screen the red ones get a row of their own). The verb comes from the action's name,
   so a container called "stopwatch" is not red; YES in the confirmation is red only for those.
   `/api/v1` gives the app the same order and `danger` (parity-tested).
+- A game server started or stopped from its tile is followed by its id: "starting…" no longer
+  waits the full 5 minutes when the list is sorted again under it (the running ones go first, so
+  the tile then shows another server).
 - The menu under the admin's name is now Settings and Sign out; Edit config moved to ⚙ > Advanced.
 - **HTTPS by default.** At the first start labhud makes its own certificate (ECDSA P-256,
   self-signed, 10 years) into `LABHUD_DATA/tls/` with `openssl` (now in the image) and answers
