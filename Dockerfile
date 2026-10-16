@@ -5,9 +5,11 @@ FROM python:3.12-alpine
 RUN apk add --no-cache iputils libcap openssl \
  # `ping` gets the capability on the file, so the process does not have to run as root.
  && setcap cap_net_raw+ep "$(command -v ping)" \
- && adduser -D -u 10001 labhud
+ && adduser -D -u 10001 labhud \
+ # `labhud …` in the container (docker exec labhud labhud agent list): cli.py
+ && printf '#!/bin/sh\nexec python3 /app/cli.py "$@"\n' > /usr/local/bin/labhud && chmod 755 /usr/local/bin/labhud
 WORKDIR /app
-COPY admin.py agentproto.py alerting.py agents.py cardstate.py cardtype.py config.py devices.py editmode.py envfiles.py events.py init.py layout.py lock.py managed.py mqtt.py notify.py onboard.py qr.py scan.py screen.py server.py setupmode.py store.py thresholds.py tlscert.py tomlw.py websock.py ./
+COPY admin.py agentproto.py alerting.py agents.py cardstate.py cardtype.py cli.py config.py devices.py editmode.py envfiles.py events.py init.py layout.py lock.py managed.py mqtt.py notify.py onboard.py qr.py scan.py screen.py server.py setupmode.py store.py thresholds.py tlscert.py tomlw.py websock.py ./
 COPY sources ./sources
 COPY agents/labhud-agent.py agents/install.sh agents/install-agent.sh agents/agent-release.json ./agents/
 COPY static ./static

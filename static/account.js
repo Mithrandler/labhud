@@ -232,7 +232,7 @@ function open_signin() {
 function admin_settings(section) {
   const s = section("Admin");
   s.appendChild(el("p", "hint", `Signed in as ${ADMIN_USER}. A browser stays signed in for ${Math.round(ADMIN_IDLE / 86400)} days `
-    + "after its last use. A new password or authenticator (init.py admin) signs every browser out."));
+    + "after its last use. A new password or authenticator (labhud admin) signs every browser out."));
   const row = el("div", "choices");
   const button = (label, run, extra) => {
     const b = el("button", "choice" + (extra ? " " + extra : ""), label);

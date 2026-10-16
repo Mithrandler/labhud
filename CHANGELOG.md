@@ -25,6 +25,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **A host's charts from its agent**: a card with `agent = "<name>"` charts the agent's CPU, RAM,
   disk, temperatures and network (what the agent sends) in its panel, beside its own numbers, and
   `/api/v1` gives them as the card's `charts`. The panel's charts gain **1h** (1h, 6h, 24h, 7d).
+- **The `labhud` command** ([docs/cli.md](docs/cli.md)): `docker exec -it labhud labhud …` does
+  what ⚙ does, through the same routes. It works on the admin, PIN, sources (list, test, add,
+  remove), agents (list, code, allow, deny, logs), phones (pair, list, remove), pages (list,
+  move), organize, config (show, edit, take-over), scan, alert rules (list, add, remove) and
+  notify test. It proves who it is with a key the running server writes at each start into
+  `LABHUD_DATA/cli.json` (mode 600), taken only from loopback. In ⚙, the **?** beside a
+  section's title shows its commands.
 - **Containers: update available, UPDATE, LOGS.** A container ticked on an agent shows **update
   available** when its registry has a newer image (the agent checks 2 minutes after it starts,
   then every 6 hours), then **UPDATE**: the agent pulls it and makes the container again with

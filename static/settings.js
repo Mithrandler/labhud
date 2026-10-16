@@ -220,7 +220,9 @@ function open_settings() {
   const elsewhere = el("div");   // the other tabs' sections are drawn here and never shown
   const section = (title, where = "look", wide = false) => {
     const s = el("section", "set" + (wide ? " wide" : ""));
-    s.appendChild(el("h3", null, title));
+    const h = el("h3", null, title);
+    s.appendChild(h);
+    if (CLI_HELP[title] && signed_in()) cli_help(s, h, title);
     (where === tab ? body : elsewhere).appendChild(s);
     return s;
   };
@@ -911,4 +913,39 @@ function add_agent(show, list) {
     tick();
   });
   touched();
+}
+
+// --- "?": the same step from a terminal, with the `labhud` command (cli.py) ---
+
+const CLI_HELP = {
+  "Pages and groups · every screen": ["page list", "page move <card> <page>[/<group>]", "organize <page>"],
+  "Agents": ["agent list", "agent code", "agent allow <agent> <cap> [target … | --all]", "agent deny <agent> <cap> [target …]",
+    "agent logs <agent> <container>"],
+  "Phones": ["phone pair [name]", "phone list", "phone remove <name>"],
+  "Sources": ["source list", "source test <name> [KEY=value …]", "source add <name> [KEY=value …] [--page <page>]", "source remove <name>"],
+  "Scan my network": ["scan [<cidr>]"],
+  "Alert rules": ["alert list", "alert add <card|*> <cpu|mem|disk|temp|offline> [above] [minutes]", "alert remove <number>"],
+  "Notifications": ["notify test"],
+  "Config file": ["status", "config take-over"],
+  "Edit config": ["config show", "config edit"],
+  "Admin": ["admin"],
+  "Lock": ["pin", "pin --clear"],
+};
+const CLI_OPEN = new Set();   // the sections whose "?" is open, across redraws of ⚙
+
+function cli_help(s, h, title) {
+  const q = el("button", "cli-q" + (CLI_OPEN.has(title) ? " on" : ""), "?");
+  q.type = "button";
+  q.title = "The same from a terminal";
+  h.appendChild(q);
+  const box = el("div", "cli-help");
+  box.appendChild(el("p", "hint", "From a terminal on labhud's host (labhud = the container's name):"));
+  for (const c of CLI_HELP[title]) box.appendChild(copy_line(`docker exec -it labhud labhud ${c}`));
+  box.hidden = !CLI_OPEN.has(title);
+  s.appendChild(box);
+  q.addEventListener("click", () => {
+    if (CLI_OPEN.has(title)) CLI_OPEN.delete(title); else CLI_OPEN.add(title);
+    box.hidden = !CLI_OPEN.has(title);
+    cls(q, "on", CLI_OPEN.has(title));
+  });
 }

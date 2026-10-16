@@ -20,6 +20,7 @@ import json
 import re
 import os
 import queue
+import secrets
 import socket
 import threading
 import time
@@ -1230,6 +1231,33 @@ AGENT_IMAGE = os.environ.get("LABHUD_AGENT_IMAGE", "")
 API_VERSION = 1
 
 
+# The `labhud` command (cli.py) runs next to this process (docker exec) and calls the same routes
+# as ⚙, as the admin: from loopback only, with a key that is new at every start and kept in
+# LABHUD_DATA/cli.json (mode 600), which only this server's own user can read.
+CLI_KEY = ""
+CLI_FILE = "cli.json"
+LOOPBACK = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+
+def write_cli_key():
+    global CLI_KEY
+    if not store.enabled():
+        return
+    key = secrets.token_hex(32)
+    host = next((h.strip() for h in os.environ.get("LABHUD_HOSTS", "").split(",")
+                 if h.strip() and not h.strip().startswith(("localhost", "127."))), "")
+    path = os.path.join(store.DIR, CLI_FILE)
+    try:
+        fd = os.open(path + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"url": f"{'https' if TLS_CERT else 'http'}://127.0.0.1:{PORT}", "key": key, "host": host}, f)
+        os.chmod(path + ".new", 0o600)
+        os.replace(path + ".new", path)
+        CLI_KEY = key
+    except OSError as e:
+        print(f"warning: the labhud command will not work: {path}: {e}", flush=True)
+
+
 def app_state(full=False):
     with _lock:
         data = dict(_data)
@@ -1294,9 +1322,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _host_ok(self):
         """A name in LABHUD_HOSTS, or a paired device: its token is what DNS rebinding cannot have."""
-        return (self.headers.get("Host") or "").lower() in ALLOWED_HOSTS or self._device()[0] is not None
+        return (self.headers.get("Host") or "").lower() in ALLOWED_HOSTS or self._device()[0] is not None or self._cli()
+
+    def _cli(self):
+        """The `labhud` command beside this server (write_cli_key): loopback and the current key."""
+        given = self.headers.get("X-Labhud-Cli") or ""
+        return bool(CLI_KEY and given and self.client_address[0] in LOOPBACK and hmac.compare_digest(given, CLI_KEY))
 
     def _who(self):
+        if self._cli():
+            return "the labhud command"
         name, _ = self._device()
         return f"{self.client_address[0]} ({name})" if name else self.client_address[0]
 
@@ -1391,7 +1426,7 @@ class Handler(BaseHTTPRequestHandler):
     def _same_page(self):
         """The request comes from labhud's own page, under a name in LABHUD_HOSTS, or from the
         app with its token (an app has no Origin; the WebView's page still needs its own)."""
-        if self._device()[1] == "bearer":
+        if self._device()[1] == "bearer" or self._cli():
             return True
         host = (self.headers.get("Host") or "").lower()
         origin = (self.headers.get("Origin") or "").lower()
@@ -1536,7 +1571,9 @@ class Handler(BaseHTTPRequestHandler):
     def _may_manage(self):
         """⚙ on the server's side (phones, agents, the PIN): from labhud's own page signed in as
         the admin, or a phone signed in as the admin and unlocked (a stolen phone still needs the
-        PIN, and the admin signs it out from any screen)."""
+        PIN, and the admin signs it out from any screen). And the `labhud` command (_cli)."""
+        if self._cli():
+            return True
         if self._device()[1] == "bearer":
             return self._device_admin() and self._unlocked()
         return self._same_page() and ADMIN.is_on() and self._admin_ok()
@@ -1689,7 +1726,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self._small_json(256 * 1024)
         if body is None or not self._may_manage():
             return self._json({"ok": False, "error": "forbidden"}, 403)
-        who = self.client_address[0]
+        who = self._who()
         try:
             if op == "status":
                 return self._json({"ok": True, **managed.status(), "path": CONFIG_PATH})
@@ -2145,6 +2182,7 @@ if __name__ == "__main__":
     threading.Thread(target=watch_maintenance, daemon=True, name="maintenance").start()
     if os.environ.get("LABHUD_PUBLIC_PORT"):
         start_public(int(os.environ["LABHUD_PUBLIC_PORT"]))
+    write_cli_key()
     httpd = Server(("0.0.0.0", PORT), Handler)
     if TLS_CERT:
         import ssl

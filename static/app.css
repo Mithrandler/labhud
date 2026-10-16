@@ -565,6 +565,13 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings-body > .hint { margin: 0; }
 #settings .set { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 10px; }
 #settings h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: var(--sub); }
+/* "?" beside a section's title: the same step with the labhud command */
+#settings h3 .cli-q { float: right; width: 20px; height: 20px; margin: -3px 0 0 6px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--border); background: transparent; color: var(--muted); font: 700 11px/1 var(--font); cursor: pointer; }
+#settings h3 .cli-q.on { border-color: var(--accent); color: var(--accent); }
+#settings .cli-help { margin: 0 0 8px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: 6px; }
+#settings .cli-help .hint { margin: 0 0 4px; }
+#settings .cli-help .copy-line { margin-top: 4px; }
 #settings .adv-text { width: 100%; box-sizing: border-box; min-height: 50vh; resize: vertical; background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: 12px/1.45 ui-monospace, "DejaVu Sans Mono", monospace; tab-size: 2; }
 #settings .adv-text[readonly] { opacity: .7; }
