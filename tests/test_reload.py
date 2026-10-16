@@ -56,3 +56,30 @@ class Reload(DemoServer):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+NODE = shutil.which("node")
+DEFER = os.path.join(ROOT, "tests", "js", "reload_defer.mjs")
+
+
+@unittest.skipUnless(NODE, "node not found")
+class ReloadWaits(unittest.TestCase):
+    """The display's reload (static/app.js, run in Node) waits while ⚙, a panel or a confirmation
+    is open: a tick in ⚙ > Agents used to close ⚙ and drop the screen on the first page."""
+
+    def run_steps(self, steps):
+        import subprocess
+        out = subprocess.run([NODE, DEFER], input=json.dumps(steps), capture_output=True, text=True, check=True)
+        return json.loads(out.stdout)
+
+    def test_nothing_open_reloads_at_once(self):
+        self.assertEqual(self.run_steps(["reload"]), ["reload@0"])
+
+    def test_settings_open_waits_until_closed(self):
+        steps = [["#settings", False], "reload", "tick", "reload", "tick", ["#settings", True], "tick", "tick"]
+        self.assertEqual(self.run_steps(steps), ["reload@3"])
+
+    def test_panel_then_confirm(self):
+        steps = [["#panel", False], "reload", "tick", ["#panel", True], ["#confirm", False], "tick",
+                 ["#confirm", True], "tick"]
+        self.assertEqual(self.run_steps(steps), ["reload@3"])

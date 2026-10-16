@@ -25,6 +25,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 ### Changed
 - An agent's buttons need no `LABHUD_ACTION_URL`; the config's own actions still do.
 
+### Fixed
+- A tick in ⚙ > Agents that changed a card's buttons reloaded the display at once, closing ⚙
+  and dropping the screen on the first page. A reload now waits while ⚙, a card's panel or a
+  confirmation is open, and happens once they close.
+
 ## [0.2.15] - 2026-10-15
 
 ### Added

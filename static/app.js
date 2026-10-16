@@ -202,13 +202,33 @@ function start_stream() {
   // a broken one shows its problems while the server keeps the last good one.
   s.addEventListener("config", (e) => {
     const c = JSON.parse(e.data);
-    if (c.reload) location.reload();
+    if (c.reload) reload_when_free();
     else show_config_errors(c.errors || []);
   });
   // the PIN was set or removed (here, on another screen, or by init.py pin): see lock.js
   s.addEventListener("lock", (e) => lock_state(JSON.parse(e.data)));
   s.onopen = () => document.body.classList.remove("disconnected");
   s.onerror = () => document.body.classList.add("disconnected");  // EventSource reconnects by itself
+}
+
+/** Something open under someone's hands: ⚙, a card's panel, a confirmation. */
+function overlay_open() {
+  return ["#settings", "#panel", "#confirm"].some((id) => { const n = $(id); return n && !n.hidden; });
+}
+
+/** The reload a good config.toml asks for, or a tick in ⚙ that changed the cards' buttons. Not
+ * while something is open: a tick in ⚙ > Agents would close ⚙ and drop you on the first page.
+ * It waits until that is closed, then reloads once. */
+let reloadPending = false;
+function reload_when_free() {
+  if (!overlay_open()) { location.reload(); return; }
+  if (reloadPending) return;
+  reloadPending = true;
+  const wait = setInterval(() => {
+    if (overlay_open()) return;
+    clearInterval(wait);
+    location.reload();
+  }, 500);
 }
 
 function show_config_errors(problems) {
