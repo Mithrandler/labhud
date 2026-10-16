@@ -26,6 +26,8 @@ still change in a minor version; such changes are listed under **Changed** with 
   disk, temperatures and network (what the agent sends) in its panel, beside its own numbers, and
   `/api/v1` gives them as the card's `charts`. The panel's charts gain **1h** (1h, 6h, 24h, 7d).
 - The demo's docker VM has a made-up agent (charts, a disk alert).
+- ⚙ > Sources names your own JSON sources: "Live agent (your own JSON)" with what it feeds, not
+  just "live"; `LABHUD_JSON_<NAME>_TITLE` names any of them.
 - **⚙ > Advanced: the config file, edited in ⚙.** The editor opens inside ⚙ (no new tab, which a
   kiosk browser does not open), checks as you type and saves only a config that loads. **Take
   over** copies a mounted config (read-only on most installs, so Edit config could not save) into

@@ -15,6 +15,7 @@
 #                               with _LIST_NAME=title and _LIST_VALUE=state
 #   LABHUD_JSON_<NAME>_HEADERS  more headers, "Name: value; Name: value" (an API key header)
 #   LABHUD_JSON_<NAME>_PUBLIC   on: a service on the internet, certificate always checked
+#   LABHUD_JSON_<NAME>_TITLE    its name in ⚙ > Sources (default: "<Name> (your own JSON)")
 #
 # The data is then addressable as "<name>.<key>" (lowercase name), or "<name>.<label>.<key>" with
 # several URLs. With one URL a failed request is the source's error; with several, a label that
@@ -101,6 +102,12 @@ def _make(urls, timeout, auth="", extra=None, shaping=None, public=False):
     return fetch
 
 
+LIVE_TITLE = "Live agent (your own JSON)"
+LIVE_ABOUT = ("Your own JSON document (LABHUD_JSON_LIVE_URL): firewall and IDS alerts, DNS, logins, devices, "
+              "the alert list, and whatever else has no API of its own. It fills the built-in network, "
+              "security and health panels; see docs/live-agent.md.")
+
+
 for _var, _value in sorted(os.environ.items()):
     _m = _VAR.match(_var)
     if not _m or not _value.strip():
@@ -111,4 +118,8 @@ for _var, _value in sorted(os.environ.items()):
     _fetch = _make(labelled_urls(_value), int(env(f"JSON_{_name}_TIMEOUT", "10")), env(f"JSON_{_name}_AUTH"),
                    parse_headers(env(f"JSON_{_name}_HEADERS")), _shaping,
                    env(f"JSON_{_name}_PUBLIC").lower() in ("1", "on", "true", "yes"))
-    source(_name.lower(), every=int(env(f"JSON_{_name}_EVERY", "10")), env=(f"JSON_{_name}_URL",))(_fetch)
+    # ⚙ > Sources shows a title and what it is for, not only the variable's name
+    _title = env(f"JSON_{_name}_TITLE") or (LIVE_TITLE if _name == "LIVE" else f"{_name.title()} (your own JSON)")
+    _about = LIVE_ABOUT if _name == "LIVE" else f"Your own JSON document, read from LABHUD_JSON_{_name}_URL."
+    source(_name.lower(), every=int(env(f"JSON_{_name}_EVERY", "10")), env=(f"JSON_{_name}_URL",),
+           title=_title, about=_about)(_fetch)

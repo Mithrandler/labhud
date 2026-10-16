@@ -14,6 +14,9 @@ LABHUD_JSON_LIVE_TIMEOUT=20                        # seconds (optional)
 If your endpoint wants a key, `LABHUD_JSON_LIVE_AUTH="Bearer <key>"` sends it as the
 `Authorization` header.
 
+In ⚙ > Sources it is listed as "Live agent (your own JSON)"; any other JSON source as "<Name> (your
+own JSON)", or as `LABHUD_JSON_<NAME>_TITLE` says.
+
 The source name is the part between `LABHUD_JSON_` and `_URL`, lowercased. Name it `live` to
 get the built-in panels described below. Any other name works the same way for card metrics
 and lists, but not for the built-in panels. Several sources can share one URL variable:
