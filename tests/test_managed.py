@@ -13,6 +13,7 @@ import tomllib
 import unittest
 from unittest import mock
 
+import alerting
 import config
 import envfiles
 import managed
@@ -194,7 +195,7 @@ class Routes(unittest.TestCase):
         return out
 
     def test_refused_without_the_admin(self):
-        for op in ("status", "text", "save-text", "take-over", "secrets", "catalog"):
+        for op in ("status", "text", "save-text", "take-over", "secrets", "catalog", "alerts", "alerts-save", "notify-test"):
             self.assertEqual(self.post(op, ticket=None)[0], 403, op)
             self.assertEqual(self.post(op, ticket="nope")[0], 403, op)
 
@@ -247,6 +248,28 @@ class Routes(unittest.TestCase):
         self.assertEqual(self.post("scan", {"cidr": "8.8.8.0/24"})[0], 409)
         code, o = self.post("organize", {"page": "main"})
         self.assertEqual([g["title"] for g in o["pages"][0]["groups"]], ["PCs & other"])
+        # ⚙ > Alerts: the defaults, then rules of its own and [notify], kept and applied
+        code, al = self.post("alerts")
+        self.assertEqual((code, al["rules"]), (200, alerting.DEFAULT_RULES))
+        self.assertEqual(al["notify"], {"via": "both", "quiet": [23, 7]})
+        self.assertFalse(al["ntfy"]["set"])
+        code, r = self.post("alerts-save", {"rules": [{"on": "*", "what": "offline", "minutes": 3, "above": 9}],
+                                            "notify": {"via": "app", "quiet": None}})
+        self.assertTrue(r["ok"], r)
+        with open(os.path.join(self.data, "config.toml")) as f:
+            kept = f.read()
+        self.assertIn('what = "offline"', kept)
+        self.assertNotIn("above", kept)                     # offline takes no mark
+        self.assertIn('via = "app"', kept)
+        deadline = time.monotonic() + 10
+        while self.post("alerts")[1]["notify"]["via"] != "app" and time.monotonic() < deadline:
+            time.sleep(0.3)
+        al = self.post("alerts")[1]
+        self.assertEqual((al["rules"], al["notify"]), ([{"on": "*", "what": "offline", "minutes": 3}], {"via": "app", "quiet": None}))
+        code, r = self.post("alerts-save", {"rules": [{"on": "zzz", "what": "cpu", "above": 90}], "notify": {}})
+        self.assertEqual((code, r["ok"]), (409, False))     # no such card: nothing written
+        self.assertEqual(self.post("notify-test", {"url": "file:///etc/passwd"})[0], 409)
+        self.assertEqual(self.post("notify-test")[1], {"ok": False, "error": "no address set"})
 
 
 if __name__ == "__main__":

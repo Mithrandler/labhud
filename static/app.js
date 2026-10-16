@@ -1853,10 +1853,11 @@ function fill_panel() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Charts in a card's panel: its numbers that have a history, over 6 hours, 24 hours or 7 days
+// Charts in a card's panel: its numbers that have a history, and a host's agent sensors (charts),
+// over 1 hour, 6 hours, 24 hours or 7 days
 // ---------------------------------------------------------------------------------------------
 
-const RANGES = [["6h", 6 * 3600], ["24h", 86400], ["7d", 7 * 86400]];
+const RANGES = [["1h", 3600], ["6h", 6 * 3600], ["24h", 86400], ["7d", 7 * 86400]];
 let chartRange = "6h";
 let LONG_HIST = null, longAt = 0;
 
@@ -1869,8 +1870,25 @@ function load_long() {
     .catch(() => { longAt = 0; });
 }
 
+/** What a panel charts: the card's numbers with a history, then its agent's sensors that are not
+    one of those already (by name: "CPU" from Proxmox and "CPU" from the agent are the same) and
+    that the agent sends at all. */
+function chart_specs(c) {
+  const kept = (path) => CFG.trends && CFG.trends.includes(path);
+  const specs = (c.metrics || []).filter(([path]) => kept(path));
+  const names = new Set(specs.map(([, label]) => label.toLowerCase()));
+  for (const [path, label, fmt] of c.charts || []) {
+    if (!kept(path) || names.has(label.toLowerCase()) || specs.some(([p]) => p === path)) continue;
+    const any = (src) => (src && src[path] || []).some((v) => typeof v === "number");
+    if (!any(HIST) && !any(LONG_HIST && LONG_HIST.series) && typeof get(path) !== "number") continue;
+    names.add(label.toLowerCase());
+    specs.push([path, label, fmt]);
+  }
+  return specs;
+}
+
 function panel_charts(body, c) {
-  const specs = (c.metrics || []).filter(([path]) => CFG.trends && CFG.trends.includes(path));
+  const specs = chart_specs(c);
   if (!specs.length) return;
   const head = el("div", "chart-head");
   head.appendChild(el("h3", null, "history"));
@@ -1883,7 +1901,7 @@ function panel_charts(body, c) {
   body.appendChild(head);
   const seconds = RANGES.find(([n]) => n === chartRange)[1];
   let source = HIST, step = 60;
-  if (chartRange !== "6h") {
+  if (seconds > 6 * 3600) {
     load_long();
     if (!LONG_HIST) { body.appendChild(el("p", "panel-spec", "loading…")); return; }
     source = LONG_HIST.series; step = LONG_HIST.step;

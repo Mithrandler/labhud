@@ -9,6 +9,23 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [0.2.16] - unreleased
 
 ### Added
+- **Alert rules on hosts, set in ⚙ > Alerts.** `[[alert]]` rules (`alerting.py`): a host's CPU,
+  RAM, disk or temperature (the hottest of CPU and GPUs) past a mark for some minutes, or its agent
+  gone for some minutes, on one card or on every card with an agent of its own (`on = "*"`). The
+  defaults, without any rule: CPU and RAM above 90% for 10 min, disk above 90%, temperature above
+  85 °C for 5 min, offline for 5 min. A problem clears only under the mark minus a margin; cards
+  in maintenance, off on schedule or started on demand are skipped, and the fixed marks of
+  `thresholds.py` leave the cards a rule watches alone. What is wrong now is in the bell (and in
+  `/api/v1/state`'s `alerts`); every change is in the history.
+- **`[notify]`: ntfy, the app, or both, and quiet hours.** `via` says where notifications go;
+  `quiet_from` / `quiet_to` (23 to 7 by default): in them only urgent news goes out (offline,
+  disk, temperature, a host down), the rest waits and goes out as one message when they end. ⚙ >
+  Alerts sets both, and the ntfy topic and token (Test, Save to `secrets.env`, Forget).
+  `GET /api/v1/notifications?after=<id>`: the messages, for the app to show itself.
+- **A host's charts from its agent**: a card with `agent = "<name>"` charts the agent's CPU, RAM,
+  disk, temperatures and network (what the agent sends) in its panel, beside its own numbers, and
+  `/api/v1` gives them as the card's `charts`. The panel's charts gain **1h** (1h, 6h, 24h, 7d).
+- The demo's docker VM has a made-up agent (charts, a disk alert).
 - **⚙ > Advanced: the config file, edited in ⚙.** The editor opens inside ⚙ (no new tab, which a
   kiosk browser does not open), checks as you type and saves only a config that loads. **Take
   over** copies a mounted config (read-only on most installs, so Edit config could not save) into

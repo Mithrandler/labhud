@@ -248,9 +248,22 @@ def weather():
     return {"temp": round(_wave(14, 4, 86400), 1), "code": 2, "max": 18.0, "min": 9.0, "days": days}
 
 
+def agents():
+    """labhud-agent in the docker VM (agents.<name>, as agents.snapshot() gives it): its numbers
+    for the panel's charts, and a disk past the mark of the default [[alert]] rule."""
+    return {"docker": {"online": True, "version": "0.3.0", "caps": ["sensors", "docker"], "sensors": {
+        # a day's rhythm plus a little of the minute, so 1 hour and 7 days both look like a host
+        "cpu": round(_wave(28, 14, 86400) + _wave(0, 6, 1500), 1), "mem": round(_wave(62, 6, 86400, 0.3) + _wave(0, 2, 2400), 1),
+        "disk": round(_wave(92.4, 0.5, 4 * 86400), 1), "cpu_temp": round(_wave(56, 7, 86400, 0.1) + _wave(0, 3, 1500)),
+        "net_rx": int(_wave(2.2e6, 1.4e6, 86400, 0.6) + _wave(0, 4e5, 900)),
+        "net_tx": int(_wave(0.8e6, 0.5e6, 86400, 0.6) + _wave(0, 1.5e5, 1200)),
+        "load1": round(_wave(1.2, 0.8, 1800), 2), "uptime": 86400 * 3}}}
+
+
 FETCHERS = {"proxmox": (proxmox, 10), "temp": (temp, 10), "synology": (synology, 30), "pbs": (pbs, 60),
             "opnsense": (opnsense, 5), "live": (live, 10), "qbt": (qbt, 5), "recent": (recent, 300),
-            "sonarr": (sonarr, 300), "radarr": (radarr, 300), "jellyfin": (jellyfin, 30), "weather": (weather, 600)}
+            "sonarr": (sonarr, 300), "radarr": (radarr, 300), "jellyfin": (jellyfin, 30), "weather": (weather, 600),
+            "agents": (agents, 10)}
 
 
 def events():

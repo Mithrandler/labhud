@@ -35,6 +35,7 @@ title = "GENERAL"
     id = "vm-pve-100"
     name = "docker"
     proxmox = "pve/100"
+    agent = "docker"
 
     [[page.group.card]]
     id = "vm-pve-101"

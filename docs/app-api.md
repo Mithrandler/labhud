@@ -28,8 +28,11 @@ once (the display's PIN is asked first when one is set). From the machine: `init
 `init.py unpair "Pixel 6a"`. What a token allows, and why the port must still stay off the internet:
 [security.md](security.md#paired-phones-the-labhud-app).
 
-Notifications stay with ntfy: with `LABHUD_NOTIFY_FORMAT=ntfy` and `LABHUD_NOTIFY_CLICK=app`, a
-tap on one opens the app on the card it is about.
+Notifications go through ntfy, the app, or both: `via` in `[notify]`, chosen in ⚙ > Alerts (or by
+the app, signed in as the admin, with `POST /api/setup/alerts-save`). With ntfy,
+`LABHUD_NOTIFY_FORMAT=ntfy` and `LABHUD_NOTIFY_CLICK=app` make a tap open the app on the card it is
+about. The app's own come from `GET /api/v1/notifications` (below), the same messages after the
+same quiet hours.
 
 ## The API
 
@@ -95,6 +98,7 @@ lists the phones signed in as the admin, and Remove ends a phone at once.
 | `GET /api/v1/uptime` | `{step, cards: {id: [values]}, percent: {id: 99.4}}`: per card with a check, one value per 15 minutes, oldest first: the share of that time it was up (0..1), `-1` off on purpose (schedule, on demand, maintenance), `null` not known. `?range=24h` (default) or `?range=7d`; `percent` is over the range, leaving out the off and unknown slices |
 | `GET /api/v1/events` | `{events: [{t, name, bad, card?, state?}]}`, newest first |
 | `GET /api/v1/devices` | `{pairing, devices: [{name, paired, seen}]}`: the paired phones |
+| `GET /api/v1/notifications` | `{via, quiet, notifications: [{id, time, title, text, bad, card}]}`: the last 100 messages LabHUD sent (or would send) as notifications, oldest first, after the quiet hours did their part; `?after=<id>` only the newer ones (ids rise). Show them when `via` is `app` or `both`. The outbox lives in memory: after a restart it starts empty |
 
 `state`:
 
@@ -108,11 +112,13 @@ lists the phones signed in as the admin, and Remove ends a phone at once.
     "status": "up", "bad": false, "summary": "VM 4 · LXC 3 · CPU 20%",
     "frozen": false, "note": "", "note_kind": "",
     "metrics": [{"key": "proxmox.pve.cpu", "label": "CPU", "value": "20%", "sev": "", "trend": true}],
+    "charts": [{"key": "agents.pve.sensors.cpu_temp", "label": "CPU temp", "format": "celsius"}],
     "subtitle": "i5-12500 · 64 GB", "url": "https://192.0.2.10:8006",
     "actions": [], "maintenance_button": true
   }],
   "problems": ["vm-pve-106"],
-  "alerts": [{"id": "demo-disk", "text": "Disk on nas-backup above 85% in 12 days"}]
+  "alerts": [{"id": "demo-disk", "text": "Disk on nas-backup above 85% in 12 days"},
+             {"id": "rule:vm-pve-100:disk:1760000000", "text": "docker disk 92%", "card": "vm-pve-100", "since": 1760000000}]
 }
 ```
 
@@ -137,6 +143,11 @@ A card:
   danger, choices?}`. Ask `confirm` before sending; with `choices`, offer those instead
   (`{label, action, danger}`), each sent as its own action.
 - `sections` (only from `/api/v1/card/<id>`): the panel, `[{title, rows: [[name, value, bad]]}]`.
+- `charts` (a card with an agent of its own): its agent's numbers that have a history, for the
+  host's charts beside `metrics` with `trend` (leave out a label the metrics already chart).
+
+`alerts`: the config's own list (`[alerts] path`) and what the `[[alert]]` rules find now, those
+with the `card` they are about and `since` (Unix time).
 
 A page with `games: true` has no fixed cards: its `servers` are the game servers, as the wall's
 tiles show them (the same function, checked by a test): `{id, name, game, state, running, title,

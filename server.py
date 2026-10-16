@@ -29,6 +29,7 @@ import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anythin
 import managed
 import admin
 import agents
+import alerting
 import cardstate
 import config
 import devices
@@ -265,6 +266,7 @@ def _apply(topology):
     TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST = (
         topology, active, inactive, every, targets, source_host)
     LOCK.idle = topology.get("lock", {}).get("idle", lock.IDLE)
+    notify.configure(topology.get("notify") or {})
 
 
 # The display's lock (lock.py): a PIN, then a ticket that the requests changing something carry.
@@ -302,6 +304,9 @@ MAINT = {} if DEMO else {k: v for k, v in store.load("maintenance", {}).items() 
 _maint_lock = threading.Lock()
 # Numbers past their critical mark for a while: events and notifications (thresholds.py)
 WATCH = thresholds.Watch()
+# The [[alert]] rules on hosts (alerting.py): their state, and the lock for the two callers
+RULES = alerting.Rules()
+_rules_lock = threading.Lock()
 
 
 # Sparklines: one value a minute for every number in TOPOLOGY["trends"], the last 6 hours, in
@@ -386,6 +391,7 @@ def sample_history():
                 store.save("history_long", {"t": int(time.time()), "series": long_kept})
             if uptime_kept is not None:
                 store.save("uptime", {"t": int(time.time()), "series": uptime_kept})
+        check_rules()   # "offline for 5 min" needs the clock, not only an agent's report
         time.sleep(HISTORY_STEP)
 
 
@@ -721,8 +727,10 @@ def _log(found):
     maint = maintenance_now() if found else {}
     for text, bad, *ref in found:
         still_true = None
-        # ("status" = went down | "up" | "off", card id): a host's transition, kept with the event
+        # ("status" = went down | "up" | "off" | "rule", card id): a host's transition, kept with
+        # the event; then, for a rule (alerting.py), whether it is urgent (sent in the quiet hours)
         kind, card = ref[0] if ref else (None, None)
+        urgent = ref[1] if len(ref) > 1 else True
         state = {"status": "down", "up": "up", "off": "off"}.get(kind)
         if kind == "status":
             if card in maint:
@@ -735,7 +743,7 @@ def _log(found):
         mqtt.event(text, bad)
         if bad:
             screen.wake()
-        notify.submit(TOPOLOGY["title"], text, bad, still_true, card)
+        notify.submit(TOPOLOGY["title"], text, bad, still_true, card, urgent=urgent)
     if not DEMO:
         store.save("events", EVENTS.all())
     result = dict(EVENTS.snapshot(), _t=int(time.time()))
@@ -752,6 +760,8 @@ def _collect(name):
     if sources.in_window(TOPOLOGY["skip_sources"].get(name)):
         return name, {"scheduled": True, "_t": int(time.time())}
     try:
+        if DEMO and name == "agents":   # the made-up agent, and any real one paired with the demo
+            return name, dict(ACTIVE[name].run(TOPOLOGY), **agents.snapshot(), _t=int(time.time()))
         if name == "status":
             result = (demo.status(TARGETS) if DEMO
                       else sources.host_status(TARGETS, TOPOLOGY["quiet_hours"]))
@@ -842,9 +852,12 @@ def loop():
                 before = _data.get(name)
                 _data[name] = result
             _log(events.changes(name, before, result, TOPOLOGY))
+            if name == "agents":
+                check_rules()
             if not DEMO and "unavailable" not in result:
-                past = WATCH.check([c for cs in TOPOLOGY["cards"].values() for c in cs],
-                                   lambda p: thresholds.lookup(_data, p), name, maintenance_now())
+                every_card = [c for cs in TOPOLOGY["cards"].values() for c in cs]
+                past = WATCH.check(every_card, lambda p: thresholds.lookup(_data, p), name,
+                                   set(maintenance_now()) | alerting.covered(every_card, TOPOLOGY["alert_rules"]))
                 if past:
                     _log(past)
             if signatures.get(name) != sig:
@@ -890,13 +903,37 @@ def browser_label(ua):
     return f"{browser} on {system}" if system else browser
 
 
+def check_rules():
+    """The [[alert]] rules (alerting.py) against the agents' numbers: events and notifications, and
+    `alerting.active` (what is wrong now, for the bell). On every agent report and once a minute."""
+    if "TOPOLOGY" not in globals():
+        return
+    with _rules_lock:
+        with _lock:
+            data = dict(_data)
+        before = RULES.active()
+        cards = [c for cs in TOPOLOGY["cards"].values() for c in cs]
+        found = RULES.check(cards, TOPOLOGY["alert_rules"], data.get("agents") or {},
+                            set(maintenance_now()), lambda c: cardstate.raw_status(c, data))
+        now = RULES.active()
+    if found:
+        _log(found)
+    if now != before or "alerting" not in data:
+        result = {"active": now, "_t": int(time.time())}
+        with _lock:
+            _data["alerting"] = result
+        _publish({"alerting": result})
+
+
 def publish_agents():
     """The agents' state (agents.py) as one more entry of the snapshot: `agents.<name>.…`. When
     what they may do changed the cards' buttons (a tick in ⚙, a guest moved), the displays reload."""
-    result = dict(agents.snapshot(), _t=int(time.time()))
+    # the demo's made-up agent (demo.agents, also polled as a source) beside any real one
+    result = dict(demo.agents() if DEMO else {}, **agents.snapshot(), _t=int(time.time()))
     with _lock:
         _data["agents"] = result
     _publish({"agents": result})
+    check_rules()
     if "TOPOLOGY" in globals() and _agent_buttons(with_agents(FILE_TOPOLOGY)) != _agent_buttons(TOPOLOGY):
         _apply(FILE_TOPOLOGY)
         print(f"agent buttons now on: {', '.join(sorted({c for c, _ in _agent_buttons(TOPOLOGY)})) or 'no card'}", flush=True)
@@ -1319,7 +1356,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
@@ -1390,6 +1427,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(uptime(span))
         if path == "/api/v1/events":
             return self._json({"events": EVENTS.all()})
+        if path == "/api/v1/notifications":   # ?after=<id>: the outbox (notify.py), for the app to show
+            m = re.search(r"(?:^|&)after=(\d{1,16})", self.path.partition("?")[2])
+            nt = TOPOLOGY.get("notify") or {}
+            return self._json({"via": nt.get("via", "both"), "quiet": list(nt["quiet"]) if nt.get("quiet") else None,
+                               "notifications": notify.outbox(int(m.group(1)) if m else 0)})
         if path == "/api/v1/stream":
             return self._app_stream()
         if path == "/api/v1/devices":   # the display's ⚙ lists them; names and times, no secrets
@@ -1676,6 +1718,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **layout.organize(raw, str(body.get("page") or ""), found)})
             if op in ("source-save", "source-forget"):
                 return self._source(op, body, who)
+            if op in ("alerts", "alerts-save", "notify-test"):
+                return self._alerts(op, body, who)
             if op == "scan-status":
                 return self._json({"ok": True, **scan.status(), "default": scan.default_cidr(os.environ.get("LABHUD_HOSTS", ""))})
             if op == "scan":
@@ -1728,6 +1772,45 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "changed": changed, "restart": bool(changed)})
         except ValueError as e:
             return self._json({"ok": False, "error": str(e)[:600]}, 409)
+
+    def _alerts(self, op, body, who):
+        """⚙ > Alerts. alerts: the rules, [notify], the hosts a rule can name, the webhook's state.
+        alerts-save {rules, notify}: into the kept config (checked like any save; applied without a
+        restart). notify-test {url?, token?}: one message now. Raises ValueError for the 409."""
+        if op == "notify-test":
+            url, token = str(body.get("url") or "").strip(), str(body.get("token") or "").strip()
+            if url and not re.match(r"https?://", url):
+                raise ValueError("the address must start with http:// or https://")
+            auth = (token if token.lower().startswith(("bearer ", "basic ")) else f"Bearer {token}") if token else None
+            error = notify.test(url or None, auth, "ntfy" if url else None)
+            print(f"setup: test notification from {who}: {error or 'sent'}", flush=True)
+            return self._json({"ok": error is None, "error": error})
+        if op == "alerts-save":
+            rules, nt = body.get("rules"), body.get("notify")
+            if not isinstance(rules, list) or not isinstance(nt, dict):
+                raise ValueError("rules and notify are needed")
+            keep = ("on", "what", "above", "minutes")
+            raw = managed.read_config()
+            raw["alert"] = [{k: r[k] for k in keep if k in r and not (k == "above" and r.get("what") == "offline")}
+                            for r in rules if isinstance(r, dict)]
+            quiet = nt.get("quiet")
+            raw["notify"] = {"via": str(nt.get("via") or "both")}
+            a, b = quiet if isinstance(quiet, list) and len(quiet) == 2 else (0, 0)
+            raw["notify"].update(quiet_from=a, quiet_to=b)
+            managed.save_config(raw)
+            print(f"setup: alert rules saved from {who} ({len(raw['alert'])})", flush=True)
+            return self._json({"ok": True})
+        cards = [c for cs in TOPOLOGY["cards"].values() for c in cs]
+        nt = TOPOLOGY.get("notify") or {}
+        return self._json({
+            "ok": True, "managed": managed.active(), "rules": TOPOLOGY["alert_rules"],
+            "hosts": [{"id": c["id"], "name": c.get("name", c["id"]), "agent": c["agent"]} for c in alerting.hosts(cards)],
+            "what": alerting.WHAT, "urgent": sorted(alerting.URGENT),
+            "notify": {"via": nt.get("via", "both"), "quiet": list(nt["quiet"]) if nt.get("quiet") else None},
+            "ntfy": {"set": notify.enabled(), "host": notify.where(), "format": notify.FORMAT,
+                     "problem": notify.problem(), "sent": notify.state["sent"],
+                     "last_error": notify.state["last_error"]},
+            "active": RULES.active()})
 
     def _source(self, op, body, who):
         """source-save {name, values, page}: tried first, then the keys go to secrets.env and a

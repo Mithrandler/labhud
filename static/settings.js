@@ -357,6 +357,8 @@ function open_settings() {
   if (tab === "advanced") advanced_settings(section);
   // --- sources (sources.js): the catalog, Test, Save, Scan my network ---
   if (tab === "sources") sources_settings(section);
+  // --- alert rules and notifications (alerts.js): LabHUD's, for every screen and the app ---
+  if (tab === "alerts") alert_settings(section);
 
   // --- devices: the agents (agents.py), one per host, and the phones (devices.py) ---
   if (tab !== "devices") return finish_settings(body, keep, box, tab);

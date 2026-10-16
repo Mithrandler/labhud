@@ -49,9 +49,11 @@ function show_message(text) { toast(text); }
 // What the bell holds
 // ---------------------------------------------------------------------------------------------
 
+/** The config's own alert list ([alerts] path) and what the [[alert]] rules find (alerting.py). */
 function alerts_now() {
   const dis = dismissed();
-  return (CFG && CFG.alerts && get(CFG.alerts.path) || []).filter((a) => a && a.id && !dis[a.id]);
+  const own = (CFG && CFG.alerts && get(CFG.alerts.path)) || [];
+  return [...own, ...(get("alerting.active") || [])].filter((a) => a && a.id && !dis[a.id]);
 }
 
 function dismiss_alert(id) {

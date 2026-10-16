@@ -548,6 +548,9 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False):
                      "sev": severity(path, fmt, get(data, path)), "trend": path in trends, "format": fmt}
                     for path, label, fmt in c.get("metrics") or []],
     }
+    if c.get("charts"):   # a host's agent sensors with a history (/api/v1/history), for its charts
+        out["charts"] = [{"key": path, "label": label, "format": fmt} for path, label, fmt in c["charts"]
+                         if path in trends and get(data, path) is not None]
     if st is None and not c.get("check"):
         out["status"] = None
     for k in ("subtitle", "url"):
@@ -647,5 +650,9 @@ def state(topology, data, actions_on=False, full=False):
     alerts_cfg = topology.get("alerts") or {}
     alerts = get(data, alerts_cfg["path"]) if alerts_cfg.get("path") else None
     alerts = [{"id": _js(a.get("id")), "text": _js(a.get("text"))} for a in alerts if isinstance(a, dict)] if isinstance(alerts, list) else []
+    # and what the [[alert]] rules find now (alerting.py), with the card they are about
+    rules = get(data, "alerting.active")
+    alerts += [{"id": _js(a.get("id")), "text": _js(a.get("text")), "card": a.get("card"), "since": a.get("since")}
+               for a in rules if isinstance(a, dict)] if isinstance(rules, list) else []
     return {"title": topology.get("title") or "LabHUD", "now": int(time.time()), "pages": pages,
             "cards": cards, "problems": problems, "alerts": alerts}

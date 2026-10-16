@@ -18,6 +18,8 @@ import sys
 import time
 import tomllib
 
+import alerting
+
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.toml")
 
 FORMATS = {
@@ -59,9 +61,15 @@ CALM_KEYS = {"after"}
 LOCK_KEYS = {"idle"}
 PUBLIC_KEYS = {"title", "groups"}
 TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "include", "sparklines",
-            "maintenance", "lock"}
+            "maintenance", "lock", "alert", "notify"}
+NOTIFY_KEYS = {"via", "quiet_from", "quiet_to"}
+NOTIFY_VIA = ("ntfy", "app", "both")
 # The formats whose numbers get a sparkline (the last hours, behind the value)
 TREND_FORMATS = {"percent", "percent1", "celsius", "rate", "used_of"}
+# A host card's charts (agent = "<name>"): the agent's sensors, kept like the cards' numbers
+AGENT_CHARTS = [("cpu", "CPU", "percent"), ("mem", "RAM", "percent"), ("disk", "Disk", "percent"),
+                ("cpu_temp", "CPU temp", "celsius"), ("gpu0_temp", "GPU temp", "celsius"),
+                ("net_rx", "Network in", "rate"), ("net_tx", "Network out", "rate")]
 DEFAULT_TITLE = "LabHUD"
 
 
@@ -266,8 +274,74 @@ def _card_agent(ck, where, c, out):
         out["agent_target"] = target
     if target is None and "sensors" not in out:
         out["sensors"] = f"agents.{name}.sensors"
+    if target is None:
+        # the panel's charts of a host: what its agent measures (only those it sends get drawn)
+        out["charts"] = [[f"agents.{name}.sensors.{key}", label, fmt] for key, label, fmt in AGENT_CHARTS]
     if "check" not in out:
         out["check"] = ["agent", name, cap, target.partition(":")[2] if target else ""]
+
+
+def _alert_rules(ck, raw, cards):
+    """[[alert]] (alerting.py): a list of {on, what, above?, minutes}; the defaults without any."""
+    if "alert" not in raw:
+        return [dict(r) for r in alerting.DEFAULT_RULES]
+    by_id = {c["id"]: c for c in cards}
+    out = []
+    for i, r in enumerate(ck.tables("top level", raw, "alert")):
+        where = f"alert #{i + 1}"
+        ck.unknown(where, r, alerting.KEYS)
+        on = ck.need(where, r, "on", str, 'a card id, or "*" for every host with an agent')
+        what = ck.need(where, r, "what", str, "one of " + ", ".join(alerting.WHAT))
+        if what is not None and what not in alerting.WHAT:
+            ck.err(where, f"what must be one of {', '.join(alerting.WHAT)}, got {what!r}")
+            what = None
+        minutes = r.get("minutes", 0)
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= 1440:
+            ck.err(where, "minutes must be a whole number from 0 to 1440")
+            minutes = None
+        rule = {"on": on, "what": what, "minutes": minutes}
+        if what == "offline":
+            if "above" in r:
+                ck.err(where, "offline takes minutes, not above")
+        elif what is not None:
+            above = ck.need(where, r, "above", (int, float), "a number")
+            if above is not None and not 0 < above <= (150 if what == "temp" else 100):
+                ck.err(where, f"above must be from 1 to {150 if what == 'temp' else 100}, got {above}")
+            rule["above"] = above
+        if on is not None and on != "*":
+            c = by_id.get(on)
+            if c is None:
+                hint = _closest(on, by_id)
+                ck.err(where, f"card '{on}' does not exist" + (f" (did you mean '{hint}'?)" if hint else ""))
+            elif not c.get("agent") or c.get("agent_target"):
+                ck.err(where, f"card '{on}' has no agent of its own (agent = \"<name>\" without agent_target)")
+        if None not in rule.values():
+            out.append(rule)
+    return out
+
+
+def _notify(ck, raw):
+    """[notify]: where the news goes (ntfy, the app, both) and the quiet hours (an hour each;
+    the same hour twice = none). Defaults: both, 23 to 7."""
+    out = {"via": "both", "quiet": (23, 7)}
+    nt = raw.get("notify")
+    if nt is None:
+        return out
+    if not isinstance(nt, dict):
+        ck.err("top level", "notify must be written as a [notify] table")
+        return out
+    ck.unknown("notify", nt, NOTIFY_KEYS)
+    via = ck.opt("notify", nt, "via", str, "one of " + ", ".join(NOTIFY_VIA))
+    if via is not None:
+        if via not in NOTIFY_VIA:
+            ck.err("notify", f"via must be one of {', '.join(NOTIFY_VIA)}, got {via!r}")
+        else:
+            out["via"] = via
+    if "quiet_from" in nt or "quiet_to" in nt:
+        a, b = _hour(ck, "notify", nt, "quiet_from"), _hour(ck, "notify", nt, "quiet_to")
+        if a is not None and b is not None:
+            out["quiet"] = None if a == b else (a, b)
+    return out
 
 
 def _hour(ck, where, table, key):
@@ -322,6 +396,8 @@ def load(path=None):
     actions      {action name: {label?, confirm?, choices?: [{label, action}]}}
     maintenance  {buttons: bool, windows: [{cards, from, until, reason?}]} (times as Unix seconds)
     alerts       {path, page?} or None
+    alert_rules  [{on, what, above?, minutes}]: [[alert]] (alerting.py), the defaults without any
+    notify       {via: ntfy | app | both, quiet: (from, to) or None}: [notify] (notify.py)
     night        {from, to, dim} or None: the screen dims in that window (the display's local time)
     calm         {after} or None: seconds with nothing red before the screen shows only the clock
     lock         {idle}: seconds without a touch before an unlocked screen locks again (with a PIN set)
@@ -684,6 +760,9 @@ def _validate(raw, path):
                     ck.err("public", f"group '{g}' does not exist")
             public_page = {"title": ck.opt("public", pb, "title", str, "a string") or "Status", "groups": groups}
 
+    alert_rules = _alert_rules(ck, raw, [c for cs in cards.values() for c in cs])
+    notify_cfg = _notify(ck, raw)
+
     for name, a in actions.items():
         if a.get("choices") and not any(name in c.get("actions", ()) for cs in cards.values() for c in cs):
             ck.err(f"action.{name}", "has choices but no card offers it (add it to a card's actions)")
@@ -691,8 +770,10 @@ def _validate(raw, path):
         raise ConfigError(path, ck.problems)
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
             "weather": weather, "night": night, "calm": calm, "lock": lock, "public": public_page,
+            "alert_rules": alert_rules, "notify": notify_cfg,
             "trends": [] if sparklines is False else sorted({
-                m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) if m[2] in TREND_FORMATS})}
+                m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) + c.get("charts", [])
+                if m[2] in TREND_FORMATS})}
 
 
 def public(topology):
