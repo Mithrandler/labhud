@@ -355,6 +355,8 @@ function open_settings() {
 
   // --- advanced (advanced.js): the config file as text, taking it over ---
   if (tab === "advanced") advanced_settings(section);
+  // --- sources (sources.js): the catalog, Test, Save, Scan my network ---
+  if (tab === "sources") sources_settings(section);
 
   // --- devices: the agents (agents.py), one per host, and the phones (devices.py) ---
   if (tab !== "devices") return finish_settings(body, keep, box, tab);
@@ -423,7 +425,7 @@ function page_columns(s) {
  * screen and the app. A slim bar of icons on the left; at the bottom on a portrait screen. */
 const SETTINGS_GROUPS = [
   ["Display", [["look", "Look"], ["pages", "Pages"], ["alerts", "Alerts"]]],
-  ["LabHUD", [["devices", "Devices"], ["security", "Security"], ["advanced", "Advanced"]]],
+  ["LabHUD", [["sources", "Sources"], ["devices", "Devices"], ["security", "Security"], ["advanced", "Advanced"]]],
 ];
 const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, tabs]) => tabs);
 // the names before 0.3 (kept by browsers, and ?static&settings=<tab>)
@@ -441,6 +443,7 @@ const TAB_ICONS = {
   alerts: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   devices: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>',
   security: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  sources: '<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/>',
   advanced: '<path d="M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16"/>',
   setup: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
 };
@@ -479,7 +482,7 @@ function settings_tab(bar, key, label, current) {
 }
 
 function finish_settings(body, keep, box, tab) {
-  if (tab === "devices" || tab === "security" || tab === "advanced") {
+  if (tab === "devices" || tab === "security" || tab === "advanced" || tab === "sources") {
     body.appendChild(el("p", "hint", "Kept by LabHUD itself: the same on every screen."));
     box.hidden = false;
     body.scrollTop = keep;
@@ -617,10 +620,10 @@ function agents_settings(s) {
   const split = el("div", "agents-split");
   const side = el("div", "agents-side");
   const list = el("div", "agents");
-  const add = el("button", "choice", "+ Add an agent");
+  const add = el("button", "choice on", "+ Add system");
   add.type = "button";
   const detail = el("div", "agents-detail");
-  add.addEventListener("click", () => { agentSel = "add"; add_agent(detail, list); draw_agent_list(list, lastAgents, detail); });
+  add.addEventListener("click", () => { agentSel = "add"; addType = ""; add_agent(detail, list); draw_agent_list(list, lastAgents, detail); });
   side.append(list, add);
   split.append(side, detail);
   s.appendChild(split);
@@ -638,7 +641,7 @@ function load_agents(list, quiet, detail) {
   // the first draw comes before ⚙ is shown; the refreshes stop once it is closed
   if (!list || !list.isConnected || (quiet && $("#settings").hidden)) return;
   agents_post("list").then((r) => {
-    agentsWatch = setTimeout(() => load_agents(list, true, detail), 10000);
+    agentsWatch = setTimeout(() => load_agents(list, true, detail), agentSel === "add" ? 3000 : 10000);
     if (!r.ok) {
       list.textContent = "";
       const say = (m) => list.appendChild(el("p", "hint", m));
@@ -806,11 +809,57 @@ function agent_targets(a, c, reload) {
 }
 
 /** A one-time code with the two ways to install, counting down its 5 minutes. */
+/** "+ Add system": what kind of host, then the right command first, and once the agent dials in
+ * the capabilities that kind of host uses are ticked (its targets still are not: nothing can be
+ * pressed until you tick them). [key, title, what it gives, capabilities, the command first] */
+const SYSTEM_TYPES = [
+  ["proxmox", "Proxmox node", "The node itself: its VMs and LXCs (start, shut down, reboot), sensors, updates, waking other machines.",
+    ["sensors", "host", "pve", "wol"], "service"],
+  ["docker", "Docker host", "A VM or machine with containers: start, stop and restart them, sensors, updates.",
+    ["sensors", "host", "docker"], "docker"],
+  ["linux", "Linux server", "Any other machine: sensors, its services (systemd), updates, reboot.", ["sensors", "host", "systemd"], "service"],
+  ["ptero", "Pterodactyl node", "Game servers through the panel, plus the node's own sensors.", ["sensors", "host", "ptero"], "service"],
+  ["phone", "Phone", "The LabHUD app on a phone or tablet: a QR code to scan.", null, null],
+];
+let addType = "";
+
 function add_agent(show, list) {
   show.textContent = "";
-  show.appendChild(el("p", "hint", "Asking LabHUD…"));
+  if (!addType) {
+    show.appendChild(el("p", null, "What are you adding?"));
+    const grid = el("div", "sys-types");
+    for (const [key, title, about] of SYSTEM_TYPES) {
+      const b = el("button", "sys-type");
+      b.type = "button";
+      b.append(el("b", null, title), el("span", null, about));
+      b.addEventListener("click", () => { addType = key; add_agent(show, list); });
+      grid.appendChild(b);
+    }
+    show.appendChild(grid);
+    return;
+  }
+  const type = SYSTEM_TYPES.find((t) => t[0] === addType);
+  const back = el("button", "choice small", "‹ Another kind");
+  back.type = "button";
+  back.addEventListener("click", () => { addType = ""; add_agent(show, list); });
+  show.appendChild(back);
+  show.appendChild(el("p", null, type[1]));
+  if (addType === "phone") {
+    const wrap = el("div");
+    const qr = el("div", "pair-qr");
+    const devs = el("div", "devices");
+    devs.hidden = true;
+    wrap.append(qr, devs);
+    show.appendChild(wrap);
+    load_devices(devs);
+    pair_phone(qr);
+    return;
+  }
+  const wait = el("p", "hint");
+  show.appendChild(wait);
+  put(wait, "Asking LabHUD…");
   agents_post("code").then((r) => {
-    show.textContent = "";
+    wait.remove();
     if (!r.ok) {
       const say = (m) => show.appendChild(el("p", "hint", m));
       return r.error === "forbidden" ? admin_forbidden(say) : say(r.error || "Refused.");
@@ -818,6 +867,12 @@ function add_agent(show, list) {
     const before = list.querySelectorAll(".agent-item").length;
     show.appendChild(el("p", "hint", "The code:"));
     show.appendChild(copy_line(r.code));
+    // a Docker host: the container first, where there is an image to run
+    if (type[4] === "docker" && r.docker) {
+      show.appendChild(el("p", "hint", "On the host, as a container (it sees the host's Docker, sensors and network):"));
+      show.appendChild(copy_line(r.docker, "agent-line"));
+      show.appendChild(el("p", "hint", "Or as a systemd service:"));
+    }
     if (r.released) {
       show.appendChild(el("p", "hint", `On the host, as root: it downloads labhud-agent ${r.version} (${r.builds.join(", ")}), `
         + "checks it against the SHA-256 this LabHUD pins and installs it as a systemd service."));
@@ -828,7 +883,7 @@ function add_agent(show, list) {
         + "YOUR_SHA256 replaced by the checksum you got where you built it (not one worked out on the host from the same file):"));
       show.appendChild(copy_line(r.install, "agent-line"));
     }
-    if (r.docker) {
+    if (r.docker && type[4] !== "docker") {
       show.appendChild(el("p", "hint", "Or as a container:"));
       show.appendChild(copy_line(r.docker, "agent-line"));
     }
@@ -839,12 +894,14 @@ function add_agent(show, list) {
       if (!show.isConnected) return;
       const s = Math.round((until - Date.now()) / 1000);
       if (s <= 0) { show.textContent = ""; show.appendChild(el("p", "hint", "The code expired: make a new one.")); return; }
-      put(left, `The code works once, for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} more.`);
+      put(left, `⏳ Waiting for the agent… The code works once, for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} more.`);
       if (list.querySelectorAll(".agent-item").length > before) {
-        // paired: open it (the newest), to tick what it may do
+        // paired: tick what this kind of host uses (of what it found), then open it for the targets
         const newest = [...lastAgents].sort((x, y) => (y.paired || 0) - (x.paired || 0))[0];
         agentSel = newest ? newest.id : null;
-        load_agents(list, false, show);
+        const caps = newest ? type[3].filter((c) => (newest.found || []).includes(c)) : [];
+        const done = () => { toast(`✓ ${newest ? newest.name : "The agent"} is in: tick what it may act on`); load_agents(list, false, show); };
+        if (newest && caps.length) agents_post("caps", { id: newest.id, caps }).then(done); else done();
         return;
       }
       setTimeout(tick, 1000);

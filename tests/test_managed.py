@@ -234,6 +234,17 @@ class Routes(unittest.TestCase):
         pages[0]["groups"][0]["cards"].pop()
         code, r = self.post("layout-save", {"pages": pages[:1]})
         self.assertEqual((code, r["ok"]), (409, False))                # d would be lost
+        # ⚙ > Sources: a source whose test fails is not saved; the scan's default is the display's /24
+        code, r = self.post("source-save", {"name": "sonarr", "page": "main",
+                                            "values": {"LABHUD_SONARR_URL": "http://127.0.0.1:1", "LABHUD_SONARR_KEY": "k"}})
+        self.assertEqual((code, r["ok"]), (409, False))
+        self.assertIn("test failed", r["error"])
+        self.assertFalse(os.path.exists(os.path.join(self.data, "secrets.env")))
+        self.assertEqual(self.post("source-save", {"name": "nope"})[0], 409)
+        code, sc = self.post("scan-status")
+        self.assertFalse(sc["running"])
+        self.assertFalse(sc["default"].startswith("127."))   # not the loopback the test opens it at
+        self.assertEqual(self.post("scan", {"cidr": "8.8.8.0/24"})[0], 409)
         code, o = self.post("organize", {"page": "main"})
         self.assertEqual([g["title"] for g in o["pages"][0]["groups"]], ["PCs & other"])
 

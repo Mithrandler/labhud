@@ -142,6 +142,58 @@ def source_cards(names):
     return out
 
 
+def source_card(name):
+    """The first card for source `name` as config data (what source_cards writes as text), or None."""
+    if name not in CARDS:
+        return None
+    metrics, extra = CARDS[name]
+    card = {"id": f"src-{ident(name)}", "name": REGISTRY[name].title.upper() if name in REGISTRY else name.upper()}
+    if metrics:
+        card["metrics"] = [{"key": f"{name}.{k}", "label": label, "format": fmt} for k, label, fmt in metrics]
+    card.update(extra)
+    return card
+
+
+def add_source_card(raw, name, page_id):
+    """raw with source `name`'s card in the Services group of page `page_id` (made when missing),
+    unless the config already has a card with that id. Returns (raw, card id or None)."""
+    import copy
+    card = source_card(name)
+    if card is None:
+        return raw, None
+    raw = copy.deepcopy(raw)
+    pages = raw.get("page") or []
+    if any(c.get("id") == card["id"] for p in pages for g in p.get("group") or [] for c in g.get("card") or []):
+        return raw, card["id"]
+    page = next((p for p in pages if p.get("id") == page_id and not p.get("games")), None)
+    if page is None:
+        raise ValueError(f"no page {page_id!r} to put the card on")
+    taken = {g.get("id") for p in pages for g in p.get("group") or []}
+    group = next((g for g in page.get("group") or [] if g.get("id", "").startswith("services")), None)
+    if group is None:
+        gid = "services" if "services" not in taken else f"services-{page_id}"
+        group = {"id": gid, "title": "Services", "card": []}
+        page.setdefault("group", []).append(group)
+    group.setdefault("card", []).append(card)
+    return raw, card["id"]
+
+
+def remove_source_card(raw, name):
+    """raw without source `name`'s card (and without its group if that empties it)."""
+    import copy
+    raw = copy.deepcopy(raw)
+    cid = f"src-{ident(name)}"
+    for p in raw.get("page") or []:
+        if "group" not in p:
+            continue
+        for g in p["group"]:
+            if "card" in g:
+                g["card"] = [c for c in g["card"] if c.get("id") != cid]
+        p["group"] = [g for g in p["group"] if g.get("card") or g.get("guests")]
+    raw["page"] = [p for p in raw.get("page") or [] if p.get("group") or p.get("games")]
+    return raw
+
+
 def build_config(found, host, weather=None, title="LabHUD", include=None, services=()):
     """The text of config.toml for what discover() found (None: no Proxmox). `host` is what the
     node cards ping; `include`, a set of (node, vmid), limits the guest cards to those (None:
@@ -371,6 +423,12 @@ KNOWN = [
     ("synology", 5000, "http", "/", "synology"),
     ("opnsense", 443, "https", "/", "opnsense"),
     ("docker", 2375, "http", "/version", "apiversion"),
+    ("technitium", 5380, "http", "/", "technitium"),
+    ("beszel", 8090, "http", "/", "beszel"),
+    ("immich", 2283, "http", "/", "immich"),
+    ("adguard", 3000, "http", "/", "adguard"),
+    ("pihole", 80, "http", "/admin/", "pi-hole"),
+    ("traefik", 8080, "http", "/dashboard/", "traefik"),
 ]
 MAX_HOSTS = 32
 _HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$|^[0-9A-Fa-f:]{2,45}$")

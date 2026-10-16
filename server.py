@@ -41,6 +41,7 @@ import onboard
 import notify
 import qr
 import sources
+import scan
 import screen
 import store
 import thresholds
@@ -1318,7 +1319,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
@@ -1654,7 +1655,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "sources": onboard.catalog()})
             if op == "try":
                 values = body.get("values") if isinstance(body.get("values"), dict) else {}
-                return self._json(onboard.try_source(str(body.get("name") or ""), values))
+                name = str(body.get("name") or "")
+                item = next((c for c in onboard.catalog() if c["name"] == name), None)
+                # what is left empty in the form is tried with what is set (a key the page never sees)
+                kept = {f["name"]: os.environ.get(f["name"], "") for f in (item or {}).get("fields", [])}
+                return self._json(onboard.try_source(name, {**kept, **{k: v for k, v in values.items() if str(v).strip()}}))
             if op == "take-over":
                 path = managed.take_over()
                 print(f"setup: config taken over into {path} from {who}; restarting", flush=True)
@@ -1669,6 +1674,16 @@ class Handler(BaseHTTPRequestHandler):
                 if op == "layout":
                     return self._json({"ok": True, **layout.view(raw, found)})
                 return self._json({"ok": True, **layout.organize(raw, str(body.get("page") or ""), found)})
+            if op in ("source-save", "source-forget"):
+                return self._source(op, body, who)
+            if op == "scan-status":
+                return self._json({"ok": True, **scan.status(), "default": scan.default_cidr(os.environ.get("LABHUD_HOSTS", ""))})
+            if op == "scan":
+                extra = [a["addr"] for a in agents.listing() if a.get("addr")] if agents.enabled() else []
+                configured = [c["name"] for c in onboard.catalog() if c["configured"]]
+                st = scan.start(str(body.get("cidr") or scan.default_cidr(os.environ.get("LABHUD_HOSTS", ""))), extra, configured)
+                print(f"setup: scan of {st['cidr']} ({st['total']} addresses) from {who}", flush=True)
+                return self._json({"ok": True, **st})
             if op == "layout-save":
                 managed.save_config(layout.apply(managed.read_config(), body.get("pages")))
                 print(f"setup: pages laid out from {who}", flush=True)
@@ -1713,6 +1728,37 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "changed": changed, "restart": bool(changed)})
         except ValueError as e:
             return self._json({"ok": False, "error": str(e)[:600]}, 409)
+
+    def _source(self, op, body, who):
+        """source-save {name, values, page}: tried first, then the keys go to secrets.env and a
+        card to the page, and labhud restarts to read them. source-forget {name}: the keys and the
+        card go. Raises ValueError for the caller's 409."""
+        name = str(body.get("name") or "")
+        item = next((c for c in onboard.catalog() if c["name"] == name), None)
+        if item is None or not item["fields"]:
+            raise ValueError(f"no source {name!r} to set up here")
+        fields = [f["name"] for f in item["fields"]]
+        raw = managed.read_config()
+        if op == "source-forget":
+            managed.save_config(onboard.remove_source_card(raw, name))
+            changed = managed.set_secrets({f: "" for f in fields})
+            print(f"setup: source {name} forgotten from {who}", flush=True)
+            if changed:
+                managed.restart()
+            return self._json({"ok": True, "restart": bool(changed)})
+        given = body.get("values") if isinstance(body.get("values"), dict) else {}
+        values = {k: str(v).strip() for k, v in given.items() if k in fields and str(v).strip()}
+        # a secret left empty in the form keeps the one already set (the page never sees it)
+        tried = onboard.try_source(name, {**{f: os.environ.get(f, "") for f in fields}, **values})
+        if not tried.get("ok"):
+            return self._json({"ok": False, "error": "the test failed: " + str(tried.get("error"))}, 409)
+        raw, card = onboard.add_source_card(raw, name, str(body.get("page") or ""))
+        managed.save_config(raw)
+        changed = managed.set_secrets(values)
+        print(f"setup: source {name} saved from {who}" + (f"; card {card}" if card else ""), flush=True)
+        if changed:
+            managed.restart()
+        return self._json({"ok": True, "card": card, "restart": bool(changed)})
 
     def _app_stream(self):
         """SSE for apps: `event: state` with the whole of /api/v1/state, again whenever it changes

@@ -241,6 +241,7 @@ def listing():
                   "ptero": {k: (v or {}).get("name") for k, v in (st.get("servers") or {}).items()},
                   "wol": {k: (v or {}).get("ip") for k, v in (st.get("neighbours") or {}).items()}}
         out.append({"id": aid, "name": a["name"], "online": aid in _live, "version": a.get("version", ""),
+                    "addr": getattr(_live.get(aid), "peer", "") or "",
                     "host": a.get("host", {}), "paired": a.get("paired", 0), "seen": a.get("seen", 0),
                     "found": a.get("found", []), "caps": a.get("caps", []),
                     "targets": {c: _wings(a, c, v) for c, v in a.get("targets", {}).items()},

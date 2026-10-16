@@ -62,6 +62,19 @@ still change in a minor version; such changes are listed under **Changed** with 
   (on a narrow screen the red ones get a row of their own). The verb comes from the action's name,
   so a container called "stopwatch" is not red; YES in the confirmation is red only for those.
   `/api/v1` gives the app the same order and `danger` (parity-tested).
+- **⚙ > Sources: set a source up from the page.** Every source a form can set up, as a tile
+  (with ✓ when it is set up) you can search; its form, **Test** (empty secret fields are tried with
+  the ones already set, which the page never sees), **Save** (tested first; the keys go to
+  `secrets.env`, its first card to the Services group of the page you choose, then labhud restarts
+  in place) and **Forget**. **Scan my network** looks for the known services (now also Technitium,
+  Beszel, Immich, AdGuard Home, Pi-hole, Traefik) on a private subnet of at most a /22 (the
+  display's /24 by default) plus the agents' addresses, slowly: 16 connections at most, a silent
+  host left after one round; a service counts only when its page names it, and **Set up** fills
+  the form with its address. Routes `/api/setup/{source-save,source-forget,scan,scan-status}`.
+- **⚙ > Devices > + Add system**: first the kind of host (Proxmox node, Docker host, Linux server,
+  Pterodactyl node, phone), then its command (the container first for a Docker host) and
+  "Waiting for the agent…"; once it dials in, the capabilities that kind uses are ticked (its
+  targets still are not). A phone gets the QR code there too.
 - **⚙ > Pages: pages and groups for every screen, from the page.** Hold a card or a group's title
   and drag it (a finger too: the hold tells a drag from a scroll), or use its ⋯ menu (up, down, to
   another group or page, rename, kind); + Group, + Page; nothing changes until Save, and the

@@ -722,6 +722,40 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
   border: 1px solid var(--line); background: transparent; color: var(--accent, var(--text)); cursor: pointer; }
 
 /* ⚙ > Pages: one column per page, side by side; a narrow screen scrolls sideways */
+/* ⚙ > Sources (sources.js): tiles, the form, the scan */
+#settings .src-find { width: 100%; max-width: 360px; font: 500 13px/1 var(--font); color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; margin: 2px 0 8px; }
+#settings .lay-bar .src-find { margin: 0; flex: 1; }
+#settings .src-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+#settings .src-tile { appearance: none; position: relative; display: flex; align-items: flex-start; gap: 9px; text-align: left; cursor: pointer;
+  padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--block); color: var(--text); font: inherit; min-width: 0; }
+#settings .src-tile[hidden] { display: none; }
+#settings .src-tile.on { border-color: #2f5d3a; }
+#settings .src-tile.open { border-color: var(--title); }
+#settings .src-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#settings .src-txt b { font-size: 13px; }
+#settings .src-txt .about { font-size: 11px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#settings .src-ok { margin-left: auto; color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.src-mono { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px;
+  background: hsl(var(--hue) 45% 22%); color: hsl(var(--hue) 80% 78%); font: 700 12px/1 var(--font); }
+#settings .src-form { border: 1px solid var(--title); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #0e1824; }
+#settings .src-form-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+#settings .src-form-head b { flex: 1; font-size: 15px; }
+#settings .src-field { display: flex; align-items: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
+#settings .src-field .lbl { width: 130px; flex: none; font-size: 12px; color: var(--sub); }
+#settings .src-field input, #settings .src-field select { flex: 1; min-width: 180px; font: 500 13px/1 var(--font); color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; }
+#settings .src-progress { height: 6px; border-radius: 3px; background: var(--block); overflow: hidden; margin: 8px 0 4px; }
+#settings .src-progress i { display: block; height: 100%; background: var(--title); transition: width 1s linear; }
+#settings .src-found { display: flex; align-items: center; gap: 9px; padding: 6px 4px; border-top: 1px solid var(--line); font-size: 13px; }
+#settings .src-found .url { color: var(--muted); font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* + Add system: what kind of host */
+#settings .sys-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; margin: 6px 0; }
+#settings .sys-type { appearance: none; display: flex; flex-direction: column; gap: 4px; text-align: left; cursor: pointer; padding: 10px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--block); color: var(--text); font: inherit; }
+#settings .sys-type:hover { border-color: var(--title); }
+#settings .sys-type b { font-size: 14px; }
+#settings .sys-type span { font-size: 11px; color: var(--muted); }
 /* ⚙ > Pages > Pages and groups (pages.js): one column per page, groups in it, cards as chips */
 #settings .lay-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 6px; }
 #settings .lay-bar .grow { flex: 1; }
