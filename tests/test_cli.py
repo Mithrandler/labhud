@@ -136,6 +136,20 @@ class Command(unittest.TestCase):
         self.assertIn('[[page]]', out)
         self.assertIn('id = "more"', out)
 
+        self.assertEqual(self.labhud("notify", "set", "ntfy.example/x")[0], 1)   # no scheme
+        self.assertEqual(self.labhud("notify", "frobnicate")[0], 1)
+        old = self.key()
+        code, out = self.labhud("notify", "set", "https://ntfy.example/labhud", "--token", "tk_x")
+        self.assertEqual(code, 0, out)
+        self.assertIn("restarts", out)
+        self.wait_up(old_key=old)
+        self.assertIn("LABHUD_NOTIFY_URL", self.labhud("status")[1])
+        self.assertIn("ntfy ntfy.example", self.labhud("alert", "list")[1])
+        old = self.key()
+        self.assertEqual(self.labhud("notify", "forget")[0], 0)
+        self.wait_up(old_key=old)
+        self.assertIn("ntfy not set", self.labhud("alert", "list")[1])
+
     def test_agents_and_phones(self):
         code, out = self.labhud("agent", "list")
         self.assertEqual(code, 0, out)

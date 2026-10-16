@@ -29,7 +29,7 @@ still change in a minor version; such changes are listed under **Changed** with 
   what ⚙ does, through the same routes. It works on the admin, PIN, sources (list, test, add,
   remove), agents (list, code, allow, deny, logs), phones (pair, list, remove), pages (list,
   move), organize, config (show, edit, take-over), scan, alert rules (list, add, remove) and
-  notify test. It proves who it is with a key the running server writes at each start into
+  the ntfy topic (set, test, forget). It proves who it is with a key the running server writes at each start into
   `LABHUD_DATA/cli.json` (mode 600), taken only from loopback. In ⚙, the **?** beside a
   section's title shows its commands.
 - **Containers: update available, UPDATE, LOGS.** A container ticked on an agent shows **update

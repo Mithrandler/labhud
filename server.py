@@ -2152,7 +2152,7 @@ if __name__ == "__main__":
            else "actions: OFF: LABHUD_ACTION_URL is set but LABHUD_ACTION_SECRET is not (docs/actions.md)"
            if ACTION_URL else "actions: off (set LABHUD_ACTION_URL and LABHUD_ACTION_SECRET to enable)"), flush=True)
     print(f"notifications: {notify.problem() or 'on, ' + notify.FORMAT}" if notify.enabled()
-          else "notifications: off (set LABHUD_NOTIFY_URL to enable)", flush=True)
+          else "notifications: no ntfy (⚙ > Alerts, or `labhud notify set <url>`); the app can still read them", flush=True)
     if DEMO:
         seed_demo_history()
         seed_demo_uptime()

@@ -35,7 +35,9 @@ also work while it is stopped: they write their files directly, like `init.py`.
     labhud alert list                              the rules and what is wrong now
     labhud alert add <card|*> <cpu|mem|disk|temp|offline> [above] [minutes]
     labhud alert remove <number>                   (the number from `alert list`)
-    labhud notify test                             one notification now
+    labhud notify test [<url>] [--token T]         one notification now (to <url>, or where it is set)
+    labhud notify set <url> [--token T]            the ntfy topic labhud sends to (labhud restarts)
+    labhud notify forget                           no ntfy any more (labhud restarts)
 ```
 
 In ⚙, the **?** beside a section's title shows the commands for that section, each with Copy.

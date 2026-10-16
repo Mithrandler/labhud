@@ -925,7 +925,7 @@ const CLI_HELP = {
   "Sources": ["source list", "source test <name> [KEY=value …]", "source add <name> [KEY=value …] [--page <page>]", "source remove <name>"],
   "Scan my network": ["scan [<cidr>]"],
   "Alert rules": ["alert list", "alert add <card|*> <cpu|mem|disk|temp|offline> [above] [minutes]", "alert remove <number>"],
-  "Notifications": ["notify test"],
+  "Notifications": ["notify set <url> [--token T]", "notify test [<url>] [--token T]", "notify forget"],
   "Config file": ["status", "config take-over"],
   "Edit config": ["config show", "config edit"],
   "Admin": ["admin"],

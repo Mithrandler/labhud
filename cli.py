@@ -30,7 +30,9 @@ only `admin` and `pin` work, as with init.py.
     labhud alert list                              the rules and what is wrong now
     labhud alert add <card|*> <cpu|mem|disk|temp|offline> [above] [minutes]
     labhud alert remove <number>                   (the number from `alert list`)
-    labhud notify test                             one notification now
+    labhud notify test [<url>] [--token T]         one notification now (to <url>, or where it is set)
+    labhud notify set <url> [--token T]            the ntfy topic labhud sends to (labhud restarts)
+    labhud notify forget                           no ntfy any more (labhud restarts)
 
 Standard library only, like the rest of labhud.
 """
@@ -444,11 +446,32 @@ def alert(args):
     print(f"✓ {len(rules)} rule(s) saved")
 
 
+def ntfy_values(url, token):
+    """As ⚙ > Alerts > ntfy saves them."""
+    if not url.startswith(("http://", "https://")):
+        raise Failed("the topic address must start with http:// or https://")
+    v = {"LABHUD_NOTIFY_URL": url, "LABHUD_NOTIFY_FORMAT": "ntfy"}
+    if token:
+        v["LABHUD_NOTIFY_AUTH"] = token if token.lower().startswith(("bearer ", "basic ")) else "Bearer " + token
+    return v
+
+
 def notify_cmd(args):
-    if args[:1] != ["test"]:
-        raise Failed("usage: labhud notify test")
-    setup("notify-test")
-    print("✓ sent")
+    args = list(args)
+    token = option(args, "--token")
+    sub, rest = args[:1], args[1:]
+    if sub == ["test"] and len(rest) <= 1:
+        setup("notify-test", {"url": rest[0] if rest else "", "token": token})
+        print("✓ sent")
+    elif sub == ["set"] and len(rest) == 1:
+        restarted(setup("secrets", {"values": ntfy_values(rest[0], token)}))
+        print("✓ ntfy set")
+    elif sub == ["forget"] and not rest:
+        restarted(setup("secrets", {"values": {"LABHUD_NOTIFY_URL": "", "LABHUD_NOTIFY_AUTH": "",
+                                               "LABHUD_NOTIFY_FORMAT": ""}}))
+        print("✓ ntfy forgotten")
+    else:
+        raise Failed("usage: labhud notify test [<url>] [--token T] | set <url> [--token T] | forget")
 
 
 def offline(name):
