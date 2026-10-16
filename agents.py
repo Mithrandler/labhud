@@ -286,7 +286,8 @@ def card_actions(card):
     """The agents' buttons for one card of the config:
     - a Proxmox guest card (`proxmox = "node/vmid"`): from the agent on that node, if the guest is ticked;
     - `agent = "<name>"`: that host's reboot, shut down and update, if ticked;
-    - `agent` + `agent_target = "<cap>:<target>"`: that container, unit, server, guest or MAC."""
+    - `agent` + `agent_target = "<cap>:<target>"`: that container, unit, server, guest or MAC;
+    - `wake = "<agent>:<mac>"`: WAKE from that agent, whichever agent the card has itself."""
     out = []
     chk = card.get("check") or []
     agents = _load()
@@ -301,6 +302,13 @@ def card_actions(card):
         cap, _, target = (card.get("agent_target") or "host:host").partition(":")
         if a and cap in VERBS and cap in a.get("caps", []) and target in a.get("targets", {}).get(cap, []):
             out += [action_name(aid, cap, target, v) for v in VERBS[cap]]
+    if card.get("wake"):
+        by, _, mac = card["wake"].partition(":")
+        aid, a = by_name(by)
+        if a and "wol" in a.get("caps", []) and mac in a.get("targets", {}).get("wol", []):
+            name = action_name(aid, "wol", mac, "wake")
+            if name not in out:
+                out.insert(0, name)
     return out
 
 

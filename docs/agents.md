@@ -82,6 +82,9 @@ tooling, and ⚙ only shows which version each agent runs.
   down) while it is away.
 - `agent_target = "<capability>:<target>"` next to `agent`: the card controls one target
   instead, and its dot follows that target's state.
+- `wake = "<agent>:<mac>"`: WAKE from another agent, one that is up while this machine is off
+  (the MAC ticked under its Wake-on-LAN). It adds to whatever the card's own `agent` gives, so a
+  Proxmox host can have its sensors and SHUT DOWN from its own agent and WAKE from a neighbour's.
 
 ```toml
 [[page.group.card]]
@@ -95,6 +98,13 @@ id = "jellyfin"
 name = "Jellyfin"
 agent = "n100docker"
 agent_target = "docker:jellyfin"      # also systemd:<unit>, pve:<vmid>, ptero:<id>, wol:<mac>
+
+[[page.group.card]]
+id = "pve"
+name = "PVE"
+ping = "192.0.2.22"
+agent = "pve"                         # its sensors, SHUT DOWN, UPDATE
+wake = "n100docker:aa:bb:cc:dd:ee:ff" # WAKE from the agent on n100docker
 ```
 
 The data is in the snapshot under `agents.<name>`, like any source: `agents.pve2.sensors.cpu_temp`

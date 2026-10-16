@@ -38,7 +38,7 @@ PAGE_KEYS = {"id", "title", "group", "games"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
              "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links",
-             "agent", "agent_target"}
+             "agent", "agent_target", "wake"}
 # agent_target = "<capability>:<target>": what a card controls through its agent (agents.py)
 AGENT_TARGET = {"docker": r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
                 "systemd": r"[A-Za-z0-9:_.@-]{1,250}\.(service|timer|socket|target|mount|path)",
@@ -231,11 +231,19 @@ def _card(ck, where, c):
 def _card_agent(ck, where, c, out):
     """agent = "<name>" (a host: its sensors, its reboot/update buttons) and, with it,
     agent_target = "<cap>:<target>" (one container, unit, game server, guest or MAC instead).
+    wake = "<agent>:<mac>": WAKE from another agent (one that is up while this machine is off).
     The card's state comes from the agent unless the card has a check of its own."""
     name = ck.opt(where, c, "agent", str, "the name of an agent in ⚙ > Agents")
     target = ck.opt(where, c, "agent_target", str, '"<capability>:<target>", e.g. "docker:jellyfin"')
     if target is not None and name is None:
         ck.err(where, "agent_target needs agent = \"<name>\" too")
+    wake = ck.opt(where, c, "wake", str, '"<agent>:<mac>", e.g. "pve2:aa:bb:cc:dd:ee:ff"')
+    if wake is not None:
+        by, _, mac = wake.partition(":")
+        if not by.strip() or "." in by or not re.fullmatch(AGENT_TARGET["wol"], mac):
+            ck.err(where, f'wake must be "<agent>:<mac>" (the agent that wakes it, a lowercase MAC), got {wake!r}')
+        else:
+            out["wake"] = wake
     if name is None:
         return
     if not name.strip() or "." in name:

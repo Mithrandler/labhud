@@ -365,6 +365,19 @@ class Names(unittest.TestCase):
         self.assertEqual(agents.card_actions({"id": "p", "agent": "n100", "agent_target": "docker:plex"}), [])
         self.assertEqual(agents.card_actions({"id": "x", "agent": "nobody"}), [])
 
+    def test_card_wake(self):
+        wake = agents.action_name("a1b2c3d4", "wol", "aa:bb:cc:dd:ee:ff", "wake")
+        # WAKE from one agent, the host's buttons from another (here the same, for the store)
+        both = agents.card_actions({"id": "n", "agent": "n100", "wake": "n100:aa:bb:cc:dd:ee:ff"})
+        self.assertEqual(both[0], wake)
+        self.assertEqual([n.rsplit("-", 1)[1] for n in both[1:]], ["reboot", "shutdown", "update"])
+        self.assertEqual(agents.card_actions({"id": "w", "wake": "n100:aa:bb:cc:dd:ee:ff"}), [wake])
+        self.assertEqual(agents.card_actions({"id": "w", "wake": "n100:aa:bb:cc:dd:ee:00"}), [])   # not ticked
+        self.assertEqual(agents.card_actions({"id": "w", "wake": "nobody:aa:bb:cc:dd:ee:ff"}), [])
+        # the same MAC as the card's own target: one button, not two
+        self.assertEqual(agents.card_actions({"id": "w", "agent": "n100", "agent_target": "wol:aa:bb:cc:dd:ee:ff",
+                                              "wake": "n100:aa:bb:cc:dd:ee:ff"}), [wake])
+
     def test_text(self):
         self.assertEqual(agents.action_text(agents.action_name("a1b2c3d4", "host", "host", "update")), "n100 · UPDATE")
         self.assertEqual(agents.action_text(agents.action_name("a1b2c3d4", "docker", "jellyfin", "restart")),
@@ -387,7 +400,10 @@ class Cards(unittest.TestCase):
         c = self.parse('agent = "n100"\nagent_target = "docker:jellyfin"\nping = "10.0.0.1"\n')
         self.assertEqual(c["check"][0], "ping")             # a card's own check wins
         self.assertNotIn("sensors", c)
-        for bad in ('agent_target = "docker:jellyfin"\n', 'agent = "a.b"\n',
+        c = self.parse('wake = "pve2:aa:bb:cc:dd:ee:ff"\nping = "10.0.0.1"\n')
+        self.assertEqual((c["wake"], c["check"][0]), ("pve2:aa:bb:cc:dd:ee:ff", "ping"))
+        for bad in ('wake = "pve2"\n', 'wake = "pve2:AA:BB:CC:DD:EE:FF"\n', 'wake = "a.b:aa:bb:cc:dd:ee:ff"\n',
+                    'agent_target = "docker:jellyfin"\n', 'agent = "a.b"\n',
                     'agent = "n"\nagent_target = "shell:ls"\n', 'agent = "n"\nagent_target = "docker:a;b"\n'):
             with self.assertRaises(config.ConfigError, msg=bad):
                 self.parse(bad)
