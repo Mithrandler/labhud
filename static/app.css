@@ -558,6 +558,8 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings .agent-targets h4 { font-size: 11px; font-weight: 500; color: var(--sub); margin: 8px 0 4px; }
 #settings .agent-line { font-family: ui-monospace, monospace; font-size: 11px; user-select: all; }
 #settings .choice.pending { opacity: 0.5; }
+#settings .agent-add-mac { display: flex; gap: 6px; margin-top: 6px; }
+#settings .agent-add-mac .agent-filter { margin: 0; flex: 1; }
 #settings .agent-filter { width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 6px 8px; border-radius: 6px;
   border: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; font-size: 12px; }
 #settings .device-name { color: var(--text); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

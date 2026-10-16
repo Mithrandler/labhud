@@ -673,6 +673,25 @@ function agent_box(a, host) {
       tRow.appendChild(b);
     }
     t.appendChild(tRow);
+    // a machine that is off is not in the ARP table: its MAC can be typed in
+    if (c === "wol") {
+      const f = el("form", "agent-add-mac");
+      const mac = el("input", "agent-filter");
+      mac.placeholder = "Add a MAC (aa:bb:cc:dd:ee:ff)";
+      mac.autocomplete = "off";
+      const go = el("button", "choice", "Add");
+      go.type = "submit";
+      f.append(mac, go);
+      f.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const x = mac.value.trim().toLowerCase().replace(/-/g, ":");
+        if (!/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/.test(x)) return show_message("Not a MAC address.");
+        if (ticked.includes(x)) return;
+        agents_post("targets", { id: a.id, cap: c, targets: [...ticked, x] })
+          .then((r) => { if (!r.ok) show_message(r.error || "Refused."); load_agents(host); });
+      });
+      t.appendChild(f);
+    }
     box.appendChild(t);
   }
   return box;

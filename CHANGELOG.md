@@ -21,6 +21,8 @@ still change in a minor version; such changes are listed under **Changed** with 
   labhud pins (`agents/agent-release.json`); `LABHUD_AGENT_RELEASES` and `LABHUD_AGENT_IMAGE`
   change where it and the image come from.
 - `?static&settings=<tab>` opens ⚙ on a tab, for screenshots.
+- ⚙ > Agents > Wake-on-LAN takes a MAC typed in: a machine that is off is not in the agent's ARP
+  table, so it could not be ticked.
 
 - **Sign in at the top right.** Signed in, the admin's name there opens a menu: Settings, Edit
   config, Sign out. A sign-in lasts 30 days from its last use on that browser and survives a
