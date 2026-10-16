@@ -34,6 +34,7 @@ still change in a minor version; such changes are listed under **Changed** with 
   plain http too (where the browser has no clipboard API).
 - Card key `wake = "<agent>:<mac>"`: WAKE from another agent, next to the buttons of the card's own
   `agent` (a host that is off cannot wake itself).
+- ⚙ > Agents: **Tick all / Untick all** for a capability's targets (a host with 28 containers).
 - ⚙ > Agents > Wake-on-LAN takes a MAC typed in: a machine that is off is not in the agent's ARP
   table, so it could not be ticked.
 

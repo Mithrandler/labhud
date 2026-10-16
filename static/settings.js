@@ -650,6 +650,17 @@ function agent_box(a, host) {
     const t = el("div", "agent-targets");
     t.appendChild(el("h4", null, CAP_TEXT[c][0] + ": " + CAP_TEXT[c][1]));
     if (!all.length) t.appendChild(el("p", "hint", a.online ? "Nothing found yet." : "Shown when the agent is online."));
+    if (all.length > 1) {   // a host with 28 containers: one tap instead of 28
+      const every = ticked.length === all.length;
+      const b = el("button", "choice small", every ? "Untick all" : `Tick all ${all.length}`);
+      b.type = "button";
+      b.addEventListener("click", () => {
+        b.classList.add("pending");
+        agents_post("targets", { id: a.id, cap: c, targets: every ? [] : all })
+          .then((r) => { if (!r.ok) show_message(r.error || "Refused."); load_agents(host); });
+      });
+      t.appendChild(b);
+    }
     const tRow = el("div", "choices");
     if (all.length > 24) {   // a long list (services, the ARP table): a filter above it
       const f = el("input", "agent-filter");
