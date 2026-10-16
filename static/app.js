@@ -137,7 +137,8 @@ function raw_severity(path, fmt, v) {
   // the HEALTH page and the INTERNET card (1 Oct 2026): any value above zero is already a problem
   if (/\.latency\.loss$/.test(path)) return v >= 5 ? "crit" : v > 0 ? "warn" : "";
   if (/\.cert_min_days$/.test(path)) return v < 7 ? "crit" : v < 14 ? "warn" : "";
-  if (/\.(cert_under_14|problems|stale|security)$/.test(path)) return v > 0 ? "crit" : "";
+  if (/\.(cert_under_14|problems|stale)$/.test(path)) return v > 0 ? "crit" : "";
+  if (/\.security$/.test(path)) return v > 0 ? "warn" : "";   // pending security updates: a look, not a problem
   return "";
 }
 

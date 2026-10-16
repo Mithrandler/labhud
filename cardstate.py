@@ -159,8 +159,10 @@ def raw_severity(path, fmt, v):
         return "crit" if v >= 5 else "warn" if v > 0 else ""
     if re.search(r"\.cert_min_days$", path):
         return "crit" if v < 7 else "warn" if v < 14 else ""
-    if re.search(r"\.(cert_under_14|problems|stale|security)$", path):
+    if re.search(r"\.(cert_under_14|problems|stale)$", path):
         return "crit" if v > 0 else ""
+    if re.search(r"\.security$", path):   # pending security updates: worth a look, not a problem
+        return "warn" if v > 0 else ""
     return ""
 
 

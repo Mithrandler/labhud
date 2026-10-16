@@ -6,6 +6,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-10-16
+
+### Changed
+- **Pending security updates are orange, not red.** A card's `security` count above 0 is a
+  warning: the card stands out, but it is no longer a problem (no red bar in the app, no bell,
+  no red on the wall). The fleet's update run takes care of them.
+
 ## [0.3.0] - 2026-10-16
 
 ### Added

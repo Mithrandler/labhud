@@ -150,6 +150,17 @@ ORDERED = ["agent-a1-docker-stopwatch-start", "wol-pbs", "vm-pve2-210-start", "a
            "agent-a1-docker-stopwatch-stop", "shutdown-gaming"]
 
 
+class Security(unittest.TestCase):
+    """Pending security updates colour the card orange: a look, not a problem (no red bar, no bell)."""
+
+    def test_warn_not_problem(self):
+        self.assertEqual(cardstate.raw_severity("live.fleet_health.security", "count", 2), "warn")
+        self.assertEqual(cardstate.raw_severity("live.fleet_health.security", "count", 0), "")
+        self.assertEqual(cardstate.raw_severity("live.certs.cert_under_14", "count", 1), "crit")
+        c = {"id": "packages", "metrics": [["live.fleet_health.security", "Security", "count"]]}
+        self.assertFalse(cardstate.card_bad(c, {"live": {"fleet_health": {"security": 2}}}))
+
+
 class ActionOrder(unittest.TestCase):
     """The same order on every card, and red only for what takes something down (from the verb,
     so a container called "stopwatch" is not red for its START)."""
