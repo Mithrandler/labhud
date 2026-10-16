@@ -210,7 +210,8 @@ class Server(DemoServer):
         self.assertEqual(status, 200)
         text = body.decode()
         self.assertNotIn("@AGENT_", text)
-        self.assertIn('VERSION="0.1.0"', text)
+        with open(agents.RELEASE_FILE) as f:
+            self.assertIn(f'VERSION="{json.load(f)["version"]}"', text)
         self.assertIn("releases/download", text)
         import subprocess
         self.assertEqual(subprocess.run(["sh", "-n"], input=body).returncode, 0)
@@ -230,7 +231,7 @@ class Server(DemoServer):
 
     def test_code_lines_once_released(self):
         real = agents.release
-        agents.release = lambda releases="": dict(real(releases), **{"@AGENT_SHA256_AMD64@": "a" * 64})
+        agents.release = lambda releases="": dict(real(releases), **{"@AGENT_SHA256_AMD64@": "a" * 64, "@AGENT_SHA256_ARM64@": ""})
         try:
             r = agents.install_lines("http://wall:8095", "CODE1")
         finally:

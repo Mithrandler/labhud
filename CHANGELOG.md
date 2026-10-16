@@ -6,7 +6,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
-## [0.3.0] - unreleased
+## [0.3.0] - 2026-10-16
 
 ### Added
 - **Alert rules on hosts, set in ⚙ > Alerts.** `[[alert]]` rules (`alerting.py`): a host's CPU,

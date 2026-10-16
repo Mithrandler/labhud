@@ -16,8 +16,8 @@ class Check(unittest.TestCase):
 
     def test_default_is_the_display_address(self):
         self.assertEqual(scan.default_cidr("wall.lan:8095,192.168.1.210:8095"), "192.168.1.0/24")
-        self.assertEqual(scan.default_cidr("wall.lan", local_ip="10.0.50.3"), "10.0.50.0/24")
-        self.assertEqual(scan.default_cidr("127.0.0.1:8095", local_ip="10.0.50.3"), "10.0.50.0/24")
+        self.assertEqual(scan.default_cidr("wall.lan", local_ip="10.9.8.3"), "10.9.8.0/24")
+        self.assertEqual(scan.default_cidr("127.0.0.1:8095", local_ip="10.9.8.3"), "10.9.8.0/24")
 
 
 class Run(unittest.TestCase):
