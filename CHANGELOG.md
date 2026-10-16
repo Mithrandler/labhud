@@ -22,6 +22,13 @@ still change in a minor version; such changes are listed under **Changed** with 
   change where it and the image come from.
 - `?static&settings=<tab>` opens ⚙ on a tab, for screenshots.
 - `install-agent.sh --ptero-pin <sha256>`: a Pterodactyl panel with a self-signed certificate.
+- A Proxmox guest card with `agent = "<name>"` (the agent inside the guest) lists that agent's
+  containers in its panel, with START / STOP / RESTART on each one ticked in ⚙ > Agents; from its
+  own agent such a card gets only UPDATE (Proxmox already gives START, SHUT DOWN and REBOOT).
+- A games page takes a server's buttons from the agent that has it ticked (Pterodactyl), so the
+  config's `game-*` actions and the action agent are no longer needed for it.
+- The snapshot's `agents.<name>.buttons`: the ticked targets' action names, for pages that list
+  containers, units or game servers themselves.
 - Card key `wake = "<agent>:<mac>"`: WAKE from another agent, next to the buttons of the card's own
   `agent` (a host that is off cannot wake itself).
 - ⚙ > Agents > Wake-on-LAN takes a MAC typed in: a machine that is off is not in the agent's ARP

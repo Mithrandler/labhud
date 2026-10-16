@@ -365,6 +365,19 @@ class Names(unittest.TestCase):
         self.assertEqual(agents.card_actions({"id": "p", "agent": "n100", "agent_target": "docker:plex"}), [])
         self.assertEqual(agents.card_actions({"id": "x", "agent": "nobody"}), [])
 
+    def test_guest_card_gets_only_update(self):
+        names = agents.card_actions({"id": "v", "agent": "n100", "check": ["proxmox", "pve2", 210]})
+        self.assertEqual([n.rsplit("-", 1)[1] for n in names], ["update"])
+
+    def test_snapshot_buttons(self):
+        b = agents.snapshot()["n100"]["buttons"]
+        self.assertEqual(sorted(b), ["docker", "systemd"])          # wol and host are not listed by pages
+        self.assertEqual(b["docker"]["jellyfin"], [f"agent-a1b2c3d4-docker-jellyfin-{v}" for v in ("start", "stop", "restart")])
+        self.assertNotIn("plex", b["docker"])                         # only what is ticked
+        for names in b["docker"].values():
+            for n in names:
+                self.assertIsNotNone(agents.resolve(n))
+
     def test_card_wake(self):
         wake = agents.action_name("a1b2c3d4", "wol", "aa:bb:cc:dd:ee:ff", "wake")
         # WAKE from one agent, the host's buttons from another (here the same, for the store)

@@ -393,6 +393,12 @@ body.with-alert { --alert: 22px; }
   font: 700 13px/1 var(--font); letter-spacing: .5px;
 }
 #panel-actions button.danger { border-color: var(--red); color: var(--red); }
+/* a container's own buttons, on its row in a guest's panel */
+#panel-body .row-actions { display: flex; gap: 4px; margin-left: 8px; flex: none; }
+#panel-body .row-actions button { font: inherit; font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 3px 7px;
+  border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
+#panel-body .row-actions button.danger { border-color: var(--red); color: var(--red); }
+#panel-body .row:has(.row-actions) { align-items: center; }
 
 /* ======================= action confirmation ======================= */
 

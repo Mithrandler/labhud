@@ -1127,6 +1127,16 @@ function make_torrents(path) {
   return host;
 }
 
+/** A game server's buttons from an agent that has it ticked (Pterodactyl), else null: the
+    config's own game-* actions then, when the action agent is set up. */
+function game_buttons(id) {
+  for (const a of Object.values(get("agents") || {})) {
+    const b = ((a && a.buttons) || {}).ptero;
+    if (b && b[id]) return b[id];
+  }
+  return null;
+}
+
 /** A games page: the grid comes live from the server list at `path` (Pterodactyl), so it has no
     fixed cards in the topology. */
 function mount_games(host, path) {
@@ -1144,7 +1154,7 @@ function mount_games(host, path) {
       get check() { return ["known", d.dataset.running === "1"]; },
       get actions() {
         const id = d.dataset.ident;
-        return id ? ["game-start-" + id, "game-stop-" + id, "game-restart-" + id] : [];
+        return id ? (game_buttons(id) || ["game-start-" + id, "game-stop-" + id, "game-restart-" + id]) : [];
       },
     };
     bind_touch(d, card);
@@ -1634,6 +1644,42 @@ function section(body, title, rows) {
   body.appendChild(l);
 }
 
+/** The containers the guest's own agent reports, stopped ones first. A container ticked in
+    ⚙ > Agents has its buttons on its row (signed in), each one a card of its own for the
+    confirmation and the progress, so "starting…" watches that container and not the guest. */
+function agent_containers(body, c) {
+  const all = get(`agents.${c.agent}.containers`) || {};
+  const names = Object.keys(all).sort((a, b) =>
+    (all[a].state === "running") - (all[b].state === "running") || a.localeCompare(b));
+  if (!names.length) return;
+  const running = names.filter((n) => all[n].state === "running").length;
+  const btns = (get(`agents.${c.agent}.buttons`) || {}).docker || {};
+  body.appendChild(el("h3", null, `docker containers (${running}/${names.length})`));
+  const l = el("div", "list");
+  for (const n of names) {
+    const x = all[n];
+    const up = x.state === "running";
+    const r = el("div", "row" + (up ? "" : " bad"));
+    r.appendChild(el("span", "n", n));
+    r.appendChild(el("span", "v", up ? (x.status || "running") : "STOPPED"));
+    const acts = signed_in() ? (btns[n] || []) : [];
+    if (acts.length) {
+      const one = { id: `${c.id}:${n}`, name: n, agent: c.agent, agent_target: "docker:" + n,
+        check: ["agent", c.agent, "docker", n], actions: acts };
+      const box = el("span", "row-actions");
+      for (const a of useful_actions(one)) {
+        const b = el("button", /stop/.test(a) ? "danger" : "", action_label(a));
+        b.type = "button";
+        b.addEventListener("click", () => ask_confirmation(one, a));
+        box.appendChild(b);
+      }
+      r.appendChild(box);
+    }
+    l.appendChild(r);
+  }
+  body.appendChild(l);
+}
+
 /** Fills the panel and returns whether anything came out beyond a plain "status: running" — a row
     the coloured dot on the card already shows, so on its own it does not justify opening the
     panel (see open_panel). */
@@ -1679,7 +1725,8 @@ function fill_panel() {
       ["type", g.type === "lxc" ? "LXC" : "VM"],
       ["node", `${node} / ${vmid}`],
     ]);
-    const cont = get("live.containers." + vmid);
+    if (c.agent && get(`agents.${c.agent}.containers`)) agent_containers(body, c);
+    const cont = c.agent ? null : get("live.containers." + vmid);
     if (Array.isArray(cont) && cont.length) {
       const running = cont.filter((x) => x.state === "running").length;
       section(body, `docker containers (${running}/${cont.length})`,

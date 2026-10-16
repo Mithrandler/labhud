@@ -242,8 +242,20 @@ def snapshot():
     for aid, a in _load().items():
         st = {k: v for k, v in (_state.get(aid) or {}).items() if k != "type"}
         out[a["name"]] = dict(st, id=aid, online=aid in _live, version=a.get("version", ""),
-                              caps=a.get("caps", []))
+                              caps=a.get("caps", []), buttons=buttons(aid, a))
     return out
+
+
+# What a page draws next to one target without a card of its own: a container in a guest's
+# panel, a game server's tile. Only ticked targets of ticked capabilities, so a button here is
+# always one resolve() accepts.
+LISTED = ("docker", "systemd", "ptero")
+
+
+def buttons(aid, a):
+    """{cap: {target: [action names]}} for the ticked targets the pages list themselves."""
+    return {cap: {t: [action_name(aid, cap, t, v) for v in VERBS[cap]] for t in a.get("targets", {}).get(cap, [])}
+            for cap in LISTED if cap in a.get("caps", [])}
 
 
 # --- actions: names, and the buttons a card gets ---
@@ -285,7 +297,8 @@ def resolve(name):
 def card_actions(card):
     """The agents' buttons for one card of the config:
     - a Proxmox guest card (`proxmox = "node/vmid"`): from the agent on that node, if the guest is ticked;
-    - `agent = "<name>"`: that host's reboot, shut down and update, if ticked;
+    - `agent = "<name>"`: that host's reboot, shut down and update, if ticked (on a guest card, only
+      update: Proxmox gives the rest);
     - `agent` + `agent_target = "<cap>:<target>"`: that container, unit, server, guest or MAC;
     - `wake = "<agent>:<mac>"`: WAKE from that agent, whichever agent the card has itself."""
     out = []
@@ -301,7 +314,10 @@ def card_actions(card):
         aid, a = by_name(card["agent"])
         cap, _, target = (card.get("agent_target") or "host:host").partition(":")
         if a and cap in VERBS and cap in a.get("caps", []) and target in a.get("targets", {}).get(cap, []):
-            out += [action_name(aid, cap, target, v) for v in VERBS[cap]]
+            # a guest card has START / SHUT DOWN / REBOOT from Proxmox already: its own agent
+            # adds only UPDATE, not a second REBOOT that means something else
+            verbs = ("update",) if chk and chk[0] == "proxmox" and cap == "host" else VERBS[cap]
+            out += [action_name(aid, cap, target, v) for v in verbs]
     if card.get("wake"):
         by, _, mac = card["wake"].partition(":")
         aid, a = by_name(by)
