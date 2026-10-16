@@ -80,18 +80,28 @@ instead, with `LABHUD_CA=/path/ca.pem` for an internal CA. Pins still win for th
 
 ## HTTPS for labhud itself
 
-`LABHUD_TLS_CERT` and `LABHUD_TLS_KEY` (PEM files) make labhud answer HTTPS on its port. A
-self-signed certificate is fine for agents, which pin it:
+**labhud answers HTTPS by default**, on its own port. Over plain HTTP everything a phone sends it
+(the admin's password and code, the PIN, the app's token) would cross the network readable by
+anything else on it; HTTPS closes that, even on a LAN that is only yours.
 
-```sh
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
-  -subj /CN=labhud -keyout key.pem -out cert.pem
-python3 init.py fingerprint https://192.0.2.50:8095   # -> LABHUD_AGENT_PUSH_PIN on each agent
-```
+- At the first start labhud makes **its own certificate** (ECDSA P-256, self-signed, 10 years)
+  into `LABHUD_DATA/tls/`, the key readable only by labhud. It is never made again on its own: the
+  app and the agents learn its SHA-256 when they pair (the QR code, the agent's code) and accept
+  that certificate and no other, so a new one means pairing them again. To start over, delete the
+  folder and restart.
+- **A browser warns once** ("Advanced → Proceed"): no authority vouches for a certificate labhud
+  made itself. The app and the agents need no warning, they pinned it.
+- **Your own certificate** instead (a real one, from your reverse proxy or your own CA):
+  `LABHUD_TLS_CERT` and `LABHUD_TLS_KEY` (PEM files).
+- **Plain HTTP** only when you say so, `LABHUD_HTTP=on` (behind a reverse proxy that does TLS),
+  or when labhud cannot keep a certificate (no `LABHUD_DATA`, no `openssl`): the log and `/status`
+  then say why.
+- A plain `http://` request on the HTTPS port (an old bookmark) gets a redirect to `https://`,
+  only for a name in `LABHUD_HOSTS`. `LABHUD_HOSTS` does not change: it lists `host:port` names,
+  whatever the scheme.
 
-A browser warns about a self-signed certificate; for the display itself, a reverse proxy with a
-real certificate is often simpler. `LABHUD_HOSTS` does not change: it lists `host:port` names,
-whatever the scheme.
+The older agents that labhud polls pin it with `python3 init.py fingerprint https://192.0.2.50:8095`
+(`LABHUD_AGENT_PUSH_PIN` on each agent).
 
 ## Agents
 
@@ -103,11 +113,10 @@ whatever the scheme.
 - **Every frame is signed** (HMAC-SHA256) in both directions, bound to its connection, numbered,
   and refused when older than 30 s: a captured frame cannot be replayed, here or on another
   connection.
-- **Over plain HTTP the content is not encrypted**: the names of your containers, guests and
-  services, and the sensors, cross the LAN in clear. Nothing in them is a secret, and nothing
-  can be changed or forged in transit; if that is still too much, give labhud a certificate
-  (`LABHUD_TLS_CERT`) and use `https://`. labhud then vouches for it at pairing and the agent
-  pins it.
+- Over HTTPS (the default) labhud vouches for its certificate at pairing and the agent pins it.
+  Over plain HTTP (`LABHUD_HTTP=on`) the content is not encrypted: the names of your
+  containers, guests and services, and the sensors, cross the LAN in clear; nothing in them is a
+  secret, and nothing can be changed or forged in transit.
 - The endpoint answers under any name (the signature is the check) and **refuses any request
   with an `Origin`**, which every browser sends with a WebSocket: no web page can reach it.
 - What it may do is ticked in ⚙ and checked **twice**, by labhud and by the agent. The Proxmox
@@ -177,8 +186,7 @@ holds for the phones signed in as the admin (`/api/v1/unlock`).
   2, 4… up to an hour; each such pause goes to the log and the day's timeline.
 - Forgotten PIN: `docker exec labhud python3 /app/init.py pin --clear`.
 
-What it does not do: over plain HTTP the PIN crosses the LAN in clear text, like everything else
-the page shows. Use `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY` or a VPN where that matters.
+With `LABHUD_HTTP=on` the PIN crosses the LAN in clear text, like everything else the page shows.
 
 ## The admin
 
@@ -205,8 +213,8 @@ signing in with the same three (or from a QR code shown in ⚙) and then acts wi
   (`init.py admin`) signs every browser out.
 - A signed-in display is the admin's to whoever stands at it. On a wall in a shared place, set a
   PIN as well: buttons and ⚙ then also need the screen unlocked.
-- Over plain HTTP the password and the code cross the network in clear text, like the PIN. Sign in
-  from the display, the host, or over the VPN.
+- With `LABHUD_HTTP=on` the password and the code cross the network in clear text, like the PIN.
+  Sign in from the display, the host, or over the VPN then.
 
 ## Paired phones (the LabHUD app)
 
@@ -230,9 +238,8 @@ instead (`init.py pair`, or ⚙ > Devices > Phones > Pair a phone) and then send
 - The app's wall mode loads the wall page with the token as a cookie: that page is a display like
   any other, so it needs the admin signed in (and unlocked, with a PIN) for buttons and ⚙.
 - **Pair a phone** and **Remove** are in ⚙, so they need the admin signed in.
-- Over plain HTTP the token crosses the network in clear text, like everything else. Over a VPN
-  that is fine; on a network you do not trust, give labhud HTTPS (`LABHUD_TLS_CERT`): the QR code
-  then carries the certificate's fingerprint and the app accepts only that certificate.
+- Over HTTPS (the default) the QR code carries the certificate's fingerprint and the app accepts
+  only that certificate. With `LABHUD_HTTP=on` the token crosses the network in clear text.
 - The app reaches labhud the same way a browser would: keep it on the LAN or behind a VPN. Pairing
   does not make it safe to expose the port to the internet.
 

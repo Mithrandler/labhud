@@ -14,6 +14,9 @@ services:
       # Every "host:port" the display opens labhud under, exactly as typed in its browser.
       # Anything else gets 421 (protection against DNS rebinding, see docs/security.md).
       LABHUD_HOSTS: "192.0.2.50:8095,localhost:8095"
+      # What labhud keeps: the admin and its sessions, phones, agents, the PIN, history, and its
+      # own HTTPS certificate (made at the first start; LABHUD_HTTP: "on" for plain HTTP).
+      LABHUD_DATA: /data
     # config.toml is read again a few seconds after you save it, no restart needed. It must be
     # world-readable (644): the image runs as uid 10001. A single mounted file only follows
     # edits made in place (nano, vim with `:set backupcopy=yes`); an editor that saves by
@@ -26,9 +29,8 @@ services:
       # (mkdir labhud && sudo chown 10001 labhud), plus LABHUD_CONFIG: /config/config.toml above
       # and no env_file:
       # - ./labhud:/config
-      # Optional: history and maintenance kept across restarts (with LABHUD_DATA=/data in .env).
-      # mkdir data && sudo chown 10001 data
-      # - ./data:/data
+      # What labhud keeps (LABHUD_DATA above): mkdir data && sudo chown 10001 data
+      - ./data:/data
     # labhud writes nothing to disk (except to LABHUD_DATA, if you mount it) and needs no
     # privilege but NET_RAW (for ping).
     read_only: true

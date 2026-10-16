@@ -58,7 +58,7 @@ Host). Answers `{"ok": true, "token": "<id>.<secret>", "name": "Pixel 6a", "info
 unique ("Pixel 6a 2").
 
 The link is `labhud://pair?u=<labhud's address>&c=<code>[&fp=<sha256>]`. `fp`, present when
-labhud serves HTTPS itself (`LABHUD_TLS_CERT`), is the SHA-256 of its certificate (DER, hex):
+labhud serves HTTPS itself (the default), is the SHA-256 of its certificate (DER, hex):
 accept that certificate and no other.
 
 ### Pairing by signing in as the admin

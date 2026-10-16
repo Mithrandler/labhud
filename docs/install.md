@@ -24,7 +24,7 @@ On another port or address, add the name to `LABHUD_HOSTS`, for example
 serves a setup page instead of the display, and prints a link with a one-time code in its log:
 
 ```sh
-mkdir labhud && sudo chown 10001 labhud   # the image runs as uid 10001 and writes here
+mkdir labhud data && sudo chown 10001 labhud data   # the image runs as uid 10001 and writes here
 curl -fsSL https://raw.githubusercontent.com/Mithrandler/labhud/main/compose.example.yaml -o compose.yaml
 # in compose.yaml: the "setup page" variant of volumes (./labhud:/config) and LABHUD_CONFIG
 docker compose up -d && docker compose logs labhud
@@ -32,8 +32,13 @@ docker compose up -d && docker compose logs labhud
 
 ```
 SETUP MODE: there is no /config/config.toml yet.
-Open http://<this machine>:8095/#ABCD-EFGH
+Open https://<this machine>:8095/#ABCD-EFGH
 ```
+
+labhud answers **HTTPS**, with a certificate it made itself into `data/tls/` at this first start:
+the browser warns once ("Advanced → Proceed"); the app and the agents pin it when they pair. Your
+own certificate: `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY`; plain HTTP behind a proxy: `LABHUD_HTTP=on`
+([security.md](security.md#https-for-labhud-itself)).
 
 The page walks through Proxmox VE (address, a read-only token, which nodes and guests get a
 card; it says so if the token can do more than read, and offers to pin the certificate), every
@@ -43,8 +48,8 @@ at least 10 characters, and an authenticator app you scan a QR code into; the st
 a code from it is right). At the end it writes `config.toml` and
 `.env` (mode 600) into that folder and starts again as the display. Edit both files by hand
 afterwards for everything else. See [threat-model.md](threat-model.md#the-setup-page) for why
-only the code from the log opens it; over plain HTTP, open it from the host itself or a network
-you trust, since the keys you type cross it once.
+only the code from the log opens it; with `LABHUD_HTTP=on`, open it from the host itself or a
+network you trust, since the keys you type cross it once.
 
 **The admin on an install made before 0.2.13** (or to replace it: a forgotten password, a lost
 authenticator): `docker exec -it labhud python3 /app/init.py admin`. `--remove` deletes it.
@@ -94,7 +99,7 @@ out, its problems are shown in a banner on the display, and the last good versio
 ### Editing it later, in a browser
 
 ```sh
-docker exec labhud python3 /app/init.py edit       # prints http://<host>:8095/edit#ABCD-EFGH
+docker exec labhud python3 /app/init.py edit       # prints https://<host>:8095/edit#ABCD-EFGH
 ```
 
 The link opens config.toml in a plain editor, checked as you type; Save is offered only when the
@@ -118,9 +123,9 @@ docker compose logs labhud
 ```
 
 The log's first lines list the active sources, the ones not configured, the accepted host names
-and whether actions are on. Open `http://<server>:8095` on the display.
+and whether actions are on. Open `https://<server>:8095` on the display.
 
-When a card stays empty or shows an error, open `http://<server>:8095/status` in any browser: every
+When a card stays empty or shows an error, open `https://<server>:8095/status` in any browser: every
 source with its state (ok, failing, host down, off on schedule, not configured and which variables
 it needs), when it last answered, how long it took, when it is tried next and its last error, such
 as a wrong token or a refused certificate. The same, as JSON, is at `/api/status`. A configured
@@ -133,9 +138,9 @@ count: the card already shows that.
 Any browser that runs modern JavaScript works. The layout is made for a phone or small tablet in
 landscape (800×360 CSS pixels and up). For a wall: a kiosk browser that keeps the screen on and
 restarts the page after a crash, and a firewall rule that lets only the display reach port 8095.
-Pages rotate on their own; `http://<server>:8095/#<page id>` opens one directly.
+Pages rotate on their own; `https://<server>:8095/#<page id>` opens one directly.
 
-On your own phone (over your VPN), `http://<server>:8095/?view=list` is easier to read in the
+On your own phone (over your VPN), `https://<server>:8095/?view=list` is easier to read in the
 hand: one scrolling list with what is red at the top, then every card as a row with its first
 numbers. A tap opens the card's panel; a card with a `url` in the config gets an OPEN button
 there, to the service's own page. The wall never shows those links.

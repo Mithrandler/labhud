@@ -58,6 +58,29 @@ builtins.print = _one_line_print
 
 
 class Server(ThreadingHTTPServer):
+    tls = None   # an ssl.SSLContext: HTTPS, and plain HTTP on the same port gets a redirect to it
+
+    def finish_request(self, request, client_address):
+        """In the request's own thread: a TLS handshake starts with 0x16. Anything else is plain
+        HTTP from an old bookmark, answered with a redirect to https:// on the same port."""
+        if self.tls:
+            request.settimeout(Handler.timeout)
+            try:
+                first = request.recv(1, socket.MSG_PEEK)
+            except OSError:
+                return
+            if first != b"\x16":
+                return _redirect_to_https(request)
+            try:
+                request = self.tls.wrap_socket(request, server_side=True)
+            except OSError:   # a scanner, a client that refused the certificate: nothing to tell
+                return
+            try:
+                return super().finish_request(request, client_address)
+            finally:
+                request.close()   # the wrapped socket; the server closes only the one it accepted
+        super().finish_request(request, client_address)
+
     # A browser or a phone that drops its connection mid-request (screen off, tab closed, Wi-Fi
     # switch) is normal: the default printed a full traceback for every one.
     def handle_error(self, request, client_address):
@@ -67,11 +90,38 @@ class Server(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def _redirect_to_https(sock):
+    """301 to the same Host and path over https; only to a name in LABHUD_HOSTS (no open redirect)."""
+    try:
+        head = b""
+        while b"\r\n\r\n" not in head and len(head) < 8192:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            head += chunk
+        lines = head.decode("latin-1").split("\r\n")
+        parts = lines[0].split(" ")
+        path = parts[1] if len(parts) >= 2 and parts[1].startswith("/") else "/"
+        host = next((l.split(":", 1)[1].strip().lower() for l in lines[1:] if l.lower().startswith("host:")), "")
+        if host in ALLOWED_HOSTS:
+            body = b"labhud answers on https:// on this port.\n"
+            sock.sendall(b"HTTP/1.1 301 Moved Permanently\r\nLocation: https://" + host.encode() + path.encode("latin-1")
+                         + b"\r\nContent-Type: text/plain\r\nContent-Length: " + str(len(body)).encode()
+                         + b"\r\nConnection: close\r\n\r\n" + body)
+        else:
+            body = b"labhud answers on https:// on this port.\n"
+            sock.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: "
+                         + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
+    except OSError:
+        pass
+
+
 PORT = int(os.environ.get("LABHUD_PORT", "8095"))
-# HTTPS on labhud's own port (PEM files), for a display or agents on a network you do not trust.
-# Without them, plain HTTP: put a reverse proxy in front for TLS, or keep the port on a trusted segment.
+# HTTPS on labhud's own port: your certificate (LABHUD_TLS_CERT/KEY), or else labhud's own, made at
+# the first start (tlscert.py); plain HTTP only with LABHUD_HTTP=on. Decided when the server starts.
 TLS_CERT = os.environ.get("LABHUD_TLS_CERT", "")
 TLS_KEY = os.environ.get("LABHUD_TLS_KEY", "")
+TLS_LINE = "HTTPS with LABHUD_TLS_CERT" if TLS_CERT else "plain HTTP"
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 # The names the display may be requested under ("host:port", as the browser sends them). The
@@ -216,6 +266,12 @@ def _apply(topology):
 # The display's lock (lock.py): a PIN, then a ticket that the requests changing something carry.
 LOCK = lock.Lock()
 
+
+if __name__ == "__main__":
+    import tlscert
+    TLS_CERT, TLS_KEY, TLS_LINE = tlscert.choose(os.environ, store.DIR if store.enabled() else "",
+                                                 sorted(ALLOWED_HOSTS), demo=DEMO)
+    print(TLS_LINE, flush=True)
 
 # First start, no config.toml yet: the setup page instead (setupmode.py), which writes the files and
 # starts this process again as the display.
@@ -987,6 +1043,8 @@ def checklist(result):
     add("Certificates of the services checked", not unchecked if sources.TLS_SEEN else None,
         "LABHUD_PINS for " + ", ".join(unchecked) if unchecked else "pinned or verified" if sources.TLS_SEEN else "no HTTPS source yet")
     default_hosts = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
+    add("HTTPS on labhud's port", bool(TLS_CERT) or (None if "LABHUD_HTTP" in TLS_LINE or "demo" in TLS_LINE else False),
+        TLS_LINE)
     add("LABHUD_HOSTS names the display", bool(ALLOWED_HOSTS - default_hosts),
         "only localhost: the display gets 421" if not ALLOWED_HOSTS - default_hosts else "set")
     if ACTION_URL:
@@ -1871,9 +1929,9 @@ if __name__ == "__main__":
         import ssl
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(TLS_CERT, TLS_KEY or None)
-        # The handshake happens in the request's own thread, so a client that never finishes it
-        # does not block the others.
-        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
+        # Each connection is wrapped in its own thread (Server.finish_request), so a client that
+        # never finishes the handshake does not block the others.
+        httpd.tls = ctx
     print(f"listening on :{PORT}, {'HTTPS' if TLS_CERT else 'HTTP'}"
           + (f"; pushed sources: {', '.join(sorted(push.KEYS))}" if push.KEYS else ""), flush=True)
     httpd.serve_forever()

@@ -48,6 +48,16 @@ still change in a minor version; such changes are listed under **Changed** with 
   browsers, with Sign out for one or for all.
 
 ### Changed
+- **HTTPS by default.** At the first start labhud makes its own certificate (ECDSA P-256,
+  self-signed, 10 years) into `LABHUD_DATA/tls/` with `openssl` (now in the image) and answers
+  HTTPS on its port. The app and the agents pin it when they pair (the QR code and the agent's code
+  already carry the fingerprint); a browser warns once. `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY` still
+  give your own certificate; **plain HTTP needs `LABHUD_HTTP=on`** (or happens without
+  `LABHUD_DATA` or `openssl`, said in the log and on `/status`). A plain `http://` request on the
+  port gets a redirect to `https://`, for a name in `LABHUD_HOSTS` only. `init.py` prints `https://`
+  links with that certificate. **Upgrading:** an install with `LABHUD_DATA` switches to HTTPS, so
+  its phones and agents must be paired again, or set `LABHUD_HTTP=on` to stay on HTTP. The compose
+  example now mounts `./data` as `LABHUD_DATA`.
 - **A paired phone only looks until it signs in as the admin.** Its token carries an `admin` flag,
   tied to the admin who signed in (a new admin puts every phone back to looking): `POST
   /api/v1/admin-login` and `admin-logout`; pairing by signing in (`login-pair`) gives it at once.

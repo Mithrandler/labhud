@@ -36,7 +36,7 @@ Each line: what happens, what stops it today, and what is left.
 |---|---|---|
 | A LAN device opens `:8095` | your firewall rule (labhud itself has no login) | without that rule, the whole snapshot is readable |
 | A web page uses DNS rebinding to read the snapshot | `LABHUD_HOSTS`: any other `Host` gets 421 | nothing, if `LABHUD_HOSTS` is set |
-| Someone sniffs the display's traffic | `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY`, or a reverse proxy with TLS | plain HTTP by default |
+| Someone sniffs the display's traffic | HTTPS by default: labhud's own certificate (`LABHUD_DATA/tls`), or yours (`LABHUD_TLS_CERT`) | `LABHUD_HTTP=on` turns it off; a browser warns once about labhud's own certificate |
 | Someone holds the display | nothing | they see what the wall shows, and can press the buttons |
 
 ### Stealing keys
@@ -58,7 +58,7 @@ HTTP (`setupmode.py`).
 | Someone on the network sets labhud up first, with their own sources | every call needs the setup code, printed only in labhud's log; 10 wrong codes lock it for a minute | whoever reads the log (the Docker host) can do it, as they could edit the files |
 | A web page in the same browser posts to the setup page | Origin must equal Host, the body must be JSON, the code goes in a header a page cannot guess | none known |
 | Keys read back from the setup page | it never returns a key: not from the environment, not one typed earlier (fields come back empty, "kept") | the config preview shows addresses |
-| Keys sniffed while typed | HTTPS on the port (`LABHUD_TLS_CERT`) | over plain HTTP the Proxmox secret crosses the network once: run setup from the host itself (`localhost`) or a trusted segment, or use `init.py` |
+| Keys sniffed while typed | HTTPS on the port, by default | with `LABHUD_HTTP=on` the Proxmox secret crosses the network once: run setup from the host itself (`localhost`) or a trusted segment, or use `init.py` |
 | Making labhud ask an address of the attacker's choice ("Try") | the code | with the code, labhud can be made to request any URL once per try, like any monitoring tool |
 | "Find services" used to scan a network | the code; at most 32 hosts typed one by one, no ranges, only the listed ports | with the code, a few requests to each host listed |
 | The page reopened later | it is not served once `config.toml` exists; `LABHUD_SETUP=off` disables it entirely | deleting `config.toml` brings it back, with a new code |
@@ -101,7 +101,7 @@ HTTP (`setupmode.py`).
 | A fake labhud collects agents | labhud must prove it knows the code; an agent refuses a wrong proof | nothing |
 | Recording the pairing | only a hash of the code and nonces travel; the key is derived, never sent | nothing |
 | Replaying or reflecting a frame | each frame is signed for its connection, its direction and its number, at most 30 s old | nothing |
-| Someone on the LAN reads the traffic | `https://` with a pinned certificate, if labhud has one | over plain HTTP: names of containers, guests, services, and the sensors |
+| Someone on the LAN reads the traffic | `https://` with a pinned certificate (the default) | with `LABHUD_HTTP=on`: names of containers, guests, services, and the sensors |
 | A web page opens the WebSocket | refused when the request has an `Origin` | nothing |
 | labhud itself is taken over | the agent acts only on the ticked targets, with the ticked verbs, and accepts no code | the ticked buttons can be pressed: that is their price |
 | Command injection through a target | targets have a strict shape, checked in labhud and in the agent; each verb is one API call | nothing |
@@ -125,4 +125,4 @@ worth closing next, in order:
 2. **Push from the agents** (`LABHUD_PUSH_<NAME>_KEY`), so the screen can trust what it shows
    and the hosts need no open port.
 3. **Keys in files** (`LABHUD_*_FILE`), so they are not in the container's environment.
-4. **HTTPS on `:8095`** (`LABHUD_TLS_CERT`) if the display is not on a segment you trust.
+4. **Keep HTTPS on `:8095`** (the default); `LABHUD_HTTP=on` only behind a proxy that does TLS.

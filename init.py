@@ -57,7 +57,7 @@ def agent(args):
     if not url:
         hosts = [h for h in os.environ.get("LABHUD_HOSTS", "").split(",") if h.strip()
                  and not h.startswith(("localhost", "127."))]
-        scheme = "https" if os.environ.get("LABHUD_TLS_CERT") else "http"
+        scheme = "https" if served_cert() else "http"
         url = f"{scheme}://{hosts[0].strip()}" if hosts else "http://<labhud-host>:8095"
     url = url.rstrip("/")
     print(f"Added {name}: its key is in {env_path}, its card in {cfg}; labhud picks both up in a few seconds.\n")
@@ -81,7 +81,7 @@ def edit(args):
         sys.exit(f"cannot write {editmode.ticket_path(cfg)} ({e.strerror}): the editor needs config.toml's "
                  "folder writable (the setup page's /config folder)")
     hosts = [h for h in os.environ.get("LABHUD_HOSTS", "").split(",") if h.strip()]
-    scheme = "https" if os.environ.get("LABHUD_TLS_CERT") else "http"
+    scheme = "https" if served_cert() else "http"
     where = f"{scheme}://{hosts[0].strip()}" if hosts else "http://<labhud-host>:8095"
     print(f"Open {where}/edit#{code}  (valid {minutes} minutes)")
 
@@ -114,10 +114,16 @@ def lock_pin(args):
     print("PIN set: the display locks now (open screens within a few seconds).")
 
 
+def served_cert():
+    """The certificate the server serves (tlscert.py): its own in LABHUD_DATA/tls, or yours."""
+    import tlscert
+    return tlscert.current(os.environ, os.environ.get("LABHUD_DATA", ""))
+
+
 def display_url():
     hosts = [h.strip() for h in os.environ.get("LABHUD_HOSTS", "").split(",") if h.strip()
              and not h.strip().startswith(("localhost", "127."))]
-    scheme = "https" if os.environ.get("LABHUD_TLS_CERT") else "http"
+    scheme = "https" if served_cert() else "http"
     return f"{scheme}://{hosts[0]}" if hosts else ""
 
 
@@ -134,7 +140,7 @@ def pair(args):
         sys.exit(f"no usable LABHUD_DATA ({store.PROBLEM or 'not set'}): pairing keeps its devices there")
     if not url:
         sys.exit("usage: python3 init.py pair [name] http://labhud-host:8095  (no LABHUD_HOSTS name to use)")
-    link = devices.pair_link(url, devices.new_code(name), os.environ.get("LABHUD_TLS_CERT", ""))
+    link = devices.pair_link(url, devices.new_code(name), served_cert())
     print(qr.terminal(link))
     print(f"\nScan it with the LabHUD app (Add server), or paste this link there:\n\n  {link}\n")
     print(f"It works once, within {devices.PAIR_MINUTES} minutes. The phone must reach {url} (home Wi-Fi or VPN).")

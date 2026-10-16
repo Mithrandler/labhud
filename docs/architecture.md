@@ -48,7 +48,8 @@ service or an agent itself.
 | phone app | `/api/v1/*` (state, card, history, uptime, events, stream, actions) | everything the app shows and does, see [app-api.md](app-api.md) | a token per paired phone (`Authorization: Bearer`), any Host |
 | agent | `POST /api/push/<name>` | a pushed source's JSON | HMAC-SHA256 with that source's own key, 30-second window; not behind `LABHUD_HOSTS` |
 
-With `LABHUD_TLS_CERT` / `LABHUD_TLS_KEY`, all of it is HTTPS.
+All of it is HTTPS by default, with labhud's own certificate or yours (`LABHUD_TLS_CERT`); plain
+HTTP only with `LABHUD_HTTP=on`.
 
 Looking needs no login: anyone who passes the firewall and uses an allowed host name sees what
 the display sees. Pressing needs the display's PIN when one is set, or a paired phone's token;
