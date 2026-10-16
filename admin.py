@@ -1,9 +1,9 @@
 """The admin: one account, with a password and a second factor (TOTP, any authenticator app).
 
-What it guards, once it exists: pairing and removing phones (the display's ⚙ > Phones, and
-pairing from the app by signing in), and opening the config editor from ⚙. Without an admin,
-those work as before (the display's own page, its PIN when one is set), so an install that never
-sets one up changes nothing.
+What it guards: everything a display can change. ⚙ (this screen's look as well as the phones,
+the agents and the PIN), the cards' buttons and maintenance, and the config editor. A display
+that is not signed in only shows; so does every display of an install without an admin. The app
+pairs by signing in (`/api/v1/login-pair`) and then acts with its own token.
 
 There is exactly one admin. It is made by the setup page, or by `init.py admin` (which also
 replaces it: a forgotten password or a lost authenticator); `init.py admin --remove` deletes it.
@@ -12,8 +12,10 @@ Kept like the display's PIN (lock.py): in the store (LABHUD_DATA) as {user, hash
 else in LABHUD_ADMIN as "user:hash:secret" (`init.py admin --env` prints the line). The password
 is kept only as a scrypt hash; the TOTP secret has to be kept as it is, like any key in .env.
 
-A right sign-in gets a ticket held in memory (a restart ends them all) that lasts while it is
-used and ends after IDLE seconds without use. Wrong tries are slowed down as for the PIN: after
+A right sign-in gets a ticket, a session for that browser that lasts while it is used and ends
+after IDLE seconds (30 days) without use, or at Sign out. Sessions survive a restart: the store
+keeps each one's SHA-256, never the ticket, with when it was made and last used and from where.
+A new password or authenticator (init.py admin) ends them all. Wrong tries are slowed down as for the PIN: after
 five, nothing is checked for a minute, then two, four... up to an hour. A TOTP code works once.
 """
 
@@ -35,14 +37,27 @@ ENV_KEY = "LABHUD_ADMIN"
 USER = re.compile(r"[A-Za-z0-9._@-]{1,40}")
 MIN_PASSWORD = 10
 N, R, P = 2 ** 14, 8, 1
-IDLE = 15 * 60
-MAX_TICKETS = 8
+IDLE = 30 * 86400
+MAX_TICKETS = 16
+SESSIONS_KEY = "admin-sessions"
+SAVE_EVERY = 3600  # a session's "last used" reaches the store at most this often
 FAILS_PER_ROUND = 5
 FIRST_WAIT = 60
 MAX_WAIT = 3600
 STEP = 30          # TOTP: seconds per code
 DIGITS = 6
 WINDOW = 1         # codes one step early or late still count (a phone's clock drifts)
+
+
+def _hash(ticket):
+    return hashlib.sha256(ticket.encode()).hexdigest()
+
+
+def _sign(rec):
+    """Which admin the sessions belong to: a new password or authenticator is another one."""
+    if not rec:
+        return None
+    return hashlib.sha256("\0".join((rec["user"], rec["hash"], rec["totp"])).encode()).hexdigest()
 
 
 def _b64(b):
@@ -136,29 +151,50 @@ def env_line(rec):
 
 
 class Admin:
-    def __init__(self, idle=IDLE, clock=time.monotonic, wall=time.time):
+    def __init__(self, idle=IDLE, clock=time.monotonic, wall=time.time, session_clock=None):
         self.idle = idle
-        self.clock = clock
-        self.wall = wall
+        self.clock = clock       # the waits after wrong tries
+        self.wall = wall         # the TOTP codes
+        self.days = session_clock or wall   # the sessions: their times are kept across restarts
         self.on_block = None     # called with a line of text when wrong tries start a wait
         self._lock = threading.Lock()
-        self._tickets = {}       # ticket -> last use
+        self._sessions = {}      # sha256(ticket) -> {id, made, last, where, what}
+        self._saved = {}         # sha256(ticket) -> the "last" the store has
         self._fails = 0
         self._rounds = 0
         self._until = 0.0
         self._last_counter = -1  # the TOTP step last used: a code works once
-        self._seen = None
+        self._seen = ()          # not read yet: the first _sync loads the kept sessions
         self._sync(self.stored())
 
     def _sync(self, rec):
-        """Notices an admin replaced or removed elsewhere (init.py admin): every ticket ends, and
-        the new authenticator starts with no code used. Call with the lock free."""
-        sign = (rec["user"], rec["hash"], rec["totp"]) if rec else None
+        """Notices an admin replaced or removed elsewhere (init.py admin): every session ends, and
+        the new authenticator starts with no code used. The first call loads the sessions the
+        store kept for this same admin. Call with the lock free."""
+        sign = _sign(rec)
         with self._lock:
-            if sign != self._seen:
-                self._seen = sign
-                self._tickets.clear()
-                self._last_counter = -1
+            if sign == self._seen:
+                return
+            first, self._seen = self._seen == (), sign
+            self._sessions.clear()
+            self._last_counter = -1
+            if first and sign and store.enabled():
+                kept = store.load(SESSIONS_KEY) or {}
+                if isinstance(kept, dict) and kept.get("sign") == sign and isinstance(kept.get("sessions"), dict):
+                    self._sessions = {k: dict(v) for k, v in kept["sessions"].items() if isinstance(v, dict)}
+            self._saved = {k: v.get("last") for k, v in self._sessions.items()}
+            unsaved = not first
+        if unsaved:
+            self._save()
+
+    def _save(self):
+        """The sessions to the store (when there is one). Call with the lock free."""
+        if not store.enabled():
+            return
+        with self._lock:
+            kept = {"sign": self._seen, "sessions": {k: dict(v) for k, v in self._sessions.items()}}
+            self._saved = {k: v.get("last") for k, v in self._sessions.items()}
+        store.save(SESSIONS_KEY, kept)
 
     def stored(self):
         """{user, hash, totp}: the store's (an empty one = removed there), else the environment's."""
@@ -221,37 +257,87 @@ class Admin:
             self.on_block(f"Admin: {FAILS_PER_ROUND} wrong sign-ins, locked for {seconds // 60} min")
         return False, seconds
 
-    def login(self, user, password, code):
-        """(ticket, wait): a ticket for a right sign-in, else None and the seconds to wait."""
+    def login(self, user, password, code, where="", what=""):
+        """(ticket, wait): a ticket for a right sign-in, else None and the seconds to wait.
+        `where` (an IP) and `what` (the browser) are shown in the list of sessions."""
         right, wait = self.check(user, password, code)
         if not right:
             return None, wait
+        now = int(self.days())
+        t = secrets.token_urlsafe(32)
         with self._lock:
-            while len(self._tickets) >= MAX_TICKETS:
-                self._tickets.pop(min(self._tickets, key=self._tickets.get))
-            t = secrets.token_urlsafe(24)
-            self._tickets[t] = self.clock()
-            return t, 0
+            while len(self._sessions) >= MAX_TICKETS:
+                self._sessions.pop(min(self._sessions, key=lambda k: self._sessions[k].get("last", 0)))
+            self._sessions[_hash(t)] = {"id": secrets.token_hex(6), "made": now, "last": now,
+                                        "where": str(where)[:64], "what": str(what)[:64]}
+        self._save()
+        return t, 0
 
-    def valid(self, ticket):
-        """True for a live ticket, which this use keeps alive for another `idle` seconds."""
+    def _live(self, ticket):
+        """The session of a live ticket (this use keeps it alive for another `idle` seconds), or
+        None. Saves when a session ended or its "last used" in the store is an hour old."""
         if not isinstance(ticket, str) or not ticket:
-            return False
+            return None
         rec = self.stored()
         self._sync(rec)
         if rec is None:
-            return False
-        now = self.clock()
+            return None
+        key, now = _hash(ticket), int(self.days())
         with self._lock:
-            last = self._tickets.get(ticket)
-            if last is None:
+            s = self._sessions.get(key)
+            if s is None:
+                return None
+            if now - s.get("last", 0) > self.idle:
+                del self._sessions[key]
+                s, save = None, True
+            else:
+                s["last"] = now
+                save = now - (self._saved.get(key) or 0) >= SAVE_EVERY
+                s = dict(s)
+        if save:
+            self._save()
+        return s
+
+    def valid(self, ticket):
+        """True for a live ticket, which this use keeps alive for another `idle` seconds."""
+        return self._live(ticket) is not None
+
+    def session_id(self, ticket):
+        """The id of a live ticket's session (to mark "this browser" in the list), or None."""
+        s = self._live(ticket)
+        return s["id"] if s else None
+
+    def sessions(self):
+        """The live sessions, the last used first: {id, made, last, where, what}. No tickets."""
+        self._sync(self.stored())
+        now = int(self.days())
+        with self._lock:
+            gone = [k for k, s in self._sessions.items() if now - s.get("last", 0) > self.idle]
+            for k in gone:
+                del self._sessions[k]
+            out = sorted((dict(s) for s in self._sessions.values()), key=lambda s: -s.get("last", 0))
+        if gone:
+            self._save()
+        return out
+
+    def revoke(self, sid):
+        """Ends one session by its id (the list's Sign out). True if there was one."""
+        with self._lock:
+            key = next((k for k, s in self._sessions.items() if s.get("id") == sid), None)
+            if key is None:
                 return False
-            if now - last > self.idle:
-                del self._tickets[ticket]
-                return False
-            self._tickets[ticket] = now
-            return True
+            del self._sessions[key]
+        self._save()
+        return True
 
     def close(self, ticket):
         with self._lock:
-            self._tickets.pop(ticket or "", None)
+            found = self._sessions.pop(_hash(ticket or ""), None)
+        if found:
+            self._save()
+
+    def close_all(self):
+        """Sign out everywhere."""
+        with self._lock:
+            self._sessions.clear()
+        self._save()

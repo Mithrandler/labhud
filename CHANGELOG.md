@@ -22,8 +22,19 @@ still change in a minor version; such changes are listed under **Changed** with 
   change where it and the image come from.
 - `?static&settings=<tab>` opens ⚙ on a tab, for screenshots.
 
+- **Sign in at the top right.** Signed in, the admin's name there opens a menu: Settings, Edit
+  config, Sign out. A sign-in lasts 30 days from its last use on that browser and survives a
+  restart (labhud keeps only each session's SHA-256); ⚙ > Security > **Signed in** lists the
+  browsers, with Sign out for one or for all.
+
 ### Changed
 - An agent's buttons need no `LABHUD_ACTION_URL`; the config's own actions still do.
+- **A display that is not signed in only shows**: no ⚙, no buttons on the cards, no maintenance,
+  and labhud refuses them. Without an admin every display only shows (`init.py admin` makes one).
+  The app is unchanged: it acts with its own token.
+- ⚙ has its tabs in two groups, **This screen** (Display, Screen) and **LabHUD** (Phones, Agents,
+  Security), a column on the left or a row on a narrow screen. The sign-in form left ⚙.
+- Setting or changing the PIN needs the admin.
 
 ### Fixed
 - A tick in ⚙ > Agents that changed a card's buttons reloaded the display at once, closing ⚙

@@ -178,7 +178,7 @@ function start_stream() {
       if (asked && CARD_BY_ID[asked]) open_panel(CARD_BY_ID[asked]);
       // `&settings=<tab>` opens ⚙ on that tab, for the same reason (agents, phones, security…)
       const tab = new URLSearchParams(location.search).get("settings");
-      if (tab && SETTINGS_TABS.some(([k]) => k === tab)) { S.tab = tab; open_settings(); }
+      if (tab && SETTINGS_TABS.some(([k]) => k === tab)) { S.tab = tab; check_admin().then(open_settings); }
       setTimeout(() => {
         const c = $("#content");
         const groups = [...c.querySelectorAll(".group")].map((g) =>
@@ -211,9 +211,9 @@ function start_stream() {
   s.onerror = () => document.body.classList.add("disconnected");  // EventSource reconnects by itself
 }
 
-/** Something open under someone's hands: ⚙, a card's panel, a confirmation. */
+/** Something open under someone's hands: ⚙, a card's panel, a confirmation, signing in. */
 function overlay_open() {
-  return ["#settings", "#panel", "#confirm"].some((id) => { const n = $(id); return n && !n.hidden; });
+  return ["#settings", "#panel", "#confirm", "#signin"].some((id) => { const n = $(id); return n && !n.hidden; });
 }
 
 /** The reload a good config.toml asks for, or a tick in ⚙ that changed the cards' buttons. Not
@@ -1899,10 +1899,11 @@ function chart(label, series, fmt, seconds) {
 function render_actions(c) {
   const bar = $("#panel-actions");
   bar.textContent = "";
-  const useful = useful_actions(c);
+  // the buttons are the admin's: a display that is not signed in only shows (account.js)
+  const useful = signed_in() ? useful_actions(c) : [];
   // the service's own page: only in the list view, where leaving the page is what you want
   const link = LIST_VIEW && c.url;
-  const maint = CFG.maintenance_buttons && c.check;
+  const maint = signed_in() && CFG.maintenance_buttons && c.check;
   if (!useful.length && !link && !maint) { bar.hidden = true; return; }
   bar.hidden = false;
   if (link) {
@@ -1973,7 +1974,7 @@ function bind_gestures() {
 // ---------------------------------------------------------------------------------------------
 
 const TOUR = [
-  "Tap any card: its details open, with its buttons (wake, start, maintenance) at the bottom.",
+  "Tap any card: its details open. Signed in (top right), its buttons (wake, start, maintenance) are at the bottom.",
   "Pages change every 20 seconds. A touch holds the page for a minute; tap a page's name to go there.",
   "When something breaks, the screen goes to it by itself and the card pulses red for a few minutes.",
   "An orange mark by the clock means a service does not answer: tap it. Every detail is at /status.",
@@ -2046,7 +2047,11 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   if (!location.search.includes("static")) tick(check_health, 60000);
   $("#health").addEventListener("click", open_health_panel);
   start_tour();
-  $("#gear").addEventListener("click", open_settings);
+  $("#account").addEventListener("click", account_click);
+  render_account();
+  check_admin();
+  // a session signed out elsewhere (another screen's list, a new password) shows here too
+  if (!location.search.includes("static")) tick(check_admin, 300000);
   $("#lock-btn").addEventListener("click", () => (locked() ? lock_unlock() : lock_close()));
   for (const part of ["#clock .time", "#clock .date"]) $(part).addEventListener("click", open_today);
   $("#weather").addEventListener("click", () => {
@@ -2057,7 +2062,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   // The rotation: checked every second against this screen's period and pages (⚙, settings.js).
   if (!LIST_VIEW) tick(() => {
     if (!S.rotate || Date.now() - turnedAt < S.period * 1000) return;
-    if (Date.now() < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden || !$("#settings").hidden || pad) return;
+    if (Date.now() < pausedUntil || overlay_open() || pad) return;
     const pages = rotation_pages();
     if (!pages.length) return;
     go(pages.find((i) => i > page) ?? pages[0]);

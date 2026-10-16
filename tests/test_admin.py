@@ -50,7 +50,8 @@ class Account(unittest.TestCase):
         admin.store = self.store
         self.env = os.environ.pop(admin.ENV_KEY, None)
         self.clock = Clock()
-        self.a = admin.Admin(idle=600, clock=self.clock)
+        self.days = Clock()
+        self.a = admin.Admin(idle=600, clock=self.clock, session_clock=self.days)
 
     def tearDown(self):
         admin.store = self.real
@@ -82,7 +83,7 @@ class Account(unittest.TestCase):
         self.assertTrue(ticket)
         self.assertEqual(self.a.login("boss", "correct horse 1", c), (None, 0))   # the same code again
         self.assertTrue(self.a.valid(ticket))
-        self.clock.t += 601
+        self.days.t += 601
         self.assertFalse(self.a.valid(ticket))
 
     def test_slowed(self):
@@ -99,6 +100,44 @@ class Account(unittest.TestCase):
         ticket, _ = self.a.login("boss", "correct horse 1", code())
         self.store.kv[admin.STORE_KEY] = admin.record("boss", "another one 22", admin.new_secret())
         self.assertFalse(self.a.valid(ticket))
+        self.assertEqual(self.store.kv[admin.SESSIONS_KEY]["sessions"], {})
+        self.store.kv[admin.STORE_KEY] = REC                     # and back: the old ones stay gone
+        self.assertFalse(self.a.valid(ticket))
+
+    def test_sessions_survive_a_restart(self):
+        self.store.kv[admin.STORE_KEY] = REC
+        ticket, _ = self.a.login("boss", "correct horse 1", code(), "192.0.2.7", "Firefox on Linux")
+        kept = json.dumps(self.store.kv[admin.SESSIONS_KEY])
+        self.assertNotIn(ticket, kept)                           # only its SHA-256
+        again = admin.Admin(idle=600, clock=self.clock, session_clock=self.days)
+        self.assertTrue(again.valid(ticket))
+        [s] = again.sessions()
+        self.assertEqual((s["where"], s["what"]), ("192.0.2.7", "Firefox on Linux"))
+        self.assertEqual(again.session_id(ticket), s["id"])
+        self.assertNotIn("ticket", s)
+
+    def test_a_use_keeps_it_alive(self):
+        self.store.kv[admin.STORE_KEY] = REC
+        ticket, _ = self.a.login("boss", "correct horse 1", code())
+        for _ in range(5):
+            self.days.t += 500
+            self.assertTrue(self.a.valid(ticket))
+        self.days.t += 601
+        self.assertFalse(self.a.valid(ticket))
+        self.assertEqual(self.a.sessions(), [])
+
+    def test_sign_out_one_or_all(self):
+        self.store.kv[admin.STORE_KEY] = REC
+        one, _ = self.a.login("boss", "correct horse 1", code(offset=-1))
+        two, _ = self.a.login("boss", "correct horse 1", code())
+        self.assertEqual(len(self.a.sessions()), 2)
+        self.assertTrue(self.a.revoke(self.a.session_id(one)))
+        self.assertFalse(self.a.revoke("nope"))
+        self.assertFalse(self.a.valid(one))
+        self.assertTrue(self.a.valid(two))
+        self.a.close_all()
+        self.assertFalse(self.a.valid(two))
+        self.assertFalse(admin.Admin(idle=600, clock=self.clock, session_clock=self.days).valid(two))
 
 
 class Routes(DemoServer):
@@ -166,6 +205,17 @@ class Routes(DemoServer):
         self.assertEqual(self.call("/api/v1/unpair", {"name": "Pixel"}, ticket=ticket, token=token, origin=False)[0], 403)
         self.assertEqual(self.call("/api/v1/unpair", {"name": "Pixel"})[0], 403)  # not signed in
         self.assertEqual(self.call("/api/v1/unpair", {"name": "Pixel"}, ticket=ticket)[0], 200)
+
+        # this browser's session, and the list of them: no tickets in it
+        self.assertEqual(self.call("/api/admin/check")[0], 403)
+        status, me = self.call("/api/admin/check", ticket=ticket)
+        self.assertEqual((status, me["user"]), (200, "boss"))
+        status, ss = self.call("/api/admin/sessions", ticket=ticket)
+        self.assertEqual((status, ss["current"]), (200, me["id"]))
+        self.assertIn(me["id"], [s["id"] for s in ss["sessions"]])
+        self.assertNotIn(ticket, json.dumps(ss))
+        self.assertEqual(self.call("/api/admin/revoke", {"id": "nope"}, ticket=ticket)[0], 404)
+        self.assertEqual(self.call("/api/admin/sessions")[0], 403)
         self.assertEqual(self.call("/api/admin/logout", ticket=ticket)[0], 200)
         self.assertEqual(self.call("/api/v1/pair-code", ticket=ticket)[0], 403)
 

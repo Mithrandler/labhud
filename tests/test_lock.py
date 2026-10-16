@@ -11,6 +11,7 @@ import unittest
 
 import config
 import lock
+from tests import signin
 from tests.test_smoke import DemoServer, ROOT
 from tests.test_maintenance import load
 
@@ -219,17 +220,24 @@ class Rules(unittest.TestCase):
 
 class Routes(DemoServer):
     data = tempfile.TemporaryDirectory()
-    extra_env = {"LABHUD_DATA": data.name}
+    extra_env = {"LABHUD_DATA": data.name, **signin.ENV}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.ticket = signin.sign_in(cls.port, cls.host)
 
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
         cls.data.cleanup()
 
-    def post(self, path, body=None, ticket=None, origin=True):
+    def post(self, path, body=None, ticket=None, origin=True, signed=True):
         headers = {"Host": self.host, "Content-Type": "application/json"}
         if origin:
             headers["Origin"] = f"http://{self.host}"
+        if signed:
+            headers["X-Labhud-Admin"] = self.ticket
         if ticket:
             headers["X-Labhud-Unlock"] = ticket
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
@@ -243,8 +251,10 @@ class Routes(DemoServer):
         cfg = json.loads(self.get("/api/config")[2])
         self.assertEqual(cfg["lock"], {"on": False, "idle": 600, "settable": True})
         maint = "/api/maintenance/vm-pve-100"
-        self.assertEqual(self.post(maint, {"minutes": 0})[0], 200)            # no PIN: as before
+        self.assertEqual(self.post(maint, {"minutes": 0})[0], 200)            # the admin, no PIN
+        self.assertEqual(self.post(maint, {"minutes": 0}, signed=False)[0], 403)   # not signed in: only shows
         self.assertEqual(self.post("/api/lock/pin", {"new": "2468"}, origin=False)[0], 403)
+        self.assertEqual(self.post("/api/lock/pin", {"new": "2468"}, signed=False)[0], 403)
         status, r = self.post("/api/lock/pin", {"new": "2468"})
         self.assertEqual(status, 200)
         first = r["ticket"]

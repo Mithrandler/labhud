@@ -205,10 +205,12 @@ function rotation_pages() {
 
 function open_settings() {
   touched();
+  // ⚙ is the admin's (account.js): a display that is not signed in only shows
+  if (!signed_in()) return open_signin();
   const box = $("#settings");
   const body = $("#settings-body");
   const keep = box.hidden ? 0 : body.scrollTop;   // a choice redraws the panel: stay where you were
-  if (box.hidden) recheck_admin();
+  if (box.hidden) { recheck_admin(); check_admin(); }
   body.textContent = "";
 
   const tab = SETTINGS_TABS.some(([k]) => k === S.tab) ? S.tab : "display";
@@ -376,36 +378,17 @@ function open_settings() {
   // --- the lock (lock.js): the PIN is labhud's, the same on every screen ---
   lock_settings((title) => section(title, "security"));
 
-  // --- the admin (admin.py): signs in for the phones and the config editor ---
-  admin_settings((title) => section(title, "security"));
-  const adminOn = CFG && CFG.admin && CFG.admin.on;
+  // --- the admin (account.js, admin.py) and the browsers signed in as it ---
+  if (tab === "security") admin_settings((title) => section(title, "security"));
 
   // --- agents (agents.py): one per host, what each may do ---
   if (tab === "agents") {
-    if (adminOn && !ADMIN_TICKET) {
-      const locked = section("Agents", "agents");
-      locked.appendChild(el("p", "hint", "Adding agents and choosing what they may do needs the admin."));
-      const go = el("button", "choice", "Sign in (Security)");
-      go.type = "button";
-      go.addEventListener("click", () => { S.tab = "security"; save_settings(); open_settings(); });
-      locked.appendChild(go);
-      return finish_settings(body, keep, box, tab);
-    }
     agents_settings(section("Agents", "agents"));
     return finish_settings(body, keep, box, tab);
   }
 
   // --- the LabHUD app: a one-time QR code that pairs a phone (devices.py) ---
   if (tab !== "phones") return finish_settings(body, keep, box, tab);
-  if (adminOn && !ADMIN_TICKET) {
-    const locked = section("Phone app", "phones");
-    locked.appendChild(el("p", "hint", "Pairing and removing phones needs the admin."));
-    const go = el("button", "choice", "Sign in (Security)");
-    go.type = "button";
-    go.addEventListener("click", () => { S.tab = "security"; save_settings(); open_settings(); });
-    locked.appendChild(go);
-    return finish_settings(body, keep, box, tab);
-  }
   const app = section("Phone app", "phones");
   const show = el("div", "pair-qr");
   const pairButton = el("button", "choice", "Pair a phone");
@@ -422,26 +405,36 @@ function open_settings() {
   finish_settings(body, keep, box, tab);
 }
 
-/** The tabs over the panel: what this screen shows, and what labhud keeps for every screen. */
-const SETTINGS_TABS = [["display", "Display"], ["screen", "Screen"], ["phones", "Phones"], ["agents", "Agents"], ["security", "Security"]];
+/** The tabs, in two groups: what this browser shows (kept here), and what LabHUD keeps for every
+ * screen and the app. A column on the left; a row on top when the screen is narrow. */
+const SETTINGS_GROUPS = [
+  ["This screen", [["display", "Display"], ["screen", "Screen"]]],
+  ["LabHUD", [["phones", "Phones"], ["agents", "Agents"], ["security", "Security"]]],
+];
+const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, tabs]) => tabs);
 
 function settings_tabs(current) {
   const bar = $("#settings-tabs");
   if (!bar) return;
   bar.textContent = "";
-  for (const [key, label] of SETTINGS_TABS) {
-    const b = el("button", "settings-tab" + (key === current ? " on" : ""), label);
-    b.type = "button";
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", key === current ? "true" : "false");
-    b.addEventListener("click", () => {
-      if (key === S.tab) return;
-      S.tab = key; save_settings();
-      $("#settings-scroll").scrollTop = 0;
-      open_settings();
-    });
-    bar.appendChild(b);
+  for (const [group, tabs] of SETTINGS_GROUPS) {
+    bar.appendChild(el("div", "settings-group", group));
+    for (const [key, label] of tabs) settings_tab(bar, key, label, current);
   }
+}
+
+function settings_tab(bar, key, label, current) {
+  const b = el("button", "settings-tab" + (key === current ? " on" : ""), label);
+  b.type = "button";
+  b.setAttribute("role", "tab");
+  b.setAttribute("aria-selected", key === current ? "true" : "false");
+  b.addEventListener("click", () => {
+    if (key === S.tab) return;
+    S.tab = key; save_settings();
+    $("#settings-scroll").scrollTop = 0;
+    open_settings();
+  });
+  bar.appendChild(b);
 }
 
 function finish_settings(body, keep, box, tab) {
@@ -484,102 +477,6 @@ function pair_phone(host) {
     wait_for_pairing(host.parentNode.querySelector(".devices"));
   }).catch(() => { host.textContent = ""; host.appendChild(el("p", "hint", "Could not reach LabHUD.")); });
   touched();
-}
-
-// ---------------------------------------------------------------------------------------------
-// The admin: one account (password + authenticator code); its ticket lives in this tab only
-// ---------------------------------------------------------------------------------------------
-
-const ADMIN_KEY = "labhud-admin";
-let ADMIN_TICKET = "";
-try { ADMIN_TICKET = sessionStorage.getItem(ADMIN_KEY) || ""; } catch (e) { /* not kept */ }
-let ADMIN_USER = "";
-
-function admin_headers(h) {
-  return ADMIN_TICKET ? { ...h, "X-Labhud-Admin": ADMIN_TICKET } : h;
-}
-
-function set_admin(ticket, user) {
-  ADMIN_TICKET = ticket || "";
-  ADMIN_USER = user || "";
-  try { if (ADMIN_TICKET) sessionStorage.setItem(ADMIN_KEY, ADMIN_TICKET); else sessionStorage.removeItem(ADMIN_KEY); } catch (e) { /* ignore */ }
-}
-
-/** Explains a refusal. The admin flag is read again first: a page opened before the admin was
- * made still holds "no admin" and would otherwise ask to unlock a screen that is unlocked. */
-function admin_forbidden(show) {
-  const had = !!ADMIN_TICKET;
-  fetch("/api/config").then((r) => r.json()).then((c) => { if (CFG) CFG.admin = c.admin; }).catch(() => {}).then(() => {
-    if (!(CFG && CFG.admin && CFG.admin.on)) { show("Unlock the screen first."); return; }
-    set_admin("");
-    show(had ? "Signed out: sign in as the admin again." : "Sign in as the admin first (⚙ > Security).");
-    setTimeout(open_settings, 1500);
-  });
-}
-
-/** The admin may be made or removed (init.py admin) while this page stays open: read the flag
- * again when ⚙ opens, and redraw the panel if it changed. */
-function recheck_admin() {
-  fetch("/api/config").then((r) => r.json()).then((c) => {
-    const was = !!(CFG && CFG.admin && CFG.admin.on);
-    if (!CFG || !c.admin || !!c.admin.on === was) return;
-    CFG.admin = c.admin;
-    if (!$("#settings").hidden) open_settings();
-  }).catch(() => {});
-}
-
-function admin_post(step, body) {
-  return fetch("/api/admin/" + step, {
-    method: "POST", headers: admin_headers({ "Content-Type": "application/json" }), body: JSON.stringify(body || {}),
-  }).then((r) => r.json().catch(() => ({ ok: r.ok }))).catch(() => ({ ok: false, error: "could not reach LabHUD" }));
-}
-
-function admin_settings(section) {
-  const s = section("Admin");
-  if (!(CFG && CFG.admin && CFG.admin.on)) {
-    s.appendChild(el("p", "hint", "No admin yet: pairing phones works as on any unlocked screen. "
-      + "Set one on the server with init.py admin (a password and an authenticator app)."));
-    return;
-  }
-  if (ADMIN_TICKET) {
-    s.appendChild(el("p", "hint", "Signed in" + (ADMIN_USER ? " as " + ADMIN_USER : "") + ". It ends after 15 minutes unused."));
-    const row = el("div", "choices");
-    const edit = el("button", "choice", "Edit config");
-    edit.type = "button";
-    edit.addEventListener("click", () => admin_post("edit").then((r) => {
-      if (r.ok) window.open("/edit#" + r.code, "_blank", "noopener");
-      else (r.error === "forbidden" ? admin_forbidden(show_message) : show_message(r.error));
-    }));
-    const out = el("button", "choice", "Sign out");
-    out.type = "button";
-    out.addEventListener("click", () => admin_post("logout").then(() => { set_admin(""); open_settings(); }));
-    row.append(edit, out);
-    s.appendChild(row);
-    return;
-  }
-  s.appendChild(el("p", "hint", "Sign in to pair or remove phones and to edit the config."));
-  const form = el("form", "admin-form");
-  const user = el("input"); user.placeholder = "User"; user.autocomplete = "username";
-  const pass = el("input"); pass.type = "password"; pass.placeholder = "Password"; pass.autocomplete = "current-password";
-  const code = el("input"); code.placeholder = "Code from the authenticator"; code.inputMode = "numeric";
-  code.autocomplete = "one-time-code"; code.maxLength = 6;
-  const go = el("button", "choice", "Sign in");
-  const said = el("p", "hint");
-  form.append(user, pass, code, go, said);
-  form.addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    put(said, "Checking…");
-    admin_post("login", { user: user.value.trim(), password: pass.value, code: code.value.trim() }).then((r) => {
-      pass.value = code.value = "";
-      if (!r.ok) {
-        put(said, r.wait ? `Too many wrong tries: wait ${Math.ceil(r.wait / 60)} min.` : (r.error || "Refused."));
-        return;
-      }
-      set_admin(r.ticket, r.user);
-      open_settings();
-    });
-  });
-  s.appendChild(form);
 }
 
 /** "5 min ago", "3 h ago", "2 days ago": when a phone was last seen. */

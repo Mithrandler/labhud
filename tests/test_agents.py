@@ -17,6 +17,7 @@ import unittest
 import agentproto as P
 import agents
 import websock
+from tests import signin
 from tests.test_lock import FakeStore
 from tests.test_smoke import DemoServer
 
@@ -99,8 +100,9 @@ class Server(DemoServer):
     @classmethod
     def setUpClass(cls):
         cls.data = tempfile.mkdtemp()
-        cls.extra_env = {"LABHUD_DATA": cls.data}
+        cls.extra_env = {"LABHUD_DATA": cls.data, **signin.ENV}
         super().setUpClass()
+        cls.ticket = signin.sign_in(cls.port, cls.host)
 
     @classmethod
     def tearDownClass(cls):
@@ -297,6 +299,12 @@ class Buttons(Server):
         self.assertEqual(answer["r"][0], 502)
         self.assertEqual(json.loads(answer["r"][1])["error"], "VM is locked")
         self.assertEqual(self.post_json(f"/action/{name}", {}, None)[0], 403)        # not from the page
+        ticket, self.ticket = self.ticket, None
+        try:
+            self.assertEqual(self.post_json(f"/action/{name}", {}, origin)[0], 403)  # not signed in
+            self.assertEqual(self.manage("list")[0], 403)
+        finally:
+            self.ticket = ticket
         self.assertEqual(self.post_json(f"/action/agent-{aid}-pve-102-shutdown", {}, origin)[0], 403)  # not ticked
         c.close()
 

@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 
+from tests import signin
 from tests.test_smoke import ROOT, free_port
 
 SECRET = "test-secret-not-real"
@@ -64,8 +65,9 @@ class SignedActions(unittest.TestCase):
             LABHUD_AGENT_ALLOW="127.0.0.1", LABHUD_AGENT_ACTIONS=os.path.join(cls.tmp, "actions.toml")), cls.agent_port)
         cls.server = start(["server.py"], dict(
             base, LABHUD_PORT=str(cls.port), LABHUD_CONFIG=os.path.join(cls.tmp, "config.toml"),
-            LABHUD_HOSTS=cls.host, LABHUD_ACTION_SECRET=SECRET,
+            LABHUD_HOSTS=cls.host, LABHUD_ACTION_SECRET=SECRET, **signin.ENV,
             LABHUD_ACTION_URL=f"http://127.0.0.1:{cls.agent_port}/action/"), cls.port)
+        cls.ticket = signin.sign_in(cls.port, cls.host)
 
     @classmethod
     def tearDownClass(cls):
@@ -83,8 +85,10 @@ class SignedActions(unittest.TestCase):
         conn.close()
         return r.status, json.loads(body or b"{}")
 
-    def via_labhud(self, name, origin=None):
+    def via_labhud(self, name, origin=None, signed=True):
         headers = {"Host": self.host}
+        if signed:
+            headers["X-Labhud-Admin"] = self.ticket
         if origin is not False:
             headers["Origin"] = origin or f"http://{self.host}"
         return self.post(self.port, f"/action/{name}", headers)
@@ -110,6 +114,7 @@ class SignedActions(unittest.TestCase):
         self.assertEqual(self.via_labhud("test-ok", origin=False)[0], 403)                   # no Origin
         self.assertEqual(self.via_labhud("test-ok", origin="http://evil.example")[0], 403)   # another page
         self.assertEqual(self.via_labhud("not-offered")[0], 403)                             # not in config.toml
+        self.assertEqual(self.via_labhud("test-ok", signed=False)[0], 403)                   # not signed in
 
     def test_agent_refuses_unsigned_old_and_replayed(self):
         self.assertEqual(self.post(self.agent_port, "/action/test-ok", {})[0], 403)

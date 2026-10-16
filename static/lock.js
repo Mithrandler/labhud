@@ -26,7 +26,8 @@ function locked() { return LOCK.on && !LOCK.ticket && !LOCK_OFF; }
 
 /** The request headers with the ticket, for labhud's own routes (never a cross-origin agent). */
 function lock_headers(headers) {
-  return LOCK.ticket ? { ...(headers || {}), "X-Labhud-Unlock": LOCK.ticket } : (headers || {});
+  const h = LOCK.ticket ? { ...(headers || {}), "X-Labhud-Unlock": LOCK.ticket } : (headers || {});
+  return admin_headers(h);   // and the admin's ticket (account.js): buttons and ⚙ need both
 }
 
 function lock_post(step, body) {

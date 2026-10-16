@@ -9,6 +9,7 @@ import time
 import unittest
 
 import config
+from tests import signin
 from tests.test_smoke import DemoServer, ROOT
 
 with open(os.path.join(ROOT, "demo", "config.toml"), encoding="utf-8") as f:
@@ -72,10 +73,19 @@ class ChoiceAllowed(unittest.TestCase):
 
 
 class Press(DemoServer):
-    def post(self, path, body, origin=True):
+    extra_env = signin.ENV
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.ticket = signin.sign_in(cls.port, cls.host)
+
+    def post(self, path, body, origin=True, signed=True):
         headers = {"Host": self.host, "Content-Type": "application/json"}
         if origin:
             headers["Origin"] = f"http://{self.host}"
+        if signed:
+            headers["X-Labhud-Admin"] = self.ticket
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         conn.request("POST", path, body=json.dumps(body), headers=headers)
         r = conn.getresponse()
@@ -95,6 +105,7 @@ class Press(DemoServer):
         self.assertTrue(any("maintenance until" in e["name"] for e in recent))
         self.assertEqual(self.post("/api/maintenance/vm-pve-100", {"minutes": 0})[0], 200)
         self.assertNotIn("vm-pve-100", self.maintenance())
+        self.assertEqual(self.post("/api/maintenance/vm-pve-100", {"minutes": 60}, signed=False)[0], 403)
 
     def test_refused(self):
         for path, body, origin in (("/api/maintenance/vm-pve-100", {"minutes": 60}, False),

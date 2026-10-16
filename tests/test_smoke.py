@@ -95,6 +95,8 @@ class DemoServer(unittest.TestCase):
         headers = {"Host": self.host, "Content-Type": "application/json"}
         if origin:
             headers["Origin"] = origin
+            if getattr(self, "ticket", None):   # a class that signed in (tests/signin.py)
+                headers["X-Labhud-Admin"] = self.ticket
         conn.request("POST", path, body=json.dumps(body), headers=headers)
         r = conn.getresponse()
         data = r.read()
@@ -126,7 +128,7 @@ class DemoServer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(ctype.startswith("text/html"))
         self.assertIn(b"app.js", body)
-        for asset in ("/app.js", "/settings.js", "/lock.js", "/app.css"):
+        for asset in ("/app.js", "/account.js", "/settings.js", "/lock.js", "/app.css"):
             self.assertEqual(self.get(asset)[0], 200, asset)
 
     def test_config(self):

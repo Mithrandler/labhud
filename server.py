@@ -820,6 +820,16 @@ def snapshot():
         return dict(_data)
 
 
+def browser_label(ua):
+    """"Chrome on Android", "Firefox on Linux": how a session is told apart in ⚙. Never trusted."""
+    ua = ua or ""
+    browser = next((name for key, name in (("Edg/", "Edge"), ("Firefox/", "Firefox"), ("Brave", "Brave"),
+                                           ("Chrome/", "Chrome"), ("Safari/", "Safari")) if key in ua), "A browser")
+    system = next((name for key, name in (("Android", "Android"), ("iPhone", "iPhone"), ("iPad", "iPad"),
+                                          ("Windows", "Windows"), ("Mac OS", "macOS"), ("Linux", "Linux")) if key in ua), "")
+    return f"{browser} on {system}" if system else browser
+
+
 def publish_agents():
     """The agents' state (agents.py) as one more entry of the snapshot: `agents.<name>.…`. When
     what they may do changed the cards' buttons (a tick in ⚙, a guest moved), the displays reload."""
@@ -1251,7 +1261,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        ad = re.fullmatch(r"/api/admin/(login|logout|edit)", self.path)
+        ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
         if ad:
             return self._admin_step(ad.group(1))
         ed = re.fullmatch(r"/edit/api/(load|check|save)", self.path)
@@ -1267,7 +1277,7 @@ class Handler(BaseHTTPRequestHandler):
         if al:
             return self._action_log(al.group(1))
         m = re.fullmatch(r"/action/([a-z0-9-]{1,64})", self.path)
-        if not (m and _action_allowed(m.group(1)) and self._same_page() and self._unlocked()
+        if not (m and _action_allowed(m.group(1)) and self._same_page() and self._operator()
                 and (m.group(1).startswith("agent-") or (ACTION_URL and ACTION_SECRET))):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if m.group(1).startswith("agent-"):
@@ -1362,31 +1372,56 @@ class Handler(BaseHTTPRequestHandler):
     def _admin_ok(self):
         return ADMIN.valid(self.headers.get("X-Labhud-Admin"))
 
+    def _operator(self):
+        """The cards' buttons and maintenance: the app with its token (it asks for the phone's own
+        lock), or a display signed in as the admin and unlocked. Without an admin, nobody at a
+        display: it only shows."""
+        if self._device()[1] == "bearer":
+            return True
+        return ADMIN.is_on() and self._admin_ok() and self._unlocked()
+
     def _may_manage(self):
-        """Pairing and removing phones: from labhud's own page (also in the app's wall mode), never
-        with the app's own token; signed in as the admin when there is one, else unlocked."""
+        """⚙ on the server's side (phones, agents, the PIN): from labhud's own page (also in the
+        app's wall mode), never with the app's own token, and signed in as the admin."""
         if not self._same_page() or self._device()[1] == "bearer":
             return False
-        return self._admin_ok() if ADMIN.is_on() else self._unlocked()
+        return ADMIN.is_on() and self._admin_ok()
 
     def _admin_step(self, step):
-        """login {user, password, code} -> {ticket}; logout; edit -> a code for the config editor.
-        From labhud's own page, JSON, small. One answer for every refusal."""
+        """login {user, password, code} -> {ticket}; logout; check -> {user, id}; sessions;
+        revoke {id}; logout-all; edit -> a code for the config editor. From labhud's own page,
+        JSON, small. One answer for every refusal."""
         body = self._small_json()
         if body is None or not self._same_page() or self._device()[1] == "bearer" or not ADMIN.is_on():
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if step == "login":
-            ticket, wait = ADMIN.login(body.get("user"), body.get("password"), body.get("code"))
+            ticket, wait = ADMIN.login(body.get("user"), body.get("password"), body.get("code"),
+                                       self.client_address[0], browser_label(self.headers.get("User-Agent")))
             if not ticket:
                 print(f"admin: wrong sign-in from {self.client_address[0]}", flush=True)
                 return self._json({"ok": False, "error": "wrong user, password or code", "wait": wait}, 403)
             print(f"admin: signed in from {self.client_address[0]}", flush=True)
+            _log([(f"Admin signed in from {self.client_address[0]}", False)])
             return self._json({"ok": True, "ticket": ticket, "idle": ADMIN.idle, "user": ADMIN.user()})
         if step == "logout":
             ADMIN.close(self.headers.get("X-Labhud-Admin"))
             return self._json({"ok": True})
-        if not self._admin_ok():
+        current = ADMIN.session_id(self.headers.get("X-Labhud-Admin"))
+        if not current:
             return self._json({"ok": False, "error": "forbidden"}, 403)
+        if step == "check":
+            return self._json({"ok": True, "user": ADMIN.user(), "id": current, "idle": ADMIN.idle})
+        if step == "sessions":
+            return self._json({"ok": True, "sessions": ADMIN.sessions(), "current": current, "idle": ADMIN.idle})
+        if step == "revoke":
+            ok = ADMIN.revoke(body.get("id"))
+            print(f"admin: a session signed out from {self.client_address[0]}", flush=True)
+            return self._json({"ok": ok}, 200 if ok else 404)
+        if step == "logout-all":
+            ADMIN.close_all()
+            print(f"admin: every session signed out from {self.client_address[0]}", flush=True)
+            _log([("Admin signed out everywhere", False)])
+            return self._json({"ok": True})
         if not os.access(CONFIG_PATH, os.W_OK):
             return self._json({"ok": False, "error": f"{CONFIG_PATH} is not writable by labhud: mount it read-write"}, 409)
         try:
@@ -1552,7 +1587,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError
         except ValueError:
             length, body = -1, {}
-        if not (self._same_page() and 0 <= length <= 256):
+        if not (self._same_page() and 0 <= length <= 256) or (step == "pin" and not self._may_manage()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         ticket = self.headers.get("X-Labhud-Unlock")
         if step == "unlock":
@@ -1616,14 +1651,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _maintenance(self, card):
         """A card's MAINTENANCE button: {"minutes": n} (0 ends it). Off unless
-        [maintenance] buttons = true; like actions, anyone at the display can press it."""
+        [maintenance] buttons = true; like actions, a display signed in as the admin, or the app."""
         try:
             length = int(self.headers.get("Content-Length") or 0)
             minutes = int(json.loads(self.rfile.read(length) if 0 < length <= 1024 else b"{}").get("minutes", -1))
         except (ValueError, AttributeError):
             minutes = -1
         if not (TOPOLOGY["maintenance"]["buttons"] and card in CARD_IDS and self._same_page()
-                and 0 <= minutes <= 7 * 24 * 60 and self._unlocked()):
+                and 0 <= minutes <= 7 * 24 * 60 and self._operator()):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         set_maintenance(card, minutes)
         print(f"maintenance {card}: {f'{minutes} min' if minutes else 'ended'} from {self._who()}", flush=True)

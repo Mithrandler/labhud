@@ -14,6 +14,7 @@ import urllib.parse
 
 import devices
 import qr
+from tests import signin
 from tests.test_lock import FakeStore
 from tests.test_smoke import DemoServer, ROOT
 
@@ -104,7 +105,12 @@ class QR(unittest.TestCase):
 
 class Routes(DemoServer):
     data = tempfile.TemporaryDirectory()
-    extra_env = {"LABHUD_DATA": data.name}
+    extra_env = {"LABHUD_DATA": data.name, **signin.ENV}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.ticket = signin.sign_in(cls.port, cls.host)
 
     @classmethod
     def tearDownClass(cls):
@@ -117,7 +123,7 @@ class Routes(DemoServer):
         return subprocess.run([sys.executable, os.path.join(ROOT, "init.py"), *args], capture_output=True,
                               text=True, env=env, timeout=30)
 
-    def call(self, method, path, body=None, host=None, token=None, origin=False, cookie=None):
+    def call(self, method, path, body=None, host=None, token=None, origin=False, cookie=None, signed=True):
         headers = {"Host": host or self.host}
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -127,6 +133,8 @@ class Routes(DemoServer):
             headers["Cookie"] = "other=1; labhud_device=" + cookie
         if origin:
             headers["Origin"] = f"http://{host or self.host}"
+            if signed:
+                headers["X-Labhud-Admin"] = self.ticket
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         conn.request(method, path, body=None if body is None else json.dumps(body), headers=headers)
         r = conn.getresponse()
@@ -184,6 +192,7 @@ class Routes(DemoServer):
 
     def test_pair_code_from_the_display(self):
         self.assertEqual(self.call("POST", "/api/v1/pair-code", {})[0], 403)          # no Origin
+        self.assertEqual(self.call("POST", "/api/v1/pair-code", {}, origin=True, signed=False)[0], 403)  # not signed in
         status, r = self.call("POST", "/api/v1/pair-code", {"name": "tablet"}, origin=True)
         self.assertEqual(status, 200, r)
         self.assertTrue(r["svg"].startswith("<svg"))
