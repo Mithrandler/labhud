@@ -1465,8 +1465,27 @@ function useful_actions(c) {
   const starts = (a) => /-start$/.test(a) || /^wol-/.test(a) || /^game-start-/.test(a) || /^agent-.+-wake$/.test(a);
   const stops = (a) => /-(shutdown|reboot)$/.test(a) || /^shutdown-/.test(a) || /^game-(stop|restart)-/.test(a) ||
     /^agent-.+-(stop|restart)$/.test(a);
-  if (alive === true) return all.filter((a) => !starts(a));
-  return all.filter((a) => !stops(a));   // what is not a stop (a report, an update) works either way
+  const keep = alive === true ? all.filter((a) => !starts(a))
+    : all.filter((a) => !stops(a));   // what is not a stop (a report, an update) works either way
+  return order_actions(keep);
+}
+
+/** The verb an action's name ends in ("" for the config's own, like "report"). Taken from the
+    name's shape, so a container called "stopwatch" is not a stop. cardstate.py `action_verb`. */
+function action_verb(a) {
+  let m = /^agent-.+-([a-z]+)$/.exec(a) || /^vm-[A-Za-z0-9]+-\d+-(start|shutdown|reboot)$/.exec(a) || /^game-(start|stop|restart)-/.exec(a);
+  if (m) return m[1];
+  if (/^wol-/.test(a)) return "wake";
+  if (/^shutdown-/.test(a)) return "shutdown";
+  return "";
+}
+// the same order on every card: what brings something up first, then the rest, then (red, after
+// a line) what takes it down
+const ACTION_RANK = { start: 0, wake: 0, update: 1, "": 2, restart: 3, reboot: 3, stop: 4, shutdown: 4 };
+function action_rank(a) { return ACTION_RANK[action_verb(a)] ?? 2; }
+function action_danger(a) { return action_rank(a) >= 3; }
+function order_actions(list) {
+  return list.map((a, i) => [a, i]).sort((x, y) => action_rank(x[0]) - action_rank(y[0]) || x[1] - y[1]).map((x) => x[0]);
 }
 
 function ask_confirmation(c, action) {
@@ -1474,8 +1493,8 @@ function ask_confirmation(c, action) {
   const own = (CFG.actions || {})[action];
   put($("#confirm-text"), (own && own.confirm) || `${action_label(action)} ${c.name}?`);
   const choices = own && own.choices;
-  ask(choices ? choices.map((ch) => [ch.label, () => send_action(ch.action, c), /shutdown|stop/.test(ch.action)])
-    : [["YES", () => send_action(action, c), true]]);
+  ask(choices ? choices.map((ch) => [ch.label, () => send_action(ch.action, c), action_danger(ch.action)])
+    : [["YES", () => send_action(action, c), action_danger(action)]]);
 }
 
 /** The dialog's buttons: [[label, run, danger?]], plus NO/CANCEL first. The text is set by the caller. */
@@ -1701,7 +1720,7 @@ function agent_containers(body, c) {
         check: ["agent", c.agent, "docker", n], actions: acts };
       const box = el("span", "row-actions");
       for (const a of useful_actions(one)) {
-        const b = el("button", /stop/.test(a) ? "danger" : "", action_label(a));
+        const b = el("button", action_danger(a) ? "danger" : "", action_label(a));
         b.type = "button";
         b.addEventListener("click", () => ask_confirmation(one, a));
         box.appendChild(b);
@@ -1999,18 +2018,23 @@ function render_actions(c) {
     a.href = c.url; a.target = "_blank"; a.rel = "noopener";
     bar.appendChild(a);
   }
-  for (const a of useful) {
-    const b = el("button", /shutdown|stop/.test(a) ? "danger" : "", action_label(a));
+  const button = (a) => {
+    const b = el("button", action_danger(a) ? "danger" : "", action_label(a));
     b.type = "button";
     b.addEventListener("click", () => ask_confirmation(c, a));
     bar.appendChild(b);
-  }
+  };
+  // what brings something up, maintenance, then after a thin line (in red) what takes it down
+  useful.filter((a) => !action_danger(a)).forEach(button);
   if (maint) {
     const b = el("button", "maint", maintenance_until(c) ? "MAINTENANCE ✓" : "MAINTENANCE");
     b.type = "button";
     b.addEventListener("click", () => ask_maintenance(c));
     bar.appendChild(b);
   }
+  const power = useful.filter(action_danger);
+  if (power.length && bar.children.length) bar.appendChild(el("span", "power-sep"));
+  power.forEach(button);
 }
 
 /** One `{name, value, bad}` item (or `{text, label}`) as a panel row. */

@@ -373,18 +373,45 @@ def useful_actions(c, data, enabled):
     stops = lambda a: bool(re.search(r"-(shutdown|reboot)$", a) or re.fullmatch(r"agent-.+-(stop|restart)", a)) \
         or a.startswith(("shutdown-", "game-stop-", "game-restart-"))  # noqa: E731
     if card_status(c, data) is True:
-        return [a for a in every if not starts(a)]
-    return [a for a in every if not stops(a)]
+        keep = [a for a in every if not starts(a)]
+    else:
+        keep = [a for a in every if not stops(a)]
+    return sorted(keep, key=action_rank)   # stable: the config's order within a rank
+
+
+def action_verb(a):
+    """The verb an action's name ends in ("" for the config's own); app.js `action_verb`."""
+    m = (re.fullmatch(r"agent-.+-([a-z]+)", a) or re.fullmatch(r"vm-[A-Za-z0-9]+-\d+-(start|shutdown|reboot)", a)
+         or re.match(r"game-(start|stop|restart)-", a))
+    if m:
+        return m.group(1)
+    if a.startswith("wol-"):
+        return "wake"
+    if a.startswith("shutdown-"):
+        return "shutdown"
+    return ""
+
+
+ACTION_RANK = {"start": 0, "wake": 0, "update": 1, "": 2, "restart": 3, "reboot": 3, "stop": 4, "shutdown": 4}
+
+
+def action_rank(a):
+    return ACTION_RANK.get(action_verb(a), 2)
+
+
+def action_danger(a):
+    """Red, after the line: what takes something down."""
+    return action_rank(a) >= 3
 
 
 def _action(name, c, actions):
     own = actions.get(name) or {}
     out = {"name": name, "label": action_label(name, actions),
            "confirm": own.get("confirm") or f"{action_label(name, actions)} {c.get('name', c['id'])}?",
-           "danger": bool(re.search(r"shutdown|stop", name))}
+           "danger": action_danger(name)}
     if own.get("choices"):
         out["choices"] = [{"label": ch["label"], "action": ch["action"],
-                           "danger": bool(re.search(r"shutdown|stop", ch["action"]))} for ch in own["choices"]]
+                           "danger": action_danger(ch["action"])} for ch in own["choices"]]
     return out
 
 

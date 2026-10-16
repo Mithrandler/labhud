@@ -71,7 +71,7 @@ class Parity(DemoServer):
             tiles = {k: v for k, v in js.items() if k.startswith("games:")}
             js = {k: v for k, v in js.items() if k not in tiles}
             got_tiles = {f"games:{p['id']}:{i}": {"title": g["title"], "line": g["line"], "running": g["running"],
-                                                  "actions": [[a["name"], a["label"]] for a in g["actions"]]}
+                                                  "actions": [[a["name"], a["label"], a["danger"]] for a in g["actions"]]}
                          for p in st["pages"] if p.get("games") for i, g in enumerate(p["servers"])}
             self.assertTrue(tiles)
             self.assertEqual(got_tiles, tiles)
@@ -84,7 +84,7 @@ class Parity(DemoServer):
                     self.assertEqual(got["bad"], want["bad"])
                     self.assertEqual(got["summary"], want["summary"])
                     self.assertEqual([[m["value"], m["sev"]] for m in got["metrics"]], want["metrics"])
-                    self.assertEqual([[a["name"], a["label"]] for a in got["actions"]], want["actions"])
+                    self.assertEqual([[a["name"], a["label"], a["danger"]] for a in got["actions"]], want["actions"])
                 seen.update(m[1] for m in want["metrics"])
                 seen.add(("bad", want["bad"]))
                 seen.add(("status", str(want["status"])))
@@ -134,6 +134,32 @@ class Formats(unittest.TestCase):
         self.assertEqual(f(True, "x"), "true")
         self.assertEqual(f(2.0, "x"), "2")
         self.assertEqual(cardstate.duration(90000), "1d")
+
+
+MIXED = ["agent-a1-docker-stopwatch-stop", "vm-pve2-210-reboot", "report", "agent-a1-host-host-update",
+         "shutdown-gaming", "agent-a1-docker-stopwatch-start", "wol-pbs", "game-restart-1c5e781d",
+         "agent-a1-docker-web-restart", "vm-pve2-210-start"]
+ORDERED = ["agent-a1-docker-stopwatch-start", "wol-pbs", "vm-pve2-210-start", "agent-a1-host-host-update", "report",
+           "vm-pve2-210-reboot", "game-restart-1c5e781d", "agent-a1-docker-web-restart",
+           "agent-a1-docker-stopwatch-stop", "shutdown-gaming"]
+
+
+class ActionOrder(unittest.TestCase):
+    """The same order on every card, and red only for what takes something down (from the verb,
+    so a container called "stopwatch" is not red for its START)."""
+
+    def test_python(self):
+        self.assertEqual(sorted(MIXED, key=cardstate.action_rank), ORDERED)
+        self.assertEqual([cardstate.action_danger(a) for a in ORDERED], [False] * 5 + [True] * 5)
+
+    def test_the_display_says_the_same(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("no node")
+        run = subprocess.run([node, os.path.join(ROOT, "tests", "js", "action_order.mjs"), json.dumps(MIXED)],
+                             capture_output=True, text=True, timeout=20)
+        self.assertEqual(run.returncode, 0, run.stderr[:1000])
+        self.assertEqual(json.loads(run.stdout), [ORDERED, [False] * 5 + [True] * 5])
 
 
 if __name__ == "__main__":

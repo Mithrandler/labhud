@@ -57,6 +57,11 @@ still change in a minor version; such changes are listed under **Changed** with 
   browsers, with Sign out for one or for all.
 
 ### Changed
+- **The same order of buttons on every card**: what starts or wakes something, UPDATE, the
+  config's own, MAINTENANCE, then after a thin line, in red, RESTART / REBOOT and STOP / SHUT DOWN
+  (on a narrow screen the red ones get a row of their own). The verb comes from the action's name,
+  so a container called "stopwatch" is not red; YES in the confirmation is red only for those.
+  `/api/v1` gives the app the same order and `danger` (parity-tested).
 - The menu under the admin's name is now Settings and Sign out; Edit config moved to ⚙ > Advanced.
 - **HTTPS by default.** At the first start labhud makes its own certificate (ECDSA P-256,
   self-signed, 10 years) into `LABHUD_DATA/tls/` with `openssl` (now in the image) and answers
