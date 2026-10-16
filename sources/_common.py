@@ -118,6 +118,8 @@ def _note_tls(url, mode):
 def urlopen(req, timeout, public=False):
     """urllib's urlopen with the certificate policy of the request's host."""
     url = req.full_url if isinstance(req, urllib.request.Request) else req
+    if not str(url).lower().startswith(("http://", "https://")):   # never file:, ftp: or the like
+        raise ValueError(f"only http and https addresses: {str(url)[:60]!r}")
     mode, how = tls_mode(url, public)
     if mode:
         _note_tls(url, mode)

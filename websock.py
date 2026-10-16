@@ -18,7 +18,8 @@ class Closed(Exception):
 
 
 def accept_key(key):
-    return base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
+    # RFC 6455 fixes SHA-1 here: a handshake echo, not a security check
+    return base64.b64encode(hashlib.sha1((key + GUID).encode(), usedforsecurity=False).digest()).decode()
 
 
 def handshake_ok(headers):

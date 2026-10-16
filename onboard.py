@@ -32,6 +32,8 @@ def fingerprint(url):
 
 
 def get(url, header=None, timeout=10):
+    if not str(url).lower().startswith(("http://", "https://")):   # never file:, ftp: or the like
+        raise ValueError("the address must start with http:// or https://")
     req = urllib.request.Request(url, headers=header or {})
     with urllib.request.urlopen(req, timeout=timeout, context=_NO_VERIFY) as r:
         return json.loads(r.read() or b"{}")

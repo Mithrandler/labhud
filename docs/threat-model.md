@@ -11,7 +11,10 @@ What labhud protects, against whom, and where it stops. The connections themselv
 | **Service keys** (Proxmox, PBS, OPNsense, *arr...) | labhud's environment (`.env`) | the most valuable thing here: some services have no read-only keys |
 | **Action secret** (`LABHUD_ACTION_SECRET`) | labhud and the agent | whoever has it can start and stop what the agent's file allows |
 | **The snapshot** | labhud's memory, every display | a map of your network: host names, addresses, guests, alerts, logins |
-| **The actions themselves** | the agent's TOML file | a shutdown pressed by the wrong person is an outage |
+| **The actions themselves** | the agent's TOML file, the ticks in ⚙ > Agents | a shutdown pressed by the wrong person is an outage |
+| **The admin** (password, authenticator secret) | `LABHUD_DATA` (scrypt hash; the TOTP secret as it is) | whoever is the admin presses every button and changes every setting |
+| **Phone tokens and agent keys** | the phone's Keystore; `/etc/labhud-agent/key`; only hashes in `LABHUD_DATA` | a token is a phone; a key is an agent |
+| **The `labhud` command's key** | `LABHUD_DATA/cli.json` (mode 600, new at every start) | it does what ⚙ does, from labhud's own machine |
 
 ## Who might try
 
@@ -37,7 +40,7 @@ Each line: what happens, what stops it today, and what is left.
 | A LAN device opens `:8095` | your firewall rule (labhud itself has no login) | without that rule, the whole snapshot is readable |
 | A web page uses DNS rebinding to read the snapshot | `LABHUD_HOSTS`: any other `Host` gets 421 | nothing, if `LABHUD_HOSTS` is set |
 | Someone sniffs the display's traffic | HTTPS by default: labhud's own certificate (`LABHUD_DATA/tls`), or yours (`LABHUD_TLS_CERT`) | `LABHUD_HTTP=on` turns it off; a browser warns once about labhud's own certificate |
-| Someone holds the display | nothing | they see what the wall shows, and can press the buttons |
+| Someone holds the display | a display not signed in as the admin only shows (no buttons, no ⚙); with a PIN, a signed-in display goes back to only showing after 2 minutes without a touch | they see what the wall shows |
 
 ### Stealing keys
 
@@ -86,12 +89,34 @@ HTTP (`setupmode.py`).
 |---|---|---|
 | A LAN device posts to the agent | HMAC with a secret only labhud and the agent know, plus the agent's IP allowlist | nothing, while the secret stays secret |
 | Replaying a captured request | 30-second window, nonce, each signature accepted once | nothing |
-| A stolen phone presses buttons | the app's own lock if chosen (screen lock or fingerprint); Remove in ⚙ > Devices > Phones ends its token | without the app lock, an unlocked phone is as good as standing at an unlocked display |
+| A stolen phone presses buttons | a phone only looks until it signs in as the admin; with a PIN, a signed-in phone needs it again after 2 minutes (or the fingerprint that stands in for it); the app's own lock if chosen; Remove in ⚙ > Phones ends its token at once | a signed-in, unlocked phone without the app lock, taken within those 2 minutes |
 | Injecting a command | the agent runs only commands written in its TOML file; the name only selects one | nothing |
-| Someone at the display presses SHUT DOWN | the PIN, if set (`[lock]`); a confirmation dialog | without a PIN nobody is identified. Keep destructive actions to what a guest may press |
+| Someone at the display presses SHUT DOWN | the admin's sign-in (a display not signed in has no buttons); the PIN, if set; a confirmation dialog | a display left signed in without a PIN |
 | Someone at the display guesses the PIN | 5 wrong PINs stop the checks for 1 min, doubling up to 1 h; each pause is in the timeline | 10,000 PINs: a patient guesser gets through in weeks, and it shows in the history long before |
 | Someone at the display bypasses the keypad (developer tools) | labhud refuses an action, and maintenance, without a live ticket | nothing |
 | Someone at the display puts a host in maintenance to hide an outage | off unless `[maintenance] buttons = true`; at most 7 days; logged and in the history | the host stays grey and silent until it ends |
+
+### The admin, the phones and the `labhud` command
+
+| attack | stopped by | left over |
+|---|---|---|
+| Guessing the admin's password | scrypt; the authenticator code too; 5 wrong tries stop the checks for 1 min, doubling up to 1 h; a code works once | none known |
+| Stealing a display's admin session | it lives in that browser only; it ends after 30 days unused, at Sign out, from ⚙ > Security on any screen, or with a new admin (`init.py admin`) | whoever copies the browser's storage has the session until one of those |
+| Pairing a phone without being asked | a one-time code (5 minutes) shown by the admin, or the admin's own sign-in | a phone paired by QR code only looks |
+| A phone's token copied out of the phone | sealed with a Keystore key that never leaves the phone; only a hash on the server | a rooted phone that is unlocked |
+| The wall's PIN read from a phone | kept only behind a fingerprint-bound Keystore key, voided when a fingerprint is added | none known |
+| The first sign-in without a QR code over HTTPS | the certificate seen then is pinned for good | that first connection trusts what answers: do it on your own network |
+| Another process on labhud's host uses the `labhud` command's key | `cli.json` is mode 600, owned by labhud's user, accepted only from loopback, new at every start | root on that host, which has everything anyway |
+| A paired phone makes labhud post somewhere (its UnifiedPush endpoint) | https addresses only; the body is fixed (`{"labhud":"news"}`), nothing of the news; an endpoint that answers 404/410 is forgotten | any paired phone can make labhud send that one fixed POST to an https address of its choice, once per notification |
+| Reading a source's address through ⚙ ("Test") | admin only; only `http://` and `https://` are opened, never `file:` | the admin can make labhud request an address on the network, as any monitoring tool |
+| Reading a container's logs | admin only, ticked containers only, the last 200 lines | logs can hold what the program printed: tokens some programs log |
+
+### Notifications
+
+| attack | stopped by | left over |
+|---|---|---|
+| The push service (Google, ntfy.sh) reads the news | with the app's Instant notifications, only a content-free wake-up goes through it; the app reads the news from labhud over your network | with ntfy, the text goes to the ntfy server you set (yours, or ntfy.sh) |
+| Someone reads the outbox | `/api/v1/notifications` needs a paired phone or a name in `LABHUD_HOSTS` | it holds the last 100 messages, as the wall's history does |
 
 ### Agents (labhud-agent)
 
@@ -126,3 +151,5 @@ worth closing next, in order:
    and the hosts need no open port.
 3. **Keys in files** (`LABHUD_*_FILE`), so they are not in the container's environment.
 4. **Keep HTTPS on `:8095`** (the default); `LABHUD_HTTP=on` only behind a proxy that does TLS.
+5. **Set the PIN** with an admin: a signed-in display or phone then goes back to only showing
+   after 2 minutes without a touch.

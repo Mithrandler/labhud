@@ -425,5 +425,19 @@ class Registry(unittest.TestCase):
         self.assertEqual(inactive["sonarr"], ["LABHUD_SONARR_URL", "LABHUD_SONARR_KEY"])
 
 
+
+class Schemes(unittest.TestCase):
+    """A source or a test in ⚙ opens only http and https: never file:, whatever the admin typed."""
+
+    def test_only_http(self):
+        import onboard
+        from sources import _common
+        for bad in ("file:///etc/passwd", "ftp://x/y", "FILE:///data/config.toml"):
+            with self.assertRaises(ValueError):
+                _common.urlopen(bad, timeout=1)
+            with self.assertRaises(ValueError):
+                onboard.get(bad)
+
+
 if __name__ == "__main__":
     unittest.main()
