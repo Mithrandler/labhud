@@ -392,6 +392,7 @@ body.p-games #content {
   border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
 #panel-body .row-actions button.danger { border-color: var(--red); color: var(--red); }
 #panel-body .row:has(.row-actions) { align-items: center; }
+#panel-body .row-actions button:disabled { opacity: .45; cursor: default; }
 #panel-body .row-actions button.on { border-color: var(--accent); color: var(--accent); }
 /* narrow: a container's buttons go under its name and state, on the right */
 @media (max-width: 600px) {

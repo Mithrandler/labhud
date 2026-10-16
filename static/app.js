@@ -1690,15 +1690,23 @@ function agent_containers(body, c) {
     const r = el("div", "row" + (x.up ? "" : " bad"));
     r.appendChild(el("span", "n", x.name));
     const v = el("span", "v", x.status);
-    if (x.updating) v.appendChild(el("span", "badge", "updating…"));
-    else if (x.update) v.appendChild(el("span", "badge", "update available"));
+    if (x.updating && !(may_act() && x.card.actions.length)) v.appendChild(el("span", "badge", "updating…"));
+    else if (x.update && !x.updating) v.appendChild(el("span", "badge", "update available"));
     r.appendChild(v);
     const box = el("span", "row-actions");
     if (signed_in() && x.card.actions.length) box.appendChild(logs_button(c.agent, x.name));
-    for (const a of may_act() ? x.actions : []) {
-      const b = el("button", action_danger(a) ? "danger" : "", action_label(a));
+    // while it is updated the row keeps its shape: the same buttons, greyed, UPDATE as UPDATING…
+    const key = `${c.agent}/${x.name}`;
+    if (!x.updating) ROW_ACTS[key] = x.actions;
+    const shown = x.updating ? (ROW_ACTS[key] || []) : x.actions;
+    const upd = x.card.actions.find((a) => action_verb(a) === "update");
+    if (x.updating && upd && !shown.includes(upd)) shown.unshift(upd);
+    for (const a of may_act() && x.card.actions.length ? shown : []) {
+      const updating = x.updating && action_verb(a) === "update";
+      const b = el("button", action_danger(a) ? "danger" : "", updating ? "UPDATING…" : action_label(a));
       b.type = "button";
-      b.addEventListener("click", () => ask_confirmation(x.card, a));
+      if (x.updating) b.disabled = true;
+      else b.addEventListener("click", () => ask_confirmation(x.card, a));
       box.appendChild(b);
     }
     if (box.children.length) r.appendChild(box);
@@ -1710,6 +1718,7 @@ function agent_containers(body, c) {
 
 // A container's logs, open under its row: kept here so the panel's redraws (on every update)
 // keep them. Read from the agent (POST /api/setup/logs, the admin only), never on their own.
+let ROW_ACTS = {};   // "agent/container" -> the buttons its row had before an update started
 let LOGS = {};   // "agent/container" -> {text, error, loading, at}
 
 function logs_button(agent, name) {

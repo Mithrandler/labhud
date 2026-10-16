@@ -29,7 +29,8 @@ still change in a minor version; such changes are listed under **Changed** with 
   available** when its registry has a newer image (the agent checks 2 minutes after it starts,
   then every 6 hours), then **UPDATE**: the agent pulls it and makes the container again with
   the same settings, the old one kept until the new one runs. The press is followed until the
-  agent's own word on it ("updated", or why not), "updating…" meanwhile. The admin gets
+  agent's own word on it ("updated", or why not); meanwhile the row keeps its buttons, greyed,
+  with UPDATING… in place of UPDATE. The admin gets
   **LOGS** on each ticked container: its last 200 lines under the row, with Refresh. On a
   guest's rows and on a card with `agent_target = "docker:<name>"`; in `/api/v1/card/<id>` as
   `containers`, and `POST /api/setup/logs {agent, target}` for the admin. On a narrow screen a
