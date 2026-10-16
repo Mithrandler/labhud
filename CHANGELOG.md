@@ -9,6 +9,15 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [0.2.16] - unreleased
 
 ### Added
+- **⚙ > Advanced: the config file, edited in ⚙.** The editor opens inside ⚙ (no new tab, which a
+  kiosk browser does not open), checks as you type and saves only a config that loads. **Take
+  over** copies a mounted config (read-only on most installs, so Edit config could not save) into
+  `LABHUD_DATA/config.toml`, with its included files merged in; labhud restarts in place (same
+  PID) and from then on keeps that copy, which ⚙ writes. Keys typed into ⚙ go to
+  `LABHUD_DATA/secrets.env` (mode 600) and win over the environment, except the settings that say
+  how labhud starts (`LABHUD_DATA`, `LABHUD_HOSTS`, the port, TLS, actions). Routes:
+  `POST /api/setup/{status,text,save-text,config,save,secrets,take-over,catalog,try}`, for the
+  admin only (like ⚙ > Devices). `init.py edit` and `/edit` stay, for the terminal.
 - **Game servers in the app's API.** A games page in `/api/v1/state` carries `servers`: each game
   server as the wall's tile shows it (title, line, players, address, RAM, uptime, buttons), from the
   same function as the wall's (`game_card()`, checked against `cardstate.py` by the parity test);
@@ -48,6 +57,7 @@ still change in a minor version; such changes are listed under **Changed** with 
   browsers, with Sign out for one or for all.
 
 ### Changed
+- The menu under the admin's name is now Settings and Sign out; Edit config moved to ⚙ > Advanced.
 - **HTTPS by default.** At the first start labhud makes its own certificate (ECDSA P-256,
   self-signed, 10 years) into `LABHUD_DATA/tls/` with `openssl` (now in the image) and answers
   HTTPS on its port. The app and the agents pin it when they pair (the QR code and the agent's code

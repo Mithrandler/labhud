@@ -26,6 +26,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
+import managed
 import admin
 import agents
 import cardstate
@@ -35,6 +36,7 @@ import editmode
 import events
 import lock
 import mqtt
+import onboard
 import notify
 import qr
 import sources
@@ -1315,6 +1317,9 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
+        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try)", self.path)
+        if st:
+            return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
         if ad:
             return self._admin_step(ad.group(1))
@@ -1634,6 +1639,70 @@ class Handler(BaseHTTPRequestHandler):
         print(f"agent {name}: {what} from {self.client_address[0]}", flush=True)
         self._json({"ok": True})
 
+    def _setup(self, op):
+        """⚙ > Setup and ⚙ > Advanced (managed.py): the config labhud keeps in LABHUD_DATA and the
+        keys typed into the page. Only for whoever may manage; values of keys never go out."""
+        body = self._small_json(256 * 1024)
+        if body is None or not self._may_manage():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        who = self.client_address[0]
+        try:
+            if op == "status":
+                return self._json({"ok": True, **managed.status(), "path": CONFIG_PATH})
+            if op == "catalog":
+                return self._json({"ok": True, "sources": onboard.catalog()})
+            if op == "try":
+                values = body.get("values") if isinstance(body.get("values"), dict) else {}
+                return self._json(onboard.try_source(str(body.get("name") or ""), values))
+            if op == "take-over":
+                path = managed.take_over()
+                print(f"setup: config taken over into {path} from {who}; restarting", flush=True)
+                _log([("Config taken over by labhud", False)])
+                managed.restart()
+                return self._json({"ok": True, "path": path, "restart": True})
+            if op == "config":
+                return self._json({"ok": True, "config": managed.read_config()})
+            if op == "text":
+                with open(CONFIG_PATH, encoding="utf-8") as f:
+                    text = f.read()
+                return self._json({"ok": True, "text": text, "path": CONFIG_PATH, "managed": managed.active(),
+                                   "writable": managed.active() or os.access(CONFIG_PATH, os.W_OK)})
+            if op == "save-text":
+                text = body.get("text")
+                if not isinstance(text, str):
+                    return self._json({"ok": False, "error": "no text"}, 400)
+                try:
+                    config.loads(text, CONFIG_PATH)
+                except config.ConfigError as e:
+                    return self._json({"ok": False, "problems": e.problems})
+                if body.get("check"):
+                    return self._json({"ok": True, "problems": []})
+                if managed.active():
+                    managed.save_text(text)
+                elif os.access(CONFIG_PATH, os.W_OK):
+                    editmode.save(CONFIG_PATH, text)
+                else:
+                    return self._json({"ok": False, "problems": [
+                        f"{CONFIG_PATH} is mounted read-only: Take over first, then labhud keeps it"]})
+                print(f"setup: config.toml saved from the editor, from {who}", flush=True)
+                return self._json({"ok": True, "problems": []})
+            if op == "save":
+                if not isinstance(body.get("config"), dict):
+                    return self._json({"ok": False, "error": "no config"}, 400)
+                managed.save_config(body["config"])
+                print(f"setup: config saved from {who}", flush=True)
+                return self._json({"ok": True})
+            values = body.get("values")
+            if not isinstance(values, dict) or not values:
+                return self._json({"ok": False, "error": "no values"}, 400)
+            changed = managed.set_secrets(values)
+            if changed:
+                print(f"setup: keys {', '.join(changed)} set from {who}; restarting", flush=True)
+                managed.restart()
+            return self._json({"ok": True, "changed": changed, "restart": bool(changed)})
+        except ValueError as e:
+            return self._json({"ok": False, "error": str(e)[:600]}, 409)
+
     def _app_stream(self):
         """SSE for apps: `event: state` with the whole of /api/v1/state, again whenever it changes
         (at most once a second). Counts against MAX_SUBSCRIBERS like a display."""
@@ -1882,8 +1951,10 @@ if __name__ == "__main__":
           + f"sources: {', '.join(sorted(ACTIVE)) or 'none'}; not configured: {', '.join(sorted(INACTIVE)) or 'none'}",
           flush=True)
     print(f"answering to: {', '.join(sorted(ALLOWED_HOSTS))} (LABHUD_HOSTS)", flush=True)
+    if envfiles.FROM_SECRETS:
+        print(f"read from {envfiles.secrets_path()}: {len(envfiles.FROM_SECRETS)} key(s) set in ⚙ > Setup", flush=True)
     if envfiles.FROM_DOTENV:
-        print(f"read from {envfiles.DOTENV}: {len(envfiles.FROM_DOTENV)} setting(s)", flush=True)
+        print(f"read from {envfiles.given_dotenv()}: {len(envfiles.FROM_DOTENV)} setting(s)", flush=True)
     if envfiles.LOADED:
         print(f"read from files: {', '.join(envfiles.LOADED)}", flush=True)
     if not DEMO:

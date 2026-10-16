@@ -350,6 +350,9 @@ function open_settings() {
   // --- the admin (account.js, admin.py) and the browsers signed in as it ---
   if (tab === "security") admin_settings((title) => section(title, "security"));
 
+  // --- advanced (advanced.js): the config file as text, taking it over ---
+  if (tab === "advanced") advanced_settings(section);
+
   // --- devices: the agents (agents.py), one per host, and the phones (devices.py) ---
   if (tab !== "devices") return finish_settings(body, keep, box, tab);
   agents_settings(section("Agents", "devices", true));
@@ -417,7 +420,7 @@ function page_columns(s) {
  * screen and the app. A slim bar of icons on the left; at the bottom on a portrait screen. */
 const SETTINGS_GROUPS = [
   ["This screen", [["look", "Look"], ["pages", "Pages"], ["night", "Night & alerts"]]],
-  ["LabHUD", [["devices", "Devices"], ["security", "Security"]]],
+  ["LabHUD", [["devices", "Devices"], ["security", "Security"], ["advanced", "Advanced"]]],
 ];
 const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, tabs]) => tabs);
 // the names before 0.3 (kept by browsers, and ?static&settings=<tab>)
@@ -435,6 +438,7 @@ const TAB_ICONS = {
   night: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/><path d="M17 3v3M15.5 4.5h3"/>',
   devices: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>',
   security: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  advanced: '<path d="M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16"/>',
   setup: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
 };
 
@@ -472,7 +476,7 @@ function settings_tab(bar, key, label, current) {
 }
 
 function finish_settings(body, keep, box, tab) {
-  if (tab === "devices" || tab === "security") {
+  if (tab === "devices" || tab === "security" || tab === "advanced") {
     body.appendChild(el("p", "hint", "Kept by LabHUD itself: the same on every screen."));
     box.hidden = false;
     body.scrollTop = keep;

@@ -553,6 +553,12 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
 #settings-body > .hint { margin: 0; }
 #settings .set { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 10px; }
 #settings h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: var(--sub); }
+#settings .adv-text { width: 100%; box-sizing: border-box; min-height: 50vh; resize: vertical; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: 12px/1.45 ui-monospace, "DejaVu Sans Mono", monospace; tab-size: 2; }
+#settings .adv-text[readonly] { opacity: .7; }
+#settings .adv-problems { margin: 6px 0; padding-left: 18px; color: var(--warn); font-size: 12px; }
+#settings .hint.warn { color: var(--warn); }
+#settings .hint.ok { color: var(--green); }
 #settings .choices { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0; }
 #settings .choice { appearance: none; font: 500 13px/1 var(--font); color: var(--sub); background: var(--block); border: 1px solid var(--line);
   border-radius: 7px; padding: 8px 10px; cursor: pointer; }

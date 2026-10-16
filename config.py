@@ -7,7 +7,8 @@ Check a file without starting the server:
 
     python3 config.py [path/to/config.toml]
 
-The file is found through LABHUD_CONFIG, or config.toml next to this module.
+The file is found through LABHUD_CONFIG, or config.toml next to this module; once labhud has
+taken it over (managed.py, ⚙ > Setup) it is LABHUD_DATA/config.toml.
 """
 
 import ipaddress
@@ -289,7 +290,16 @@ def _when(ck, where, table, key, optional=False):
 
 
 def config_path():
-    """Where the config file is: LABHUD_CONFIG, or config.toml next to this module."""
+    """Where the config file is: the one labhud keeps in LABHUD_DATA once it took it over
+    (managed.py), else given_path()."""
+    data = os.environ.get("LABHUD_DATA")
+    if data and os.path.isfile(os.path.join(data, "config.toml")):
+        return os.path.join(data, "config.toml")
+    return given_path()
+
+
+def given_path():
+    """The config labhud is given: LABHUD_CONFIG, or config.toml next to this module."""
     return os.environ.get("LABHUD_CONFIG") or DEFAULT_PATH
 
 

@@ -1,5 +1,5 @@
 /* The admin on this display (admin.py) and the corner of the top bar that shows it: "Sign in"
-   while no one is, the admin's name with a menu (Settings, Edit config, Sign out) once signed in.
+   while no one is, the admin's name with a menu (Settings, Sign out) once signed in.
    A display that is not signed in only shows: no ⚙, no buttons on the cards. Without an admin at
    all, every display only shows, and "Sign in" says how to make one.
 
@@ -131,7 +131,6 @@ function account_click() {
     m.appendChild(b);
   };
   item("Settings", () => open_settings());
-  item("Edit config", edit_config);
   m.appendChild(el("div", "sep"));
   item("Sign out", sign_out, "out");
   m.hidden = false;
@@ -149,13 +148,6 @@ document.addEventListener("pointerdown", (e) => {
   const m = $("#account-menu");
   if (m && !m.hidden && !m.contains(e.target) && !$("#account").contains(e.target)) close_account_menu();
 }, { passive: true });
-
-function edit_config() {
-  admin_post("edit").then((r) => {
-    if (r.ok) window.open("/edit#" + r.code, "_blank", "noopener");
-    else (r.error === "forbidden" ? admin_forbidden(show_message) : show_message("✕ " + r.error));
-  });
-}
 
 function sign_out() {
   admin_post("logout").then(() => { set_admin(""); show_message("Signed out"); });
@@ -248,7 +240,7 @@ function admin_settings(section) {
     b.addEventListener("click", run);
     row.appendChild(b);
   };
-  button("Edit config", edit_config);
+  button("Edit config", () => { S.tab = "advanced"; save_settings(); open_settings(); });
   button("Sign out", sign_out);
   s.appendChild(row);
 
