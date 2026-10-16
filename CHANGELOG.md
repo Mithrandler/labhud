@@ -59,6 +59,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 - ⚙ > Agents > Add an agent shows the command that works with this labhud: the one-line `curl`
   (and the `docker run`) once a release of the agent is pinned, otherwise the installer with
   `--binary` and `--sha256`, and why. With `--binary`, a `--sha256` given wins over the pinned one.
+- On an agent that also has the game servers (a Pterodactyl node), the Docker lists leave out the
+  Wings containers (named by a server's UUID): they are the same servers, without a readable name.
 
 ### Fixed
 - A tick in ⚙ > Agents that changed a card's buttons reloaded the display at once, closing ⚙

@@ -216,12 +216,24 @@ def online(aid):
     return aid in _live
 
 
+# A Pterodactyl node's Wings runs each game server as a container named by the server's UUID.
+# On an agent that also has the game servers, those containers are the same servers twice, with
+# names nobody can read: the Docker lists leave them out.
+WINGS = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def _wings(a, cap, names):
+    if cap != "docker" or "ptero" not in a.get("found", []):
+        return list(names)
+    return [n for n in names if not WINGS.fullmatch(n)]
+
+
 def listing():
     """For ⚙ > Devices > Agents: everything but the keys, with what each agent last reported."""
     out = []
     for aid, a in _load().items():
         st = _state.get(aid) or {}
-        found = {"docker": sorted(st.get("containers") or {}), "systemd": sorted(st.get("units") or {}),
+        found = {"docker": _wings(a, "docker", sorted(st.get("containers") or {})), "systemd": sorted(st.get("units") or {}),
                  "pve": sorted(st.get("guests") or {}, key=lambda v: int(v) if v.isdigit() else 0),
                  "ptero": sorted(st.get("servers") or {}), "wol": sorted(st.get("neighbours") or {}),
                  "host": ["host"] if "host" in a.get("found", []) else []}
@@ -230,7 +242,8 @@ def listing():
                   "wol": {k: (v or {}).get("ip") for k, v in (st.get("neighbours") or {}).items()}}
         out.append({"id": aid, "name": a["name"], "online": aid in _live, "version": a.get("version", ""),
                     "host": a.get("host", {}), "paired": a.get("paired", 0), "seen": a.get("seen", 0),
-                    "found": a.get("found", []), "caps": a.get("caps", []), "targets": a.get("targets", {}),
+                    "found": a.get("found", []), "caps": a.get("caps", []),
+                    "targets": {c: _wings(a, c, v) for c, v in a.get("targets", {}).items()},
                     "choices": {c: v for c, v in found.items() if c in a.get("found", [])},
                     "labels": labels})
     return sorted(out, key=lambda a: a["paired"])
@@ -254,7 +267,7 @@ LISTED = ("docker", "systemd", "ptero")
 
 def buttons(aid, a):
     """{cap: {target: [action names]}} for the ticked targets the pages list themselves."""
-    return {cap: {t: [action_name(aid, cap, t, v) for v in VERBS[cap]] for t in a.get("targets", {}).get(cap, [])}
+    return {cap: {t: [action_name(aid, cap, t, v) for v in VERBS[cap]] for t in _wings(a, cap, a.get("targets", {}).get(cap, []))}
             for cap in LISTED if cap in a.get("caps", [])}
 
 

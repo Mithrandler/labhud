@@ -378,6 +378,21 @@ class Names(unittest.TestCase):
             for n in names:
                 self.assertIsNotNone(agents.resolve(n))
 
+    def test_wings_containers_hidden(self):
+        u = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+        a = agents.store.load(agents.AGENTS_KEY)
+        a["a1b2c3d4"]["targets"]["docker"].append(u)
+        agents.store.save(agents.AGENTS_KEY, a)
+        agents._state["a1b2c3d4"] = {"containers": {"jellyfin": {}, u: {}}}
+        # without the game servers a UUID is just a container's name
+        self.assertIn(u, agents.snapshot()["n100"]["buttons"]["docker"])
+        a["a1b2c3d4"]["found"] = ["docker", "ptero"]
+        agents.store.save(agents.AGENTS_KEY, a)
+        got = agents.listing()[0]
+        self.assertEqual(got["choices"]["docker"], ["jellyfin"])
+        self.assertNotIn(u, got["targets"]["docker"])
+        self.assertNotIn(u, agents.snapshot()["n100"]["buttons"]["docker"])
+
     def test_card_wake(self):
         wake = agents.action_name("a1b2c3d4", "wol", "aa:bb:cc:dd:ee:ff", "wake")
         # WAKE from one agent, the host's buttons from another (here the same, for the store)
