@@ -6,6 +6,16 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-10-17
+
+### Security
+- A source, or a test of one in ⚙ or the `labhud` command, only ever opens `http://` and
+  `https://` addresses (never `file:` or another scheme). The threat model covers 0.3: the admin,
+  phones, the PIN, the `labhud` command, UnifiedPush and container logs.
+
+### Changed
+- README for 0.3, with the five steps to a working wall; the roadmap says what 0.3 did and what is left.
+
 ## [0.3.11] - 2026-10-16
 
 ### Changed
