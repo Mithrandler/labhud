@@ -604,7 +604,7 @@ def sections(c, data):
     if not out:
         if c.get("metrics"):
             _section(out, "numbers", [[label, format_(get(data, path), fmt)] for path, label, fmt in c["metrics"]])
-        if c.get("list"):
+        if c.get("list") and c["list"] != "fleet.updates":   # that one has its own field, with the buttons
             rows = get(data, c["list"])
             _section(out, "details", [detail_row(d) for d in rows if isinstance(d, dict)] if isinstance(rows, list) else [])
     return out
