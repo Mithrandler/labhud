@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-10-17
+
 ### Fixed
 - **Update in ⚙ failed on agents installed as a service** ("read-only file system"): the unit
   keeps `/usr` read-only, and the binary was in `/usr/local/bin`. The installer now puts it in
