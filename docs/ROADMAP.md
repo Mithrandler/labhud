@@ -34,8 +34,6 @@ version.
 
 ## Not done yet
 
-- **A design system shared by the wall, ⚙ and the app** (colours, type, icons): they look alike
-  but are kept by hand in three places.
 - **Screenshots** of 0.3 (⚙'s tabs, the bell, the agents) in the README and the docs site.
 - **Agents' ticks of Wake-on-LAN by a typed MAC** in the app (⚙ and the CLI have it).
 - **An agent that updates itself** from its release (today: the installer again, or the image).

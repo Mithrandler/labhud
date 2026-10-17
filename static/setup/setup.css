@@ -4,9 +4,25 @@
 
 :root {
   color-scheme: dark;
-  --bg: #000; --card: #121214; --block: #1c1c1f; --line: #2a2a2e; --border: #3a3d44;
-  --text: #fff; --sub: #b4b8bf; --muted: #7d828a; --accent: #8ab4f8; --title: #7cc4ff;
-  --green: #34c759; --warn: #ff9f0a; --red: #ff453a;
+  /* design:colors (design/tokens.json, written by design/build.py: edit there) */
+  --bg: #000000;
+  --card: #121214;
+  --block: #1c1c1f;
+  --line: #2a2a2e;
+  --border: #3a3d44;
+  --text: #ffffff;
+  --sub: #b4b8bf;
+  --muted: #7d828a;
+  --accent: #8ab4f8;
+  --title: #7cc4ff;
+  --on-title: #000000;
+  --green: #34c759;
+  --warn: #ff9f0a;
+  --red: #ff453a;
+  --red-bg: #3a0d1c;
+  --red-text: #ffd9e2;
+  --info-bg: #0e1824;
+  /* design:end */
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -38,7 +54,7 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
 #code-input { font-size: 24px; letter-spacing: .2em; text-transform: uppercase; max-width: 260px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .row input { flex: 1; min-width: 0; }
-button { background: var(--title); color: #000; border: 0; border-radius: 8px; padding: 10px 18px;
+button { background: var(--title); color: var(--on-title); border: 0; border-radius: 8px; padding: 10px 18px;
          font: inherit; font-weight: 700; cursor: pointer; }
 button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); font-weight: 400; }
 button:disabled { opacity: .5; cursor: wait; }

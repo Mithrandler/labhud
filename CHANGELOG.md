@@ -6,6 +6,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- **One design for the wall, ⚙ and the app**: the colours and icons are in `design/tokens.json`,
+  and `design/build.py` writes them into the pages, `static/icons.js` and the app's `Tokens.kt`
+  (a test fails when they drift). Nothing changes on the wall; its icons now come from there.
+
 ## [0.3.13] - 2026-10-17
 
 ### Changed

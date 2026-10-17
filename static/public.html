@@ -9,8 +9,28 @@
 <style>
   @font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); }
   @font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); }
-  :root { color-scheme: dark; --bg: #000; --card: #121214; --line: #2a2a2e; --text: #fff; --sub: #b4b8bf; --muted: #7d828a;
-          --title: #7cc4ff; --green: #34c759; --warn: #ff9f0a; --red: #ff453a; }
+  :root {
+    color-scheme: dark;
+    /* design:colors (design/tokens.json, written by design/build.py: edit there) */
+    --bg: #000000;
+    --card: #121214;
+    --block: #1c1c1f;
+    --line: #2a2a2e;
+    --border: #3a3d44;
+    --text: #ffffff;
+    --sub: #b4b8bf;
+    --muted: #7d828a;
+    --accent: #8ab4f8;
+    --title: #7cc4ff;
+    --on-title: #000000;
+    --green: #34c759;
+    --warn: #ff9f0a;
+    --red: #ff453a;
+    --red-bg: #3a0d1c;
+    --red-text: #ffd9e2;
+    --info-bg: #0e1824;
+    /* design:end */
+  }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 "Roboto", system-ui, sans-serif; }
   main { max-width: 720px; margin: 0 auto; padding: 24px 16px; }

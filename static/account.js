@@ -98,7 +98,6 @@ function recheck_admin() {
 // The corner: "Sign in", or the admin's name and a menu
 // ---------------------------------------------------------------------------------------------
 
-const PERSON_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.8 20 a7.2 6.4 0 0 1 14.4 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
 function render_account() {
   const b = $("#account");
@@ -107,7 +106,7 @@ function render_account() {
   cls(b, "in", inside);
   b.textContent = "";
   if (inside) {
-    b.insertAdjacentHTML("beforeend", PERSON_SVG);
+    b.append(icon_svg("person", 16));
     b.appendChild(el("span", "who", ADMIN_USER));
     b.title = "Signed in as " + ADMIN_USER;
     b.setAttribute("aria-label", "Account: " + ADMIN_USER);

@@ -12,8 +12,25 @@
   @font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); }
   @font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); }
   :root {
-    --bg: #000; --card: #121214; --line: #2a2a2e; --text: #fff; --sub: #b4b8bf; --muted: #7d828a;
-    --title: #7cc4ff; --green: #34c759; --warn: #ff9f0a; --red: #ff453a;
+    /* design:colors (design/tokens.json, written by design/build.py: edit there) */
+    --bg: #000000;
+    --card: #121214;
+    --block: #1c1c1f;
+    --line: #2a2a2e;
+    --border: #3a3d44;
+    --text: #ffffff;
+    --sub: #b4b8bf;
+    --muted: #7d828a;
+    --accent: #8ab4f8;
+    --title: #7cc4ff;
+    --on-title: #000000;
+    --green: #34c759;
+    --warn: #ff9f0a;
+    --red: #ff453a;
+    --red-bg: #3a0d1c;
+    --red-text: #ffd9e2;
+    --info-bg: #0e1824;
+    /* design:end */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font: 13px/1.4 "Roboto", system-ui, sans-serif; padding: 12px 16px 24px; }
@@ -47,7 +64,7 @@
   #adoption h2 { font-size: 13px; color: var(--sub); margin-bottom: 4px; }
   #adoption p { color: var(--muted); font-size: 12px; margin: 4px 0; }
   #adoption pre { color: var(--sub); font-size: 12px; white-space: pre-wrap; background: #000; border-radius: 6px; padding: 6px 8px; user-select: all; }
-  #config { color: #ffd9e2; background: #3a0d1c; border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; max-width: 900px; white-space: pre-line; }
+  #config { color: var(--red-text); background: var(--red-bg); border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; max-width: 900px; white-space: pre-line; }
 </style>
 </head>
 <body>

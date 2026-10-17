@@ -41,19 +41,25 @@
 :root {
   --topbar: 40px;
   --strip: 32px;
-  --bg: #000;
+  /* design:colors (design/tokens.json, written by design/build.py: edit there) */
+  --bg: #000000;
   --card: #121214;
   --block: #1c1c1f;
   --line: #2a2a2e;
-  --border: #3a3d44;   /* card edges: lighter than the background, so they stand apart */
+  --border: #3a3d44;
   --text: #ffffff;
   --sub: #b4b8bf;
   --muted: #7d828a;
   --accent: #8ab4f8;
   --title: #7cc4ff;
+  --on-title: #000000;
   --green: #34c759;
   --warn: #ff9f0a;
   --red: #ff453a;
+  --red-bg: #3a0d1c;
+  --red-text: #ffd9e2;
+  --info-bg: #0e1824;
+  /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
 
@@ -153,7 +159,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #signin input { font: 15px var(--font); color: var(--text); background: var(--block); border: 1px solid var(--line);
   border-radius: 6px; padding: 9px 10px; }
 #signin input:focus { outline: none; border-color: var(--title); }
-#signin .go { appearance: none; border: 0; border-radius: 6px; background: var(--title); color: #000;
+#signin .go { appearance: none; border: 0; border-radius: 6px; background: var(--title); color: var(--on-title);
   font: 700 14px/1 var(--font); padding: 12px; cursor: pointer; }
 #signin .go:disabled { opacity: .5; }
 #signin .said { min-height: 1em; margin: 0; font-size: 12px; color: var(--red); }
@@ -173,7 +179,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
   color: var(--muted); font: 700 13px/1 var(--font); letter-spacing: .6px;
   padding: 7px 10px; border-radius: 6px; cursor: pointer;
 }
-#menu button.active { color: #000; background: var(--title); }
+#menu button.active { color: var(--on-title); background: var(--title); }
 #menu button.has-alert { color: var(--red); }
 #menu button.active.has-alert { color: #000; background: var(--red); }
 
@@ -429,7 +435,7 @@ body.p-games #content {
 #tour .box { max-width: min(520px, 90vw); background: var(--card); border: 1px solid var(--title); border-radius: 12px; padding: 18px 20px; }
 #tour .text { font-size: 18px; line-height: 1.4; margin: 0 0 14px; }
 #tour .buttons { display: flex; justify-content: flex-end; gap: 10px; }
-#tour button { font: inherit; font-weight: 700; padding: 10px 18px; border-radius: 8px; border: 0; background: var(--title); color: #000; }
+#tour button { font: inherit; font-weight: 700; padding: 10px 18px; border-radius: 8px; border: 0; background: var(--title); color: var(--on-title); }
 #tour button.skip { background: transparent; color: var(--sub); border: 1px solid var(--border); font-weight: 400; }
 #tour .steps { color: var(--muted); font-size: 12px; margin-top: 10px; }
 
@@ -473,8 +479,8 @@ body.view-list #content { display: block; overflow-y: auto; touch-action: pan-y;
 
 #config-errors {
   position: fixed; left: 0; right: 0; bottom: var(--strip); z-index: 44;
-  padding: 5px 10px; background: #3a0d1c; border-top: 1px solid var(--red);
-  font-size: 11px; line-height: 1.35; color: #ffd9e2; white-space: pre-line;
+  padding: 5px 10px; background: var(--red-bg); border-top: 1px solid var(--red);
+  font-size: 11px; line-height: 1.35; color: var(--red-text); white-space: pre-line;
 }
 #config-errors b { color: #fff; }
 #stream-state { position: fixed; right: 3px; bottom: calc(var(--strip) + 3px); width: 5px; height: 5px; border-radius: 50%; background: transparent; z-index: 45; }
@@ -673,7 +679,7 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 #bell svg { display: block; }
 #bell.busy, #bell.hot, #bell[aria-expanded="true"] { opacity: 1; }
 #bell .badge { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px;
-  background: var(--title); color: #000; font: 700 10px/15px var(--font); text-align: center; }
+  background: var(--title); color: var(--on-title); font: 700 10px/15px var(--font); text-align: center; }
 #bell.hot .badge { background: var(--red); color: #fff; }
 #bell.busy svg { animation: bell-ring 2s ease-in-out infinite; transform-origin: 50% 15%; }
 @keyframes bell-ring { 0%, 70%, 100% { transform: rotate(0); } 78% { transform: rotate(12deg); } 86% { transform: rotate(-10deg); } 94% { transform: rotate(5deg); } }
@@ -695,7 +701,7 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 #bell-menu .row.timeout .mark, #bell-menu .row.refused .mark { color: var(--red); }
 #bell-menu .row.timeout .what, #bell-menu .row.refused .what { color: #ffb3c1; }
 #bell-menu .row i { position: absolute; z-index: 0; left: 0; top: 0; bottom: 0; background: var(--title); opacity: .16; transition: width 1s linear; }
-#bell-menu .row.alert { background: #3a0d1c; border: 1px solid var(--red); color: #ffd9e2; }
+#bell-menu .row.alert { background: var(--red-bg); border: 1px solid var(--red); color: var(--red-text); }
 #bell-menu .row.alert .txt { display: block; white-space: normal; }
 #bell-menu button { appearance: none; flex: none; border: 1px solid var(--border); background: transparent; color: var(--text);
   font: 700 11px/1 var(--font); padding: 7px 10px; border-radius: 6px; cursor: pointer; }
@@ -708,7 +714,7 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
   background: var(--card); border: 1px solid var(--title); border-radius: 10px; color: var(--text);
   font-size: 13px; font-weight: 500; box-shadow: 0 6px 20px rgba(0,0,0,.7); animation: toast-in .2s ease-out; }
 #toast.ok { border-color: var(--green); }
-#toast.bad { border-color: var(--red); color: #ffd9e2; }
+#toast.bad { border-color: var(--red); color: var(--red-text); }
 #toast.warn { border-color: var(--warn); }
 #toast .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #toast .x { appearance: none; flex: none; border: 0; background: transparent; color: var(--muted); font-size: 14px; padding: 2px 6px; cursor: pointer; }
@@ -763,7 +769,7 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 #settings .src-ok { margin-left: auto; color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .src-mono { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px;
   background: hsl(var(--hue) 45% 22%); color: hsl(var(--hue) 80% 78%); font: 700 12px/1 var(--font); }
-#settings .src-form { border: 1px solid var(--title); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #0e1824; }
+#settings .src-form { border: 1px solid var(--title); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: var(--info-bg); }
 #settings .src-form-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
 #settings .src-form-head b { flex: 1; font-size: 15px; }
 #settings .src-field { display: flex; align-items: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
@@ -818,7 +824,7 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 #settings .lay-add-page { align-self: start; }
 #settings .lay-title { flex: 1; min-width: 0; font: 600 13px/1 var(--font); color: var(--text); background: var(--bg);
   border: 1px solid var(--title); border-radius: 5px; padding: 5px 6px; }
-#settings .lay-preview { border: 1px solid var(--title); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; background: #0e1824; }
+#settings .lay-preview { border: 1px solid var(--title); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; background: var(--info-bg); }
 #settings .lay-preview > b { display: block; font-size: 13px; margin-bottom: 4px; }
 #settings .lay-prev-row { display: flex; gap: 8px; font-size: 12px; padding: 3px 0; border-top: 1px solid var(--line); }
 #settings .lay-prev-row .g { flex: none; width: 110px; color: var(--title); font-weight: 600; }

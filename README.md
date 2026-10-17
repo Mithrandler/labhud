@@ -109,6 +109,10 @@ python3 -m unittest discover -s tests -t .     # config loader, source parsers, 
 node --check static/app.js
 ```
 
+The colours and icons live in `design/tokens.json`, the one place for the wall, ⚙, the setup
+pages and the Android app: after a change, `python3 design/build.py` (add `--android
+../labhud-android` for the app's `Tokens.kt`); a test fails while a page is not what it makes.
+
 The source tests run on made-up API answers in `tests/fixtures/`, one file per service, keyed by
 a fragment of the requested URL. CI (`.github/workflows/ci.yml`) runs the same commands, then
 builds the image for linux/amd64 and linux/arm64; a `vX.Y.Z` tag publishes it, once
