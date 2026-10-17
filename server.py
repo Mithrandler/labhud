@@ -1432,6 +1432,9 @@ class Handler(BaseHTTPRequestHandler):
         p = re.fullmatch(r"/api/push/([a-z0-9_]{1,64})", self.path)
         if p:
             return self._push(p.group(1))
+        hk = re.fullmatch(r"/api/hook/([A-Za-z0-9_-]{1,64})", self.path)
+        if hk:
+            return self._hook(hk.group(1))
         if self.path == "/api/v1/pair":
             return self._pair()
         if self.path == "/api/v1/pair-code":
@@ -1444,7 +1447,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._app_admin(self.path.rsplit("/", 1)[1])
         if self.path == "/api/v1/push":
             return self._app_push()
-        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto|autoupdate|window)", self.path)
+        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto|autoupdate|window|hook|unhook)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
         st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune)", self.path)
@@ -1816,6 +1819,17 @@ class Handler(BaseHTTPRequestHandler):
         elif op == "targets":
             ok = agents.set_targets(aid, body.get("cap"), body.get("targets"))
             what = f"{body.get('cap')} targets {body.get('targets')}"
+        elif op in ("hook", "unhook"):   # a container's webhook URL: shown once, kept as a hash
+            target = str(body.get("target") or "")
+            if op == "unhook":
+                ok, what = agents.remove_hook(aid, target), f"webhook of {target} removed"
+            else:
+                token = agents.new_hook(aid, target)
+                if not token:
+                    return self._json({"ok": False, "error": "tick the container under Docker first"}, 400)
+                host = (self.headers.get("Host") or "").lower()
+                print(f"agent {name}: webhook for {target} made from {self.client_address[0]}", flush=True)
+                return self._json({"ok": True, "url": f"{'https' if TLS_CERT else 'http'}://{host}/api/hook/{token}"})
         elif op == "autoupdate":
             ok = agents.set_auto(aid, body.get("targets"))
             what = f"containers updated on their own {body.get('targets')}"
@@ -2168,6 +2182,17 @@ class Handler(BaseHTTPRequestHandler):
             text += f" in {took // 60}m {took % 60:02d}s" if took >= 60 else f" in {took}s"
         _log([(text, result in ("failed", "refused"))])
         self._json({"ok": True})
+
+    def _hook(self, token):
+        """A webhook from CI (agents.hook): the token is the whole check, so not behind LABHUD_HOSTS
+        nor the admin. It updates one container, as its UPDATE button would."""
+        ok, error, name, target = agents.hook(token) if agents.enabled() else (False, "forbidden", "", "")
+        if not target:
+            print(f"webhook from {self.client_address[0]} refused", flush=True)
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        print(f"webhook from {self.client_address[0]}: {name}/{target} update: {'started' if ok else error}", flush=True)
+        _log([(f"{target} on {name}: update asked by a webhook" + ("" if ok else f", refused: {error}"), not ok)])
+        return self._json({"ok": ok, **({} if ok else {"error": error})}, 202 if ok else 409)
 
     def _push(self, name):
         """An agent's data (sources/push.py). Not behind LABHUD_HOSTS: the signature is the check,

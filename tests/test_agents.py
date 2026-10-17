@@ -557,6 +557,41 @@ class Schedule(unittest.TestCase):
         self.assertEqual(sent, [("docker", "update", "web")])   # db is being updated already
 
 
+class Hooks(unittest.TestCase):
+    def setUp(self):
+        self.real = agents.store
+        agents.store = FakeStore()
+        agents.store.save(agents.AGENTS_KEY, {"a1b2c3d4": {"name": "n", "key": "k", "caps": ["docker"],
+                                                          "targets": {"docker": ["web", "images"]}}})
+        agents._hook_last.clear()
+
+    def tearDown(self):
+        agents.store = self.real
+        agents._live.pop("a1b2c3d4", None)
+
+    def test_one_container_once_in_30s_and_only_its_hash_kept(self):
+        self.assertIsNone(agents.new_hook("a1b2c3d4", "images"))
+        self.assertIsNone(agents.new_hook("a1b2c3d4", "db"))   # not ticked
+        token = agents.new_hook("a1b2c3d4", "web")
+        self.assertNotIn(token, json.dumps(agents.store.load(agents.AGENTS_KEY)))
+        sent = []
+
+        class Live:
+            def command(self, cap, verb, target, wait):
+                sent.append((cap, verb, target))
+                return True, "", ""
+        agents._live["a1b2c3d4"] = Live()
+        self.assertEqual(agents.hook(token, now=100)[0], True)
+        self.assertEqual(agents.hook(token, now=110)[1], "too soon: once in 30 s")
+        self.assertEqual(agents.hook(token, now=131)[0], True)
+        self.assertEqual(sent, [("docker", "update", "web")] * 2)
+        self.assertEqual(agents.hook("x" * 43)[1], "forbidden")
+        newer = agents.new_hook("a1b2c3d4", "web")   # a new one stops the old one
+        self.assertEqual(agents.hook(token, now=500)[1], "forbidden")
+        self.assertTrue(agents.remove_hook("a1b2c3d4", "web"))
+        self.assertEqual(agents.hook(newer, now=900)[1], "forbidden")
+
+
 class Versions(unittest.TestCase):
     def test_newer(self):
         for v, own, want in [("0.3.12", "0.3.0", True), ("0.3.0", "0.3.0", False), ("0.3.0", "0.3.12", False),

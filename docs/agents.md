@@ -112,6 +112,9 @@ tooling, and ⚙ only shows which version each agent runs.
   agent `LABHUD_AGENT_AUTO_LABELS=dockhand.update=false`: the containers labhud updates on their own
   get that label when they are made again, and lose it when they are no longer labhud's, so each
   updater keeps to its own.
+- **Webhooks** (⚙ > Devices > Agents > Docker > Webhooks): a secret URL per ticked container;
+  `curl -fsSk -X POST https://labhud:8095/api/hook/<token>` from CI, after it pushed the image,
+  updates that container as UPDATE does (at most once in 30 s). Shown once; a new one replaces it.
 - **The fleet's updates**: a card with `list = "fleet.updates"` (and `fleet.update_count` as a
   metric) lists every container with a newer image on every host; its panel has UPDATE on each
   ticked one and UPDATE ALL.

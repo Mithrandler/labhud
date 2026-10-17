@@ -14,6 +14,7 @@ state, the list), on_event(text, bad) for the timeline, and tls_fp, its certific
 """
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -241,6 +242,57 @@ def run_auto(wait=COMMAND_WAIT):
     return out
 
 
+# --- webhooks: CI asks for a container's update (POST /api/hook/<token>) ---
+#
+# One secret URL per (agent, container), made in ⚙; labhud keeps only its SHA-256. It does exactly
+# what UPDATE does on that container, while the container is ticked with UPDATE, at most once in
+# HOOK_EVERY seconds. Nothing else can be asked through it.
+
+HOOK_EVERY = 30
+HOOK_TOKEN = re.compile(r"[A-Za-z0-9_-]{32,64}")
+_hook_last = {}
+
+
+def _hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def new_hook(aid, target):
+    """A new secret for one ticked container (the old one, if any, stops working), or None."""
+    a = get(aid)
+    if not a or target == PRUNE_TARGET or target not in a.get("targets", {}).get("docker", []):
+        return None
+    token = secrets.token_urlsafe(32)
+    if not _save(aid, hooks=dict(a.get("hooks", {}), **{target: _hash(token)})):
+        return None
+    on_change()
+    return token
+
+
+def remove_hook(aid, target):
+    a = get(aid)
+    if not a or target not in a.get("hooks", {}):
+        return False
+    return bool(_save(aid, hooks={t: h for t, h in a["hooks"].items() if t != target}))
+
+
+def hook(token, now=None):
+    """(ok, error, agent name, container) for a webhook call."""
+    if not HOOK_TOKEN.fullmatch(token or ""):
+        return False, "forbidden", "", ""
+    h = _hash(token)
+    for aid, a in _load().items():
+        for target, kept in a.get("hooks", {}).items():
+            if hmac.compare_digest(kept, h):
+                now = now or time.monotonic()
+                if now - _hook_last.get((aid, target), -HOOK_EVERY) < HOOK_EVERY:
+                    return False, "too soon: once in 30 s", a["name"], target
+                _hook_last[(aid, target)] = now
+                ok, error = command(aid, "docker", "update", target)
+                return ok, error, a["name"], target
+    return False, "forbidden", "", ""
+
+
 def scheduler(stop, every=30):
     """One thread: opens the window once a day (its days), and says what it started."""
     last = None
@@ -361,7 +413,7 @@ def listing():
                     "host": a.get("host", {}), "paired": a.get("paired", 0), "seen": a.get("seen", 0),
                     "found": a.get("found", []), "caps": a.get("caps", []),
                     "prune": "docker" in a.get("caps", []) and PRUNE_TARGET in a.get("targets", {}).get("docker", []),
-                    "auto": auto_targets(a),
+                    "auto": auto_targets(a), "hooks": sorted(a.get("hooks", {})),
                     "targets": {c: _wings(a, c, v) for c, v in a.get("targets", {}).items()},
                     "choices": {c: v for c, v in found.items() if c in a.get("found", [])},
                     "labels": labels})

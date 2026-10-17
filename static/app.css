@@ -428,7 +428,7 @@ body.p-games #content {
 
 #confirm { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.78); }
 #confirm .box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; max-width: 320px; text-align: center; }
-#confirm p { font-size: 14px; margin-bottom: 16px; line-height: 1.4; }
+#confirm p { font-size: 14px; margin-bottom: 16px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 #confirm .buttons { display: flex; gap: 10px; justify-content: center; }
 #confirm .buttons.many { flex-wrap: wrap; }
 #confirm .buttons.many button { padding: 11px 14px; }

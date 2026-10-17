@@ -788,7 +788,38 @@ function agent_detail(a, box, reload) {
   box.appendChild(tabs);
   box.appendChild(agent_targets(a, cur, reload));
   if (cur === "docker") agent_auto_row(a, box, reload);
+  if (cur === "docker") agent_hook_row(a, box, reload);
   if (cur === "docker" && a.prune) agent_prune_row(a, box);
+}
+
+/** Webhooks: a secret URL per container that CI calls after it pushed a new image (POST), and
+    labhud updates that container. The URL is shown once; a new one replaces it. */
+function agent_hook_row(a, box, reload) {
+  const ticked = ((a.targets || {}).docker || []).filter((x) => x !== "images");
+  if (!ticked.length) return;
+  const hooks = a.hooks || [];
+  box.appendChild(el("h4", null, "Webhooks"));
+  box.appendChild(el("p", "hint", "For CI: a POST to the container's URL updates it, as UPDATE does (at most once in 30 s). "
+    + "The URL is the password: it is shown once, and a new one replaces it."));
+  const grid = el("div", "choices targets");
+  for (const x of ticked) {
+    const on = hooks.includes(x);
+    const b = el("button", "choice" + (on ? " on" : ""), x);
+    b.type = "button";
+    b.addEventListener("click", () => {
+      const make = () => agents_post("hook", { id: a.id, target: x }).then((r) => {
+        if (!r.ok) return show_message(r.error || "Refused.");
+        put($("#confirm-text"), `${x}'s webhook (copy it now, it is not shown again):\n\ncurl -fsSk -X POST ${r.url}`);
+        ask([]);
+        reload();
+      });
+      if (!on) return make();
+      put($("#confirm-text"), `${x} has a webhook. A new URL stops the old one.`);
+      ask([["NEW URL", make], ["REMOVE", () => agents_post("unhook", { id: a.id, target: x }).then(reload), true]]);
+    });
+    grid.appendChild(b);
+  }
+  box.appendChild(grid);
 }
 
 /** "Update on their own": the ticked containers labhud updates by itself in the window, when their
