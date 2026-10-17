@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-10-17
+
 ### Added
 - **Agents update themselves.** ⚙ > Agents shows *Update to vX* on an agent older than the release
   labhud pins (also `labhud agent update <agent>|--all`), and *Update agents automatically* does
@@ -21,6 +23,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **One design for the wall, ⚙ and the app**: the colours and icons are in `design/tokens.json`,
   and `design/build.py` writes them into the pages, `static/icons.js` and the app's `Tokens.kt`
   (a test fails when they drift). Nothing changes on the wall; its icons now come from there.
+- **The agent's release is 0.3.12** (`agents/agent-release.json`): the install line installs it,
+  and *Update* takes the agents to it.
 
 ## [0.3.13] - 2026-10-17
 
