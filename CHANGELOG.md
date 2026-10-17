@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-10-17
+
 What Dockhand and Beszel had and labhud did not, through the agent (0.3.13 or newer).
 
 ### Added
@@ -25,6 +27,10 @@ What Dockhand and Beszel had and labhud did not, through the agent (0.3.13 or ne
   unit of a host in the failed state.
 - **A year of history**: the charts in a card's panel have 30d and 1y, from a third series (an
   average every 2 hours, kept like the others; `/api/history?year`).
+
+### Changed
+- **The agent's release is 0.3.13** (`agents/agent-release.json`): *Update* in ⚙ takes the
+  agents installed as a service to it.
 
 ### Fixed
 - The agent's install line works as root without `sudo` (a Proxmox node has none): it uses `sudo`
