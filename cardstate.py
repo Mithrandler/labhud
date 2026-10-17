@@ -448,7 +448,9 @@ def containers(c, data):
                "check": ["agent", c["agent"], "docker", n], "actions": list(btns.get(n) or [])}
         out.append({"name": n, "up": up, "status": (x.get("status") or "running") if up else "STOPPED",
                     "update": x.get("update") is True, "updating": x.get("updating") is True,
-                    "card": one, "actions": useful_actions(one, data, True)})
+                    "card": one, "actions": useful_actions(one, data, True),
+                    "project": x.get("project") or "", "usage": container_usage(x) if up else "",
+                    "last": container_last(data, c["agent"], n)})
     return out
 
 
@@ -461,10 +463,52 @@ def _section(out, title, rows):
                                              for n, v, *b in rows]})
 
 
+HIST_TEXT = {"crash": "stopped by itself", "oom": "out of memory", "loop": "keeps stopping"}
+
+
+def history_text(h):
+    """app.js history_text: "updated 1.2 → 1.3", "update failed", "stopped by itself"."""
+    if h.get("kind") == "update":
+        return (f"updated {h['from']} → {h['to']}" if h.get("from") and h.get("to") else "updated") if h.get("ok") else "update failed"
+    return HIST_TEXT.get(h.get("kind"), str(h.get("kind") or ""))
+
+
+def container_history(data, agent, name):
+    rows = (get(data, f"agents.{agent}.history") or {}).get("docker:" + name)
+    return [h for h in rows if isinstance(h, dict)] if isinstance(rows, list) else []
+
+
+def container_usage(x):
+    """app.js container_usage: "3.1% CPU · 245M", "" before the agent measured it."""
+    if not _num(x.get("cpu")):
+        return ""
+    return f"{_nf1(x['cpu'])}% CPU · {bytes_(x.get('mem'))}" + (f" · {x['restarts']} restarts" if x.get("restarts") else "")
+
+
+def container_last(data, agent, name, now=None):
+    """app.js container_last: the newest entry of the last 7 days with its age, or ""."""
+    hist = container_history(data, agent, name)
+    if not hist:
+        return ""
+    age = (now or time.time()) - (hist[-1].get("t") or 0)
+    return f"{history_text(hist[-1])} · {duration(max(60, round(age)))} ago" if age < 7 * 86400 else ""
+
+
 def sections(c, data):
     """The panel's content as [{title, rows: [[name, value, bad]]}], like fill_panel in app.js
     (status, charts, links and actions are separate fields of the card)."""
     out = []
+    x = _container(c, data)
+    if x is not None:   # a container's own card: how it is, and what it went through
+        name = c["agent_target"].partition(":")[2]
+        _section(out, "container", [["image", x.get("image") or "—"],
+                                    ["state", x.get("status") or x.get("state") or "—", x.get("state") not in (None, "running")]]
+                 + ([["stack", x["project"]]] if x.get("project") else [])
+                 + ([["CPU", f"{_nf1(x['cpu'])}%"], ["RAM", bytes_(x.get("mem"))]] if _num(x.get("cpu")) else [])
+                 + ([["restarts", str(x["restarts"])]] if x.get("restarts") else [])
+                 + ([["update", "updating…"]] if x.get("updating") else [["update", "available"]] if x.get("update") else []))
+        _section(out, "history", [[time.strftime("%d %b %H:%M", time.localtime(h.get("t") or 0)), history_text(h), not h.get("ok")]
+                                  for h in reversed(container_history(data, c["agent"], name))])
     lst = lambda path: [d for d in (get(data, path) or []) if isinstance(d, dict)] if isinstance(get(data, path), list) else []  # noqa: E731
     pair_rows = lambda path: [[d.get("name"), d.get("value")] for d in lst(path)]  # noqa: E731
     pct = lambda v: format_(v, "percent")  # noqa: E731
@@ -620,6 +664,15 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False, found
         rows = get(data, c["list"])
         out["rows"] = [detail_row(d) + ([True] if d.get("quiet") else []) for d in rows if isinstance(d, dict)][:50] \
             if isinstance(rows, list) else []
+    if c.get("notes"):
+        out["notes"] = (data.get("notes") or {}).get("text", "")
+    if c.get("bookmarks"):
+        out["bookmarks"] = [b for b in topology.get("bookmarks") or [] if c["bookmarks"] is True or b["group"] == c["bookmarks"]]
+    if c.get("list") == "fleet.updates":   # the fleet's updates: each with its UPDATE, as the display's panel
+        out["updates"] = [dict({k: r[k] for k in ("name", "host", "image", "updating")},
+                               action=_action(r["action"], {"id": f"fleet:{r['host']}:{r['name']}", "name": r["name"]},
+                                              topology.get("actions") or {}) if r.get("action") else None)
+                          for r in (get(data, "fleet.updates") or []) if isinstance(r, dict)]
     if full:
         out["sections"] = sections(c, data)
         rows = containers(c, data)
