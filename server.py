@@ -956,14 +956,33 @@ def check_rules():
         _publish({"alerting": result})
 
 
+def fleet_updates(every):
+    """`fleet.updates`: every container, on every agent, whose registry has a newer image, as a
+    card's list (`list = "fleet.updates"`), host by host; `action` is its UPDATE button when it is
+    ticked. `fleet.update_count` for a metric."""
+    rows = []
+    for name, a in sorted(every.items()):
+        if name.startswith("_") or not isinstance(a, dict):
+            continue
+        btns = (a.get("buttons") or {}).get("docker") or {}
+        for c, x in sorted((a.get("containers") or {}).items()):
+            if isinstance(x, dict) and (x.get("update") is True or x.get("updating") is True):
+                act = next((b for b in btns.get(c, []) if b.endswith("-update")), None)
+                rows.append({"name": c, "value": "updating…" if x.get("updating") else name, "host": name,
+                             "image": x.get("image", ""), "action": act, "updating": x.get("updating") is True})
+    return {"updates": rows, "update_count": len(rows), "_t": int(time.time())}
+
+
 def publish_agents():
     """The agents' state (agents.py) as one more entry of the snapshot: `agents.<name>.…`. When
     what they may do changed the cards' buttons (a tick in ⚙, a guest moved), the displays reload."""
     # the demo's made-up agent (demo.agents, also polled as a source) beside any real one
     result = dict(demo.agents() if DEMO else {}, **agents.snapshot(), _t=int(time.time()))
+    fleet = fleet_updates(result)
     with _lock:
         _data["agents"] = result
-    _publish({"agents": result})
+        _data["fleet"] = fleet
+    _publish({"agents": result, "fleet": fleet})
     check_rules()
     if "TOPOLOGY" in globals() and _agent_buttons(with_agents(FILE_TOPOLOGY)) != _agent_buttons(TOPOLOGY):
         _apply(FILE_TOPOLOGY)

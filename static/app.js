@@ -1756,6 +1756,53 @@ function agent_containers(body, c) {
   body.appendChild(l);
 }
 
+/** `list = "fleet.updates"`: every container with a newer image, on every host, with its UPDATE
+    when it is ticked, and UPDATE ALL for those (one after the other is the agents' business: each
+    keeps the old container until the new one runs). */
+function fleet_updates_panel(body) {
+  const rows = get("fleet.updates") || [];
+  if (!rows.length) { section(body, "updates", [["all containers", "up to date"]]); return; }
+  const cards = rows.map((x) => ({ x, card: { id: `fleet:${x.host}:${x.name}`, name: x.name, agent: x.host,
+    agent_target: "docker:" + x.name, check: ["agent", x.host, "docker", x.name], actions: x.action ? [x.action] : [] } }));
+  const ready = cards.filter(({ x }) => x.action && !x.updating);
+  body.appendChild(el("h3", null, `updates (${rows.length})`));
+  const l = el("div", "list");
+  if (may_act() && ready.length > 1) {
+    const r = el("div", "row compose");
+    r.append(el("span", "n", "every ticked one"), el("span", "v", `${ready.length} containers`));
+    const box = el("span", "row-actions");
+    const b = el("button", null, "UPDATE ALL");
+    b.type = "button";
+    b.addEventListener("click", () => {
+      put($("#confirm-text"), `Update ${ready.length} containers on ${new Set(ready.map(({ x }) => x.host)).size} hosts?`);
+      ask([["YES", () => ready.forEach(({ x, card }) => send_action(x.action, card))]]);
+    });
+    box.appendChild(b);
+    r.appendChild(box);
+    l.appendChild(r);
+  }
+  for (const { x, card } of cards) {
+    const r = el("div", "row");
+    r.appendChild(el("span", "n", x.name));
+    const v = el("span", "v", x.host);
+    v.appendChild(el("span", "sub", x.image));
+    if (x.updating) v.appendChild(el("span", "badge", "updating…"));
+    r.appendChild(v);
+    if (may_act() && x.action) {
+      const box = el("span", "row-actions");
+      const b = el("button", null, x.updating ? "UPDATING…" : "UPDATE");
+      b.type = "button";
+      if (x.updating) b.disabled = true;
+      else b.addEventListener("click", () => ask_confirmation(card, x.action));
+      box.appendChild(b);
+      r.appendChild(box);
+    }
+    l.appendChild(r);
+  }
+  body.appendChild(l);
+  if (cards.some(({ x }) => !x.action)) body.appendChild(el("p", "panel-spec", "Without a button: not ticked with UPDATE in ⚙ > Devices > Agents."));
+}
+
 /** A compose project's title row in a guest's containers, with RESTART STACK when every running
     container of it is ticked with RESTART: each of them restarted, as their own buttons would. */
 function stack_row(members, project) {
@@ -2028,7 +2075,8 @@ function fill_panel() {
     if (c.metrics) {
       section(body, "numbers", c.metrics.map(([path, label, fmt]) => [label, format(get(path), fmt)]));
     }
-    if (c.list) {
+    if (c.list === "fleet.updates") fleet_updates_panel(body);
+    else if (c.list) {
       section(body, "details", (get(c.list) || []).map(detail_row));
     }
   }

@@ -119,6 +119,13 @@ title = "GENERAL"
     list = "events.recent"
     limit = 6
 
+    [[page.group.card]]
+    id = "fleet-updates"
+    name = "UPDATES"
+    metrics = [{ key = "fleet.update_count", label = "Images", format = "count" }]
+    list = "fleet.updates"
+    limit = 3
+
 [[page]]
 id = "network"
 title = "NETWORK"
