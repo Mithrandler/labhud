@@ -784,6 +784,29 @@ function agent_detail(a, box, reload) {
   }
   box.appendChild(tabs);
   box.appendChild(agent_targets(a, cur, reload));
+  if (cur === "docker" && a.prune) agent_prune_row(a, box);
+}
+
+/** "images" ticked under Docker: the button that removes the images no container uses (unused
+    for a day at least), and what that freed. */
+function agent_prune_row(a, box) {
+  const row = el("div", "choices");
+  const b = el("button", "choice", "Clean unused images");
+  b.type = "button";
+  const out = el("span", "hint", "Images no container uses, unused for a day at least.");
+  b.addEventListener("click", () => {
+    put($("#confirm-text"), `Remove the unused images on ${a.name}? An image a stopped container uses stays.`);
+    ask([["CLEAN", () => {
+      b.disabled = true;
+      put(out, "cleaning…");
+      setup_post("prune", { agent: a.name }).then((r) => {
+        b.disabled = false;
+        put(out, r.ok ? "✓ " + r.output : "✕ " + (r.error || "failed"));
+      });
+    }]]);
+  });
+  row.append(b, out);
+  box.appendChild(row);
 }
 
 function agent_targets(a, c, reload) {
@@ -803,12 +826,14 @@ function agent_targets(a, c, reload) {
     tools.appendChild(f);
   }
   if (all.length > 1) {   // a host with 28 containers: one tap instead of 28
-    const every = ticked.length === all.length;
-    const b = el("button", "choice small", every ? "Untick all" : `Tick all ${all.length}`);
+    const every = ticked.filter((x) => !(c === "docker" && x === "images")).length === all.filter((x) => !(c === "docker" && x === "images")).length;
+    const b = el("button", "choice small", every ? "Untick all" : `Tick all ${all.filter((x) => !(c === "docker" && x === "images")).length}`);
     b.type = "button";
     b.addEventListener("click", () => {
       b.classList.add("pending");
-      agents_post("targets", { id: a.id, cap: c, targets: every ? [] : all })
+      // "images" (docker's clean-up) is never ticked by the way: on its own button only
+      const keep = c === "docker" && ticked.includes("images") ? ["images"] : [];
+      agents_post("targets", { id: a.id, cap: c, targets: every ? [] : [...all.filter((x) => !(c === "docker" && x === "images")), ...keep] })
         .then((r) => { if (!r.ok) show_message(r.error || "Refused."); reload(); });
     });
     tools.appendChild(b);
@@ -818,7 +843,7 @@ function agent_targets(a, c, reload) {
   for (const x of all) {
     const on = ticked.includes(x);
     const label = ((a.labels || {})[c] || {})[x];
-    const b = el("button", "choice" + (on ? " on" : ""), label ? `${label} (${x})` : x);
+    const b = el("button", "choice" + (on ? " on" : ""), label && label.toLowerCase().includes(x) ? label : label ? `${label} (${x})` : x);
     b.type = "button";
     b.addEventListener("click", () => {
       b.classList.add("pending");
@@ -962,7 +987,7 @@ const CLI_HELP = {
   "Phones": ["phone pair [name]", "phone list", "phone remove <name>"],
   "Sources": ["source list", "source test <name> [KEY=value …]", "source add <name> [KEY=value …] [--page <page>]", "source remove <name>"],
   "Scan my network": ["scan [<cidr>]"],
-  "Alert rules": ["alert list", "alert add <card|*> <cpu|mem|disk|temp|offline> [above] [minutes]", "alert remove <number>"],
+  "Alert rules": ["alert list", "alert add <card|*> <cpu|mem|disk|temp|offline|failed> [above] [minutes]", "alert remove <number>"],
   "Notifications": ["notify set <url> [--token T]", "notify test [<url>] [--token T]", "notify forget"],
   "Config file": ["status", "config take-over"],
   "Edit config": ["config show", "config edit"],

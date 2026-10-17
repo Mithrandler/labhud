@@ -300,9 +300,9 @@ def _alert_rules(ck, raw, cards):
             ck.err(where, "minutes must be a whole number from 0 to 1440")
             minutes = None
         rule = {"on": on, "what": what, "minutes": minutes}
-        if what == "offline":
+        if what in alerting.NO_MARK:
             if "above" in r:
-                ck.err(where, "offline takes minutes, not above")
+                ck.err(where, f"{what} takes minutes, not above")
         elif what is not None:
             above = ck.need(where, r, "above", (int, float), "a number")
             if above is not None and not 0 < above <= (150 if what == "temp" else 100):

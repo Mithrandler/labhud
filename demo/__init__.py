@@ -259,19 +259,47 @@ def agents():
         "net_rx": int(_wave(2.2e6, 1.4e6, 86400, 0.6) + _wave(0, 4e5, 900)),
         "net_tx": int(_wave(0.8e6, 0.5e6, 86400, 0.6) + _wave(0, 1.5e5, 1200)),
         "load1": round(_wave(1.2, 0.8, 1800), 2), "uptime": 86400 * 3},
-        "containers": {name: dict(x, image=img) for name, (img, x) in DEMO_CONTAINERS.items()},
+        "containers": {name: dict(x, image=img, **_usage(name, x)) for name, (img, x) in DEMO_CONTAINERS.items()},
+        "failed_units": ["backup-offsite.service"],
+        "history": _history(),
         "buttons": {"docker": {name: [f"agent-{DEMO_AGENT}-docker-{name}-{v}" for v in ("start", "stop", "restart", "update")]
                                for name in DEMO_CONTAINERS if name != "portainer"}}}}
 
 
-# The docker VM's containers: one with a newer image, one being updated, one stopped, one not ticked.
+def _usage(name, x):
+    """A running container's numbers as agent 0.3.13 measures them: a day's rhythm per container."""
+    if x.get("state") != "running":
+        return {}
+    base = {"jellyfin": (18, 900e6), "sonarr": (2, 260e6), "radarr": (3, 280e6), "qbittorrent": (9, 520e6), "portainer": (0.5, 40e6)}
+    cpu, mem = base.get(name, (1, 100e6))
+    return {"cpu": round(max(0.1, _wave(cpu, cpu * 0.6, 86400, len(name) / 10)), 1), "mem": int(_wave(mem, mem * 0.1, 3600)),
+            "mem_pct": round(100 * mem / 8e9, 1), **({"restarts": 2} if name == "qbittorrent" else {})}
+
+
+def _history():
+    """What the agent told about the containers lately (agents.<name>.history)."""
+    now = int(time.time())
+    return {"docker:jellyfin": [{"t": now - 9 * 86400, "kind": "update", "ok": True, "from": "10.10.1", "to": "10.10.3",
+                                 "text": "jellyfin updated (10.10.1 → 10.10.3)"}],
+            "docker:qbittorrent": [{"t": now - 2 * 86400, "kind": "update", "ok": True, "from": "5.0.1", "to": "5.0.2",
+                                    "text": "qbittorrent updated (5.0.1 → 5.0.2)"},
+                                   {"t": now - 5 * 3600, "kind": "oom", "ok": False, "text": "qbittorrent ran out of memory"}],
+            "docker:flaresolverr": [{"t": now - 2 * 3600, "kind": "crash", "ok": False,
+                                     "text": "flaresolverr stopped by itself (exit code 1)"}]}
+
+
+# The docker VM's containers: one with a newer image, one being updated, one stopped, one not ticked,
+# in two compose projects (and one in none).
 DEMO_AGENT = "d0c4e100"
 DEMO_CONTAINERS = {
-    "jellyfin": ("jellyfin/jellyfin:10.10.3", {"state": "running", "status": "Up 3 days (healthy)", "health": "healthy", "update": True}),
-    "sonarr": ("lscr.io/linuxserver/sonarr:latest", {"state": "running", "status": "Up 3 days"}),
-    "radarr": ("lscr.io/linuxserver/radarr:latest", {"state": "running", "status": "Up 3 days", "update": True, "updating": True}),
-    "qbittorrent": ("lscr.io/linuxserver/qbittorrent:latest", {"state": "running", "status": "Up 3 days"}),
-    "flaresolverr": ("ghcr.io/flaresolverr/flaresolverr:latest", {"state": "exited", "status": "Exited (1) 2 hours ago"}),
+    "jellyfin": ("jellyfin/jellyfin:10.10.3", {"state": "running", "status": "Up 3 days (healthy)", "health": "healthy", "update": True,
+                                               "project": "media"}),
+    "sonarr": ("lscr.io/linuxserver/sonarr:latest", {"state": "running", "status": "Up 3 days", "project": "arr"}),
+    "radarr": ("lscr.io/linuxserver/radarr:latest", {"state": "running", "status": "Up 3 days", "update": True, "updating": True,
+                                                     "project": "arr"}),
+    "qbittorrent": ("lscr.io/linuxserver/qbittorrent:latest", {"state": "running", "status": "Up 3 days", "project": "arr"}),
+    "flaresolverr": ("ghcr.io/flaresolverr/flaresolverr:latest", {"state": "exited", "status": "Exited (1) 2 hours ago",
+                                                                  "project": "arr"}),
     "portainer": ("portainer/portainer-ce:2.21.4", {"state": "running", "status": "Up 3 days"}),
 }
 
@@ -284,10 +312,10 @@ _ROWS = {
     DEMO_AGENT: {"name": "docker", "addr": "192.0.2.30", "install": "container", "version": "0.3.0", "found": ["sensors", "docker", "systemd", "host"],
                  "host": {"hostname": "docker", "os": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.48+deb13-amd64", "arch": "amd64"},
                  "caps": ["sensors", "docker"],
-                 "targets": {"docker": [n for n in DEMO_CONTAINERS if n != "portainer"]},
-                 "choices": {"docker": sorted(DEMO_CONTAINERS), "systemd": ["cron.service", "docker.service", "ssh.service"],
+                 "targets": {"docker": [n for n in DEMO_CONTAINERS if n != "portainer"] + ["images"]},
+                 "choices": {"docker": sorted(DEMO_CONTAINERS) + ["images"], "systemd": ["cron.service", "docker.service", "ssh.service"],
                              "host": ["host"]},
-                 "labels": {}},
+                 "labels": {"docker": {"images": "Unused images"}}, "prune": True},
     DEMO_PVE_AGENT: {"name": "pve", "addr": "192.0.2.10", "install": "service", "version": "0.2.9",   # one release behind
                      "found": ["sensors", "host", "pve", "wol", "systemd"],
                      "host": {"hostname": "pve", "os": "Proxmox VE 9.1", "kernel": "6.17.2-1-pve", "arch": "amd64"},

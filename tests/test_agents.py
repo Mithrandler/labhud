@@ -286,7 +286,7 @@ class Server(DemoServer):
         self.assertEqual(r["released"], pinned)
         self.assertIn(r["code"], r["install"])
         if pinned:   # one line downloads and checks; the image is there too
-            self.assertIn("/agent/install-agent.sh | sudo sh -s -- --url", r["install"])
+            self.assertIn("/agent/install-agent.sh | " + agents.SUDO + " sh -s -- --url", r["install"])
             self.assertIn("--network host", r["docker"])
             self.assertIn(r["code"], r["docker"])
         else:        # nothing to download: a binary of your own, checked against your checksum
@@ -301,7 +301,7 @@ class Server(DemoServer):
         finally:
             agents.release = real
         self.assertEqual((r["released"], r["builds"]), (True, ["amd64"]))
-        self.assertEqual(r["install"], "curl -fsSL http://wall:8095/agent/install-agent.sh | sudo sh -s -- "
+        self.assertEqual(r["install"], "curl -fsSL http://wall:8095/agent/install-agent.sh | " + agents.SUDO + " sh -s -- "
                                        "--url http://wall:8095 --code CODE1")
         self.assertTrue(r["docker"].endswith("ghcr.io/mithrandler/labhud-agent:latest"))
 
@@ -310,7 +310,7 @@ class Server(DemoServer):
         r = agents.install_lines("https://wall:8095", "CODE1", own_cert=True)
         sha = hashlib.sha256(agents.install_script()).hexdigest()
         self.assertTrue(r["install"].startswith("curl -fsSLk https://wall:8095/agent/install-agent.sh -o install-agent.sh "
-                                                f"&& echo '{sha}  install-agent.sh' | sha256sum -c && sudo sh install-agent.sh "
+                                                f"&& echo '{sha}  install-agent.sh' | sha256sum -c && " + agents.SUDO + " sh install-agent.sh "
                                                 "--url https://wall:8095 --code CODE1"), r["install"])
 
     # --- after pairing ---
@@ -324,7 +324,7 @@ class Server(DemoServer):
                                           "containers": {"jellyfin": {"state": "running"}}})
         self.assertTrue(self.wait_for(lambda: json.loads(self.get("/api/snapshot")[2])
                                       .get("agents", {}).get("statebox", {}).get("sensors", {}).get("cpu") == 12.5))
-        self.assertEqual(self.listed(aid)["choices"]["docker"], ["jellyfin"])
+        self.assertEqual(self.listed(aid)["choices"]["docker"], ["jellyfin", "images"])
         c.close()
 
     def test_replay_closes(self):
@@ -430,6 +430,79 @@ class Logs(Server):
         c.close()
 
 
+class PruneAndHistory(Server):
+    """Cleaning a host's unused images (the target "images", the admin only) and what each
+    container went through (events with a kind)."""
+
+    def test_prune(self):
+        c, session, aid, key = self.pair(name="imgbox")
+        origin = f"http://{self.host}"
+        self.manage("caps", {"id": aid, "caps": ["docker"]})
+        self.assertEqual(self.post_json("/api/setup/prune", {"agent": "imgbox"}, origin)[0], 502)   # not ticked
+        self.manage("targets", {"id": aid, "cap": "docker", "targets": ["jellyfin", "images"]})
+        c.read_signed(key, session), c.read_signed(key, session)
+        answer = {}
+        t = threading.Thread(target=lambda: answer.update(r=self.post_json("/api/setup/prune", {"agent": "imgbox"}, origin)))
+        t.start()
+        cmd = c.read_signed(key, session)
+        self.assertEqual((cmd["cap"], cmd["verb"], cmd["target"]), ("docker", "prune", "images"))
+        c.send_signed(key, session, aid, {"type": "result", "cmd": cmd["cmd"], "ok": True, "output": "freed 1.2 GB (14 image layers)"})
+        t.join(5)
+        self.assertEqual(json.loads(answer["r"][1]), {"ok": True, "output": "freed 1.2 GB (14 image layers)"})
+        # "images" is no container: no buttons for it, and no action on it
+        b = json.loads(self.get("/api/snapshot")[2])["agents"]["imgbox"]["buttons"]["docker"]
+        self.assertEqual(sorted(b), ["jellyfin"])
+        self.assertEqual(self.post_json(f"/action/agent-{aid}-docker-images-stop", {}, origin)[0], 403)
+        self.assertEqual(self.listed(aid)["prune"], True)
+        c.close()
+
+    def test_history(self):
+        c, session, aid, key = self.pair(name="histbox")
+        for ev in ({"text": "web updated (1.2 → 1.3)", "bad": False, "cap": "docker", "target": "web",
+                    "kind": "update", "from": "1.2", "to": "1.3"},
+                   {"text": "web stopped by itself (exit code 1)", "bad": True, "cap": "docker", "target": "web", "kind": "crash"},
+                   {"text": "no kind", "bad": False},
+                   {"text": "bad target", "bad": True, "cap": "docker", "target": "../x", "kind": "crash"}):
+            c.send_signed(key, session, aid, dict(ev, type="event"))
+        hist = lambda: json.loads(self.get("/api/snapshot")[2]).get("agents", {}).get("histbox", {}).get("history", {})  # noqa: E731
+        self.assertTrue(self.wait_for(lambda: len(hist().get("docker:web", [])) == 2))
+        rows = hist()
+        self.assertEqual(list(rows), ["docker:web"])
+        self.assertEqual([(r["kind"], r["ok"], r.get("from"), r.get("to")) for r in rows["docker:web"]],
+                         [("update", True, "1.2", "1.3"), ("crash", False, None, None)])
+        c.close()
+
+
+class PruneRules(unittest.TestCase):
+    def setUp(self):
+        self.real = agents.store
+        agents.store = FakeStore()
+        agents.store.save(agents.AGENTS_KEY, {"a1b2c3d4": {"name": "n", "key": "k", "caps": ["docker"],
+                                                          "targets": {"docker": ["jellyfin", "images"]}}})
+        agents.history.clear()
+
+    def tearDown(self):
+        agents.store = self.real
+
+    def test_images_takes_prune_only(self):
+        self.assertTrue(agents.allowed("a1b2c3d4", "docker", "prune", "images"))
+        self.assertFalse(agents.allowed("a1b2c3d4", "docker", "prune", "jellyfin"))
+        self.assertFalse(agents.allowed("a1b2c3d4", "docker", "start", "images"))
+        self.assertIsNone(agents.resolve("agent-a1b2c3d4-docker-images-stop"))
+        self.assertEqual(sorted(agents.buttons("a1b2c3d4", agents.get("a1b2c3d4"))["docker"]), ["jellyfin"])
+
+    def test_history_kept_and_dropped_with_the_agent(self):
+        for i in range(agents.HISTORY_PER_TARGET + 3):
+            agents._remember("a1b2c3d4", {"cap": "docker", "target": "web", "kind": "update", "text": str(i)}, 1000 + i)
+        rows = agents.history["a1b2c3d4"]["docker:web"]
+        self.assertEqual(len(rows), agents.HISTORY_PER_TARGET)
+        self.assertEqual(rows[-1]["text"], str(agents.HISTORY_PER_TARGET + 2))
+        agents._remember("a1b2c3d4", {"cap": "docker", "target": "web", "kind": "exec"}, 1)   # not a kind
+        self.assertEqual(len(rows), agents.HISTORY_PER_TARGET)
+        agents.remove("a1b2c3d4")
+        self.assertNotIn("a1b2c3d4", agents.history)
+
+
 class Versions(unittest.TestCase):
     def test_newer(self):
         for v, own, want in [("0.3.12", "0.3.0", True), ("0.3.0", "0.3.0", False), ("0.3.0", "0.3.12", False),
@@ -511,7 +584,7 @@ class Names(unittest.TestCase):
         a["a1b2c3d4"]["found"] = ["docker", "ptero"]
         agents.store.save(agents.AGENTS_KEY, a)
         got = agents.listing()[0]
-        self.assertEqual(got["choices"]["docker"], ["jellyfin"])
+        self.assertEqual(got["choices"]["docker"], ["jellyfin", "images"])
         self.assertNotIn(u, got["targets"]["docker"])
         self.assertNotIn(u, agents.snapshot()["n100"]["buttons"]["docker"])
 

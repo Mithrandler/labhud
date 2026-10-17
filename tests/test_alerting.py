@@ -51,6 +51,16 @@ class Rules(unittest.TestCase):
         # a short reboot says nothing
         self.assertEqual([e for es in self.run_seq([agents(online=False)] * 3 + [agents()])[0] for e in es], [])
 
+    def test_failed_units_after_their_minutes_and_back(self):
+        def failed(units):
+            return {"PVE": {"online": True, "sensors": {}, "failed_units": units}}
+        seq = [failed(["nginx.service"])] * 6 + [failed([])]
+        flat = [e for es in self.run_seq(seq)[0] for e in es]
+        self.assertEqual(flat, [("PVE: 1 failed unit for 5 min (nginx.service)", True, ("rule", "host-pve"), False),
+                                ("PVE: no failed units", False, ("rule", "host-pve"), False)])
+        # no systemd on the host (null): never judged
+        self.assertEqual([e for es in self.run_seq([failed(None)] * 8)[0] for e in es], [])
+
     def test_not_judged_in_maintenance_on_demand_or_without_the_agent(self):
         hot = [agents(online=False, disk=99)] * 8
         self.assertEqual([e for es in self.run_seq(hot, skip={"host-pve"})[0] for e in es], [])
@@ -103,6 +113,7 @@ class Config(unittest.TestCase):
                           ('on = "*"\nwhat = "cpu"', "missing 'above'"),
                           ('on = "*"\nwhat = "cpu"\nabove = 120', "from 1 to 100"),
                           ('on = "*"\nwhat = "offline"\nabove = 1', "offline takes minutes"),
+                          ('on = "*"\nwhat = "failed"\nabove = 1', "failed takes minutes"),
                           ('on = "*"\nwhat = "cpu"\nabove = 90\nminutes = -1', "minutes must be")):
             with self.assertRaises(config.ConfigError) as e:
                 self.load("[[alert]]\n" + bad + "\n")

@@ -14,14 +14,14 @@ class LongHistory(unittest.TestCase):
         self.patch = mock.patch.dict(server.TOPOLOGY, {"trends": ["a.cpu"]})
         self.patch.start()
         self.addCleanup(self.patch.stop)
-        for d in (server._history, server._long, server._long_pending):
+        for d in (server._history, server._long, server._long_pending, server._year, server._year_pending):
             saved = dict(d)
             d.clear()
             self.addCleanup(lambda d=d, saved=saved: (d.clear(), d.update(saved)))
 
     def minute(self, value):
         server._history.setdefault("a.cpu", collections.deque(maxlen=server.HISTORY_POINTS)).append(value)
-        return server._sample_long()
+        return server._sample_long()[0]
 
     def test_average_of_fifteen_minutes(self):
         per_point = server.LONG_STEP // server.HISTORY_STEP
@@ -34,6 +34,16 @@ class LongHistory(unittest.TestCase):
         for _ in range(server.LONG_STEP // server.HISTORY_STEP):
             out = self.minute(None)
         self.assertEqual(out, {"a.cpu": [None]})
+
+    def test_the_year_is_every_eight_long_points(self):
+        per_point = server.LONG_STEP // server.HISTORY_STEP
+        years = []
+        for v in [10] * (4 * per_point) + [30] * (4 * per_point):
+            server._history.setdefault("a.cpu", collections.deque(maxlen=server.HISTORY_POINTS)).append(v)
+            years.append(server._sample_long()[1])
+        self.assertTrue(all(y is None for y in years[:-1]))
+        self.assertEqual(years[-1], {"a.cpu": [20.0]})
+        self.assertEqual(server.history(year=True)["step"], server.YEAR_STEP)
 
     def test_api_shape(self):
         server._long["a.cpu"] = collections.deque([1.0, 2.0], maxlen=server.LONG_POINTS)

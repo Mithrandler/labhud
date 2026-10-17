@@ -20,6 +20,7 @@ only `admin` and `pin` work, as with init.py.
     labhud agent allow <agent> <cap> [target ... | --all]      tick a capability (and its targets)
     labhud agent deny <agent> <cap> [target ...]   untick the targets, or the whole capability
     labhud agent logs <agent> <container>          a ticked container's last lines
+    labhud agent prune <agent>                     clean the unused images (the target "images" ticked)
     labhud agent update <agent> | --all            update to the release labhud pins (a service, not a container)
     labhud agent auto on|off                       older agents update themselves when they dial in
     labhud phone pair [name]                       a one-time link and QR code for the app
@@ -30,7 +31,7 @@ only `admin` and `pin` work, as with init.py.
     labhud config show | edit | take-over          the config file: print it, edit it in $EDITOR, take it over
     labhud scan [<cidr>]                           look for services on the network
     labhud alert list                              the rules and what is wrong now
-    labhud alert add <card|*> <cpu|mem|disk|temp|offline> [above] [minutes]
+    labhud alert add <card|*> <cpu|mem|disk|temp|offline|failed> [above] [minutes]
     labhud alert remove <number>                   (the number from `alert list`)
     labhud notify test [<url>] [--token T]         one notification now (to <url>, or where it is set)
     labhud notify set <url> [--token T]            the ntfy topic labhud sends to (labhud restarts)
@@ -248,8 +249,8 @@ def agent(args):
         if cap not in a["found"]:
             raise Failed(f"{a['name']} did not find {cap} on its host (it found: {', '.join(a['found'])})")
         choices = a["choices"].get(cap, [])
-        if targets == ["--all"]:
-            targets = list(choices)
+        if targets == ["--all"]:   # every container, not "images" (the clean-up): that one by its name
+            targets = [t for t in choices if not (cap == "docker" and t == "images")]
         missing = [t for t in targets if t not in choices and t not in a["targets"].get(cap, [])]
         if missing and cap != "wol":   # a MAC that is off is not in the ARP table: typed in, like ⚙
             raise Failed(f"{a['name']} has no {cap} {', '.join(missing)}; it has: {', '.join(choices) or 'none'}")
@@ -288,8 +289,10 @@ def agent(args):
     if sub == ["logs"] and len(args) == 3:
         print(setup("logs", {"agent": args[1], "target": args[2]}).get("output", ""), end="")
         return
+    if sub == ["prune"] and len(args) == 2:
+        return print(f"✓ {args[1]}: {setup('prune', {'agent': args[1]}).get('output', '')}")
     raise Failed("usage: labhud agent list | code | allow <agent> <cap> [target … | --all] | deny <agent> <cap> [target …] "
-                 "| logs <agent> <container> | update <agent> | update --all | auto on|off")
+                 "| logs <agent> <container> | prune <agent> | update <agent> | update --all | auto on|off")
 
 
 def phone(args):
@@ -427,9 +430,9 @@ def alert(args):
     rules = a["rules"]
     if sub == ["list"]:
         names = {h["id"]: h["name"] for h in a["hosts"]}
-        unit = lambda r: "" if r["what"] == "offline" else (" °C" if r["what"] == "temp" else "%")  # noqa: E731
+        unit = lambda r: "" if r["what"] in ("offline", "failed") else (" °C" if r["what"] == "temp" else "%")  # noqa: E731
         table([[i + 1, "every host" if r["on"] == "*" else names.get(r["on"], r["on"]), r["what"],
-                "" if r["what"] == "offline" else f"> {r['above']}{unit(r)}", f"{r['minutes']} min"]
+                "" if r["what"] in ("offline", "failed") else f"> {r['above']}{unit(r)}", f"{r['minutes']} min"]
                for i, r in enumerate(rules)], ["#", "ON", "WHAT", "MARK", "FOR"])
         nt = a["notify"]
         quiet = f"quiet {nt['quiet'][0]}–{nt['quiet'][1]}" if nt.get("quiet") else "no quiet hours"
@@ -448,7 +451,7 @@ def alert(args):
         except ValueError:
             raise Failed("above and minutes are numbers") from None
         rule = {"on": on, "what": what}
-        if what == "offline":
+        if what in ("offline", "failed"):
             rule["minutes"] = nums[0] if nums else 5
         else:
             if not nums:

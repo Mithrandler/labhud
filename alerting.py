@@ -1,13 +1,14 @@
 """Alert rules on hosts ([[alert]] in config.toml, ⚙ > Alerts): a host's CPU, RAM, disk or
-temperature past a mark for some minutes, or its agent gone for some minutes.
+temperature past a mark for some minutes, its agent gone for some minutes, or systemd units of it
+failed for some minutes.
 
 A rule names the cards it is for (`on`: a card id, or "*" for every card with an agent of its own,
 that is a host and not one container or MAC of it) and what it watches:
 
     [[alert]]
     on = "*"          # or a card id; a card's own rule wins over "*" for the same `what`
-    what = "cpu"      # cpu | mem | disk | temp | offline
-    above = 90        # % (°C for temp); not for offline
+    what = "cpu"      # cpu | mem | disk | temp | offline | failed
+    above = 90        # % (°C for temp); not for offline and failed
     minutes = 10      # how long it must last; 0 = at once
 
 Without any [[alert]] the defaults below apply; `alert = []` turns them all off. The numbers come
@@ -19,7 +20,9 @@ skipped. cpu and mem are not urgent: during the quiet hours (notify.py) they wai
 
 import time
 
-WHAT = {"cpu": "CPU", "mem": "RAM", "disk": "disk", "temp": "temperature", "offline": "offline"}
+WHAT = {"cpu": "CPU", "mem": "RAM", "disk": "disk", "temp": "temperature", "offline": "offline",
+        "failed": "failed services"}
+NO_MARK = {"offline", "failed"}   # what takes minutes only, no `above`
 URGENT = {"offline", "disk", "temp"}
 KEYS = {"on", "what", "above", "minutes"}
 DEFAULT_RULES = [
@@ -28,6 +31,7 @@ DEFAULT_RULES = [
     {"on": "*", "what": "disk", "above": 90, "minutes": 0},
     {"on": "*", "what": "temp", "above": 85, "minutes": 5},
     {"on": "*", "what": "offline", "minutes": 5},
+    {"on": "*", "what": "failed", "minutes": 5},
 ]
 
 
@@ -102,6 +106,15 @@ class Rules:
                 if what == "offline":
                     bad, back = not a.get("online"), bool(a.get("online"))
                     text, back_text = f"{name} offline{_for(r['minutes'])}", f"{name} back online"
+                elif what == "failed":
+                    units = a.get("failed_units") if a.get("online") else None
+                    if not isinstance(units, list):   # no systemd, or nothing known now
+                        self.since.pop(key, None)
+                        continue
+                    bad, back = bool(units), not units
+                    shown_units = ", ".join(str(u) for u in units[:4]) + (", …" if len(units) > 4 else "")
+                    text = f"{name}: {len(units)} failed {'unit' if len(units) == 1 else 'units'}{_for(r['minutes'])} ({shown_units})"
+                    back_text = f"{name}: no failed units"
                 else:
                     v = reading(what, a.get("sensors")) if a.get("online") else None
                     if v is None:

@@ -132,8 +132,10 @@ part means "this capability is not here", an empty one "found, nothing in it".
             "power_cpu":17.4,"power_gpu":19.0,"power_base":40,"power":76,"kwh_day":1.82,"cost_day":2.37},
  "guests":{"101":{"name":"pbs","type":"qemu","running":true,"cpu":1.2,"mem":34.0,
                   "mem_bytes":…,"mem_max":…,"uptime":86400,"tags":["infra"]}},
- "containers":{"jellyfin":{"state":"running","health":"healthy","image":"jellyfin/jellyfin"}},
+ "containers":{"jellyfin":{"state":"running","health":"healthy","image":"jellyfin/jellyfin","project":"media",
+                           "cpu":4.2,"mem":845000000,"mem_pct":10.6,"net_rx":2100,"net_tx":480,"restarts":1}},
  "units":{"nginx.service":{"active":"active","sub":"running"}},
+ "failed_units":["backup-offsite.service"],
  "servers":{"1a2b3c4d":{"name":"Valheim","state":"running"}},
  "neighbours":{"aa:bb:cc:dd:ee:ff":{"ip":"192.0.2.50"}}}
 ```
@@ -145,14 +147,30 @@ the same. `units` lists the loaded `.service` units, at most 200. `sensors.net_r
 bytes a second over the physical interfaces. A container has `"update": true` when its registry has
 another digest for its tag (checked for the ticked containers, 2 minutes after the start and then
 every 6 hours, through the engine and its logins), and `"updating": true` while one runs.
+`project` is its compose project (the `com.docker.compose.project` label). A ticked container that
+runs has its usage, measured every 30 s (agent 0.3.13+): `cpu` in % of one core (as `docker
+stats`: 200 is two cores), `mem` in bytes without the page cache, `mem_pct` of its limit,
+`net_rx` / `net_tx` in bytes a second (from the second measure on) and `restarts`.
+`failed_units` (agent 0.3.13+) names every systemd unit in the failed state, of any type, ticked or
+not: `null` without systemd, `[]` when none failed.
 `neighbours` is the ARP table, to choose Wake-on-LAN targets from.
 
 `result` — the end of a command: `{"type":"result","cmd":"<id>","ok":true}` or
 `{"type":"result","cmd":"<id>","ok":false,"error":"<one line>"}`. A command that only starts
 something long (a package update, a container's update) answers `ok` at once and reports the end
-as an `event`. A read verb (`logs`) answers with `output`: text, at most 48 KiB (the newest part).
+as an `event`. A read verb (`logs`, `prune`) answers with `output`: text, at most 48 KiB (the newest part).
 
 `event` — `{"type":"event","text":"pve2: packages updated (12)","bad":false}`, for the timeline.
+From agent 0.3.13 an event can say what it is about, for the history labhud keeps beside each
+target (the last 10): `cap`, `target`, and `kind` — `update` (with `from` and `to`: the image's
+`org.opencontainers.image.version` label, else its short id), `crash` (a ticked container stopped
+by itself with an error: no stop was asked for, which the engine shows as a `kill` first), `oom`,
+or `loop` (3 crashes in 10 minutes, said once, then quiet for 30 minutes).
+
+```json
+{"type":"event","text":"jellyfin updated (10.10.1 → 10.10.3)","bad":false,
+ "cap":"docker","target":"jellyfin","kind":"update","from":"10.10.1","to":"10.10.3"}
+```
 
 ### labhud → agent
 
@@ -178,7 +196,7 @@ stops (`systemctl` will not restart it: it exits with status 0 and the unit has
 | cap | targets | verbs | done through |
 |---|---|---|---|
 | `sensors` | — | — (state only) | `/proc`, hwmon, `nvidia-smi`, RAPL, `statvfs` |
-| `docker` | container names | `start` `stop` `restart` `update` `logs` | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only |
+| `docker` | container names, and `images` | `start` `stop` `restart` `update` `logs`; `prune` on `images` only | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only; `prune` = the images no container uses, unused for 24 hours, removed (`docker image prune -a --filter until=24h`), answered with what it freed. `images` takes no other verb |
 | `systemd` | unit names | `start` `stop` `restart` | D-Bus `org.freedesktop.systemd1` |
 | `host` | `host` | `reboot` `shutdown` `update` | D-Bus `login1`; `update` = a transient unit running apt-get/dnf |
 | `wol` | MAC addresses (`aa:bb:…`, lowercase) | `wake` | UDP broadcast to port 9 |

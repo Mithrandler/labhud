@@ -10,8 +10,8 @@ APIs, never through a shell or scripts you write. The agent is
 | capability | on the host it uses | labhud can |
 |---|---|---|
 | `sensors` | `/proc`, hwmon, `nvidia-smi`, RAPL | show CPU, memory, disk, load, uptime, CPU temperature, GPUs, power |
-| `docker` | the socket (`/var/run/docker.sock`) | start, stop, restart, update containers; read their logs (the admin) |
-| `systemd` | D-Bus (`org.freedesktop.systemd1`) | start, stop, restart services |
+| `docker` | the socket (`/var/run/docker.sock`) | start, stop, restart, update containers; read their logs (the admin); show their CPU, RAM and network; say when one stops by itself, runs out of memory or keeps restarting; clean the unused images (the target `images`, the admin) |
+| `systemd` | D-Bus (`org.freedesktop.systemd1`) | start, stop, restart services; name the failed units (all of them, for an alert) |
 | `host` | D-Bus (`login1`, a transient unit) | reboot, shut down, update packages |
 | `wol` | a UDP broadcast | wake other machines on its network |
 | `pve` | the local API (`https://localhost:8006`, a token made at install) | start, shut down, reboot VMs and LXCs |
@@ -93,6 +93,19 @@ tooling, and ⚙ only shows which version each agent runs.
   container again with the same settings, keeping the old one until the new one runs (and
   putting it back if it does not). "updating…" until the agent says how it went, in the
   timeline. The admin also gets **LOGS**: its last 200 lines under the row, with Refresh.
+- In a guest's panel the containers are **grouped by compose project**, each with its CPU and RAM
+  (the ticked ones that run) and its latest news of the last 7 days: "updated 10.10.1 → 10.10.3 ·
+  2d ago", "out of memory · 5h ago". A project whose running containers are all ticked with RESTART
+  has **RESTART STACK**: each of them restarted, as their own buttons would. A container's own card
+  shows its whole **history** (the last 10 updates and crashes).
+- A container that **stops by itself** (with an error, not stopped by someone), **runs out of
+  memory** or **keeps stopping** (3 times in 10 minutes) is an event on the timeline and a
+  notification, like a host going down.
+- **Clean unused images**: tick `images` under Docker (it is no container, and "Tick all" leaves it
+  out), then ⚙ > Devices > Agents > *Clean unused images*, or `labhud agent prune <agent>`: the
+  images no container uses, unused for a day at least, go, and the timeline says what that freed.
+- **Failed units**: the `failed` alert rule (on by default, after 5 minutes) watches every systemd
+  unit of a host in the failed state, ticked or not.
 - `wake = "<agent>:<mac>"`: WAKE from another agent, one that is up while this machine is off
   (the MAC ticked under its Wake-on-LAN). It adds to whatever the card's own `agent` gives, so a
   Proxmox host can have its sensors and SHUT DOWN from its own agent and WAKE from a neighbour's.

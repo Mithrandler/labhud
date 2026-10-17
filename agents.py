@@ -40,7 +40,7 @@ EVENTS_PER_MINUTE = 10
 MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this much, the newest part)
 
 VERBS = {
-    "docker": ("start", "stop", "restart", "update", "logs"),
+    "docker": ("start", "stop", "restart", "update", "logs", "prune"),
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
@@ -49,7 +49,13 @@ VERBS = {
 }
 CAPS = ("sensors",) + tuple(VERBS)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs",)}
+READS = {"docker": ("logs", "prune")}
+# docker's prune cleans the host's unused images: ticked as this target, which is no container
+# and takes no other verb (the agent checks the same)
+PRUNE_TARGET = "images"
+HISTORY_KEY = "agent_history"
+HISTORY_KINDS = ("update", "crash", "oom", "loop")
+HISTORY_PER_TARGET = 10
 
 
 def acts(cap):
@@ -208,6 +214,8 @@ def remove(aid):
             store.save(AGENTS_KEY, agents)
         s = _live.pop(aid, None)
         _state.pop(aid, None)
+        if history.pop(aid, None) is not None:
+            store.save(HISTORY_KEY, history)
     if s:
         s.bye("removed")
     if a:
@@ -217,6 +225,8 @@ def remove(aid):
 
 def allowed(aid, cap, verb, target):
     a = get(aid)
+    if cap == "docker" and (verb == "prune") != (target == PRUNE_TARGET):
+        return False
     return bool(a and cap in VERBS and verb in VERBS[cap] and cap in a.get("caps", [])
                 and target in a.get("targets", {}).get(cap, []))
 
@@ -237,16 +247,23 @@ def _wings(a, cap, names):
     return [n for n in names if not WINGS.fullmatch(n)]
 
 
+def _containers(a, names):
+    """The ticked docker targets that are containers (not the images' target)."""
+    return [n for n in _wings(a, "docker", names) if n != PRUNE_TARGET]
+
+
 def listing():
     """For ⚙ > Devices > Agents: everything but the keys, with what each agent last reported."""
     out = []
     for aid, a in _load().items():
         st = _state.get(aid) or {}
-        found = {"docker": _wings(a, "docker", sorted(st.get("containers") or {})), "systemd": sorted(st.get("units") or {}),
+        found = {"docker": _containers(a, sorted(st.get("containers") or {})) + [PRUNE_TARGET],
+                 "systemd": sorted(st.get("units") or {}),
                  "pve": sorted(st.get("guests") or {}, key=lambda v: int(v) if v.isdigit() else 0),
                  "ptero": sorted(st.get("servers") or {}), "wol": sorted(st.get("neighbours") or {}),
                  "host": ["host"] if "host" in a.get("found", []) else []}
-        labels = {"pve": {k: (v or {}).get("name") for k, v in (st.get("guests") or {}).items()},
+        labels = {"docker": {PRUNE_TARGET: "Unused images"},
+                  "pve": {k: (v or {}).get("name") for k, v in (st.get("guests") or {}).items()},
                   "ptero": {k: (v or {}).get("name") for k, v in (st.get("servers") or {}).items()},
                   "wol": {k: (v or {}).get("ip") for k, v in (st.get("neighbours") or {}).items()}}
         out.append({"id": aid, "name": a["name"], "online": aid in _live, "version": a.get("version", ""),
@@ -254,6 +271,7 @@ def listing():
                     "addr": getattr(_live.get(aid), "peer", "") or "",
                     "host": a.get("host", {}), "paired": a.get("paired", 0), "seen": a.get("seen", 0),
                     "found": a.get("found", []), "caps": a.get("caps", []),
+                    "prune": "docker" in a.get("caps", []) and PRUNE_TARGET in a.get("targets", {}).get("docker", []),
                     "targets": {c: _wings(a, c, v) for c, v in a.get("targets", {}).items()},
                     "choices": {c: v for c, v in found.items() if c in a.get("found", [])},
                     "labels": labels})
@@ -266,8 +284,35 @@ def snapshot():
     for aid, a in _load().items():
         st = {k: v for k, v in (_state.get(aid) or {}).items() if k != "type"}
         out[a["name"]] = dict(st, id=aid, online=aid in _live, version=a.get("version", ""),
-                              caps=a.get("caps", []), buttons=buttons(aid, a))
+                              caps=a.get("caps", []), buttons=buttons(aid, a), history=history.get(aid, {}))
     return out
+
+
+# --- what happened to each target: updates and crashes (events with a kind, agent 0.3.13+) ---
+
+history = {}    # agent id -> {"docker:jellyfin": [{t, kind, ok, text, from, to}], newest last}
+
+
+def load_history():
+    history.clear()
+    history.update(store.load(HISTORY_KEY) or {})
+
+
+def _remember(aid, msg, now):
+    cap, target, kind = msg.get("cap"), msg.get("target"), msg.get("kind")
+    if cap not in TARGET or kind not in HISTORY_KINDS or not isinstance(target, str) \
+            or not TARGET[cap].fullmatch(target):
+        return
+    entry = {"t": int(now), "kind": kind, "ok": msg.get("bad") is not True, "text": str(msg.get("text", ""))[:160]}
+    for k in ("from", "to"):
+        if isinstance(msg.get(k), str) and msg[k]:
+            entry[k] = msg[k][:40]
+    with _lock:
+        rows = history.setdefault(aid, {}).setdefault(f"{cap}:{target}", [])
+        rows.append(entry)
+        del rows[:-HISTORY_PER_TARGET]
+        store.save(HISTORY_KEY, history)
+    on_change()   # the panels show it
 
 
 # What a page draws next to one target without a card of its own: a container in a guest's
@@ -278,8 +323,13 @@ LISTED = ("docker", "systemd", "ptero")
 
 def buttons(aid, a):
     """{cap: {target: [action names]}} for the ticked targets the pages list themselves."""
-    return {cap: {t: [action_name(aid, cap, t, v) for v in acts(cap)] for t in _wings(a, cap, a.get("targets", {}).get(cap, []))}
+    return {cap: {t: [action_name(aid, cap, t, v) for v in acts(cap)] for t in _containers_or(a, cap)}
             for cap in LISTED if cap in a.get("caps", [])}
+
+
+def _containers_or(a, cap):
+    names = a.get("targets", {}).get(cap, [])
+    return _containers(a, names) if cap == "docker" else _wings(a, cap, names)
 
 
 # --- actions: names, and the buttons a card gets ---
@@ -314,7 +364,8 @@ def resolve(name):
     a = get(aid)
     if not a or verb not in acts(cap) or cap not in a.get("caps", []):
         return None
-    hits = [t for t in a.get("targets", {}).get(cap, []) if tref(t) == ref]
+    hits = [t for t in a.get("targets", {}).get(cap, []) if tref(t) == ref
+            and not (cap == "docker" and t == PRUNE_TARGET)]
     return (aid, cap, hits[0], verb) if len(hits) == 1 else None
 
 
@@ -632,6 +683,7 @@ class Session:
             self._events = [t for t in self._events if now - t < 60]
             if len(self._events) < EVENTS_PER_MINUTE and isinstance(msg.get("text"), str):
                 self._events.append(now)
+                _remember(self.aid, msg, now)
                 name = (get(self.aid) or {}).get("name", self.aid)
                 on_event(f"{name}: {msg['text'][:160]}", msg.get("bad") is True)
 
@@ -677,6 +729,10 @@ def install_script(releases=""):
     return body
 
 
+# sudo where there is one to need: root on a Proxmox node has no sudo at all
+SUDO = '$([ "$(id -u)" = 0 ] || echo sudo)'
+
+
 def install_lines(base, code, image="", releases="", own_cert=False):
     """What ⚙ > Devices > Agents > Add an agent shows: the commands that work with this labhud as it is.
     With a release pinned, one curl line downloads and checks the agent, and the image exists.
@@ -695,11 +751,11 @@ def install_lines(base, code, image="", releases="", own_cert=False):
         except OSError:
             sha = ""
         out["install"] = (f"curl -fsSLk {script} -o install-agent.sh && echo '{sha}  install-agent.sh' | sha256sum -c "
-                          f"&& sudo sh install-agent.sh {args}")
+                          f"&& {SUDO} sh install-agent.sh {args}")
     elif pinned:
-        out["install"] = f"curl -fsSL {script} | sudo sh -s -- {args}"
+        out["install"] = f"curl -fsSL {script} | {SUDO} sh -s -- {args}"
     else:
-        out["install"] = f"curl -fsSL {script} -o install-agent.sh && sudo sh install-agent.sh {args}"
+        out["install"] = f"curl -fsSL {script} -o install-agent.sh && {SUDO} sh install-agent.sh {args}"
     image = image or (IMAGE if pinned else "")
     # host network: Wake-on-LAN and the ARP table; / read-only: the host's sensors and disk; the
     # sockets: Docker and systemd

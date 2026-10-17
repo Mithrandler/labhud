@@ -322,6 +322,11 @@ LONG_STEP = 900
 LONG_POINTS = 7 * 86400 // LONG_STEP
 _long = {}
 _long_pending = {}   # path -> the minute values since the last long point
+# The year: the average of every 2 hours (8 long points), a year of them, kept the same way.
+YEAR_STEP = 7200
+YEAR_POINTS = 365 * 86400 // YEAR_STEP
+_year = {}
+_year_pending = {}   # path -> the long points since the last year point
 
 
 def _value(path, data=None):
@@ -348,13 +353,17 @@ def seed_demo_history():
     rows = demo.history(LONG_POINTS, LONG_STEP, lambda d: [_value(p, d) for p in paths])
     for i, path in enumerate(paths):
         _long[path] = collections.deque((r[i] for r in rows), maxlen=LONG_POINTS)
+    rows = demo.history(YEAR_POINTS // 4, YEAR_STEP, lambda d: [_value(p, d) for p in paths])   # 3 months
+    for i, path in enumerate(paths):
+        _year[path] = collections.deque((r[i] for r in rows), maxlen=YEAR_POINTS)
 
 
 def restore_history():
     """The sparklines and the uptime kept at the last stop (LABHUD_DATA), with the minutes it was
     down left empty."""
     for name, target, step, points in (("history", _history, HISTORY_STEP, HISTORY_POINTS),
-                                       ("history_long", _long, LONG_STEP, LONG_POINTS)):
+                                       ("history_long", _long, LONG_STEP, LONG_POINTS),
+                                       ("history_year", _year, YEAR_STEP, YEAR_POINTS)):
         saved = store.load(name)
         if not saved:
             continue
@@ -384,12 +393,14 @@ def sample_history():
             for path in set(_history) - set(TOPOLOGY["trends"]):  # gone after a reload
                 del _history[path]
             kept = {p: list(s) for p, s in _history.items()}
-            long_kept = _sample_long()
+            long_kept, year_kept = _sample_long()
             uptime_kept = _sample_uptime(_data)
         if not DEMO:
             store.save("history", {"t": int(time.time()), "series": kept})
             if long_kept is not None:
                 store.save("history_long", {"t": int(time.time()), "series": long_kept})
+            if year_kept is not None:
+                store.save("history_year", {"t": int(time.time()), "series": year_kept})
             if uptime_kept is not None:
                 store.save("uptime", {"t": int(time.time()), "series": uptime_kept})
         check_rules()   # "offline for 5 min" needs the clock, not only an agent's report
@@ -398,11 +409,12 @@ def sample_history():
 
 def _sample_long():
     """Adds the latest minute to the running 15 minutes; on the 15th, appends their average to the
-    long series. Returns the long series when a point was added (to be saved), else None. Under _lock."""
+    long series, and every 8th long point to the year's the same way. Returns (long, year): each
+    series when a point was added to it (to be saved), else None. Under _lock."""
     for path in TOPOLOGY["trends"]:
         _long_pending.setdefault(path, []).append(_history[path][-1] if _history.get(path) else None)
     if len(next(iter(_long_pending.values()), [])) * HISTORY_STEP < LONG_STEP:
-        return None
+        return None, None
     for path in TOPOLOGY["trends"]:
         values = [v for v in _long_pending.get(path, []) if v is not None]
         series = _long.setdefault(path, collections.deque(maxlen=LONG_POINTS))
@@ -410,7 +422,23 @@ def _sample_long():
     for path in set(_long) - set(TOPOLOGY["trends"]):
         del _long[path]
     _long_pending.clear()
-    return {p: list(s) for p, s in _long.items()}
+    return {p: list(s) for p, s in _long.items()}, _sample_year()
+
+
+def _sample_year():
+    """The year's series when the latest long point completed 2 hours, else None. Under _lock."""
+    for path in TOPOLOGY["trends"]:
+        _year_pending.setdefault(path, []).append(_long[path][-1] if _long.get(path) else None)
+    if len(next(iter(_year_pending.values()), [])) * LONG_STEP < YEAR_STEP:
+        return None
+    for path in TOPOLOGY["trends"]:
+        values = [v for v in _year_pending.get(path, []) if v is not None]
+        _year.setdefault(path, collections.deque(maxlen=YEAR_POINTS)).append(
+            round(sum(values) / len(values), 1) if values else None)
+    for path in set(_year) - set(TOPOLOGY["trends"]):
+        del _year[path]
+    _year_pending.clear()
+    return {p: list(s) for p, s in _year.items()}
 
 
 # Uptime: for every card with a check, each minute up / down / off on purpose, folded every 15
@@ -487,8 +515,10 @@ def seed_demo_uptime():
         _uptime[c["id"]] = collections.deque(series, maxlen=UPTIME_POINTS)
 
 
-def history(long=False):
+def history(long=False, year=False):
     with _lock:
+        if year:
+            return {"step": YEAR_STEP, "series": {p: list(s) for p, s in _year.items()}}
         if long:
             return {"step": LONG_STEP, "series": {p: list(s) for p, s in _long.items()}}
         return {"step": HISTORY_STEP, "series": {p: list(s) for p, s in _history.items()}}
@@ -1364,8 +1394,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(snapshot())
         if path == "/api/status":
             return self._json(health())
-        if path == "/api/history":   # ?long: 15-minute points over 7 days, for the panel's charts
-            return self._json(history(long="long" in self.path.partition("?")[2]))
+        if path == "/api/history":   # ?long: 15-minute points over 7 days, ?year: 2-hour ones over a year
+            q = self.path.partition("?")[2]
+            return self._json(history(long="long" in q, year="year" in q))
         if path == "/api/uptime":    # ?range=7d: a card's uptime in its panel, as /api/v1/uptime gives the app
             return self._json(uptime(7 * 86400 if "range=7d" in self.path.partition("?")[2] else 86400))
         if path == "/api/events":   # every kept event, newest first: the day's timeline
@@ -1397,7 +1428,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|prune)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
@@ -1462,7 +1493,8 @@ class Handler(BaseHTTPRequestHandler):
                      for x in xs if x["id"] == g.group(1)]
             return self._json(found[0]) if found else self._json({"error": "no such game server"}, 404)
         if path == "/api/v1/history":
-            return self._json(history(long="long" in self.path.partition("?")[2]))
+            q = self.path.partition("?")[2]
+            return self._json(history(long="long" in q, year="year" in q))
         if path == "/api/v1/uptime":
             span = 7 * 86400 if "range=7d" in self.path.partition("?")[2] else 86400
             return self._json(uptime(span))
@@ -1822,6 +1854,17 @@ class Handler(BaseHTTPRequestHandler):
                 ok, error, output = agents.read(aid, "docker", "logs", target)
                 print(f"setup: logs of {target} on {a['name']} from {who}: {'ok' if ok else error}", flush=True)
                 return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error}, 200 if ok else 502)
+            if op == "prune":   # a host's unused images, by the agent that has "images" ticked
+                if DEMO and str(body.get("agent")) == "docker":
+                    return self._json({"ok": True, "output": "freed 2.4 GB (31 image layers)"})
+                aid, a = agents.by_name(str(body.get("agent") or "")) if agents.enabled() else (None, None)
+                if not a:
+                    return self._json({"ok": False, "error": "no such agent"}, 404)
+                ok, error, output = agents.read(aid, "docker", "prune", agents.PRUNE_TARGET, wait=60)
+                print(f"setup: unused images on {a['name']} cleaned by {who}: {output if ok else error}", flush=True)
+                _log([(f"{a['name']}: unused images cleaned, {output}" if ok else
+                       f"{a['name']}: cleaning unused images failed: {error}", not ok)])
+                return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error}, 200 if ok else 502)
             if op == "scan-status":
                 return self._json({"ok": True, **scan.status(), "default": scan.default_cidr(os.environ.get("LABHUD_HOSTS", ""))})
             if op == "scan":
@@ -1893,7 +1936,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("rules and notify are needed")
             keep = ("on", "what", "above", "minutes")
             raw = managed.read_config()
-            raw["alert"] = [{k: r[k] for k in keep if k in r and not (k == "above" and r.get("what") == "offline")}
+            raw["alert"] = [{k: r[k] for k in keep if k in r and not (k == "above" and r.get("what") in alerting.NO_MARK)}
                             for r in rules if isinstance(r, dict)]
             quiet = nt.get("quiet")
             raw["notify"] = {"via": str(nt.get("via") or "both")}
@@ -1907,7 +1950,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({
             "ok": True, "managed": managed.active(), "rules": TOPOLOGY["alert_rules"],
             "hosts": [{"id": c["id"], "name": c.get("name", c["id"]), "agent": c["agent"]} for c in alerting.hosts(cards)],
-            "what": alerting.WHAT, "urgent": sorted(alerting.URGENT),
+            "what": alerting.WHAT, "urgent": sorted(alerting.URGENT), "no_mark": sorted(alerting.NO_MARK),
             "notify": {"via": nt.get("via", "both"), "quiet": list(nt["quiet"]) if nt.get("quiet") else None},
             "ntfy": {"set": notify.enabled(), "host": notify.where(), "format": notify.FORMAT,
                      "problem": notify.problem(), "sent": notify.state["sent"],
@@ -2223,6 +2266,7 @@ if __name__ == "__main__":
         mqtt.start()
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
     agents.tls_fp = devices.tls_fingerprint(TLS_CERT)
+    agents.load_history()
     threading.Thread(target=agents.pinger, args=(threading.Event(),), daemon=True, name="agents").start()
     publish_agents()
     # Maintenance as kept at the last stop is not news: in the snapshot before the watcher starts.

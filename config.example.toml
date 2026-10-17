@@ -168,8 +168,9 @@ sources = ["synology"]
 
 # Alert rules on hosts (optional; ⚙ > Alerts writes them). Without any, these defaults apply
 # to every card with an agent of its own ("*"); `alert = []` (at the top) turns them off. `what`
-# is cpu, mem, disk, temp (the hottest of CPU and GPUs) or offline (the agent gone); `above` is
-# % (°C for temp), `minutes` how long it must last. A card's own rule wins over "*".
+# is cpu, mem, disk, temp (the hottest of CPU and GPUs), offline (the agent gone) or failed
+# (systemd units in the failed state); `above` is % (°C for temp), not for offline and failed,
+# `minutes` how long it must last. A card's own rule wins over "*".
 # [[alert]]
 # on = "*"
 # what = "cpu"

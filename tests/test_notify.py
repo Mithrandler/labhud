@@ -42,6 +42,8 @@ class Notify(unittest.TestCase):
     def setUp(self):
         Receiver.got = []
         notify.FORMAT, notify.ALL = "json", False
+        while not notify._queue.empty():   # what other tests' servers logged is not this test's
+            notify._queue.get_nowait()
 
     def wait(self, count, seconds=8):
         deadline = time.monotonic() + seconds
@@ -73,9 +75,10 @@ class Notify(unittest.TestCase):
         notify.submit("T", "NAS down", True)
         got = self.wait(1)
         time.sleep(0.5)
-        self.assertEqual(len(got), 1)
-        self.assertEqual(json.loads(got[0][1])["text"], "NAS down")
-        self.assertEqual(got[0][0]["Authorization"], "Bearer test-token")
+        # (a demo server of another test may send its own alerts meanwhile: only these two count)
+        mine = [g for g in got if json.loads(g[1])["text"].startswith("NAS ")]
+        self.assertEqual([json.loads(g[1])["text"] for g in mine], ["NAS down"])
+        self.assertEqual(mine[0][0]["Authorization"], "Bearer test-token")
 
     def test_delay_drops_a_host_back_up(self):
         notify.submit("T", "NAS down", True, still_true=lambda: False)

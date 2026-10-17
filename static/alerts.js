@@ -63,6 +63,9 @@ function alr_number(value, min, max, pick) {
   return i;
 }
 
+/** offline and failed take minutes only (server: alerting.NO_MARK). */
+const alr_no_mark = (what) => (ALR.data.no_mark || ["offline"]).includes(what);
+
 function draw_rules(host) {
   host.textContent = "";
   const d = ALR.data;
@@ -76,15 +79,15 @@ function draw_rules(host) {
     row.appendChild(alr_select([["*", "All hosts"], ...d.hosts.map((h) => [h.id, h.name])], r.on, (v) => { r.on = v; alr_changed(); }));
     row.appendChild(alr_select(Object.entries(d.what), r.what, (v) => {
       r.what = v;
-      if (v === "offline") delete r.above; else if (r.above == null) r.above = ALR_DEFAULT[v];
+      if (alr_no_mark(v)) delete r.above; else if (r.above == null) r.above = ALR_DEFAULT[v];
       if (r.minutes == null) r.minutes = 5;
       alr_changed();
     }));
-    if (r.what !== "offline") {
+    if (!alr_no_mark(r.what)) {
       row.append(el("span", "alr-w", "above"), alr_number(r.above, 1, r.what === "temp" ? 150 : 100, (n) => { r.above = n; alr_changed(); }),
         el("span", "alr-w", ALR_UNIT[r.what]));
     }
-    row.append(el("span", "alr-w", r.what === "offline" ? "for" : "for at least"),
+    row.append(el("span", "alr-w", alr_no_mark(r.what) ? "for" : "for at least"),
       alr_number(r.minutes, 0, 1440, (n) => { r.minutes = n; alr_changed(); }), el("span", "alr-w", "min"));
     if (d.urgent.includes(r.what)) row.appendChild(el("span", "alr-tag", "urgent"));
     const x = el("button", "lay-more", "✕");

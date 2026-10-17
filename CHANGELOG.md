@@ -6,6 +6,30 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+What Dockhand and Beszel had and labhud did not, through the agent (0.3.13 or newer).
+
+### Added
+- **Containers that stop by themselves**: one that stops with an error (no one stopped it), runs
+  out of memory, or keeps stopping (3 times in 10 minutes) is an event on the timeline and a
+  notification, like a host going down.
+- **Each container's history**: its updates (from which version to which) and its crashes, the last
+  10, on its card's panel; the latest of the last 7 days under its row in a guest's panel.
+- **Compose stacks**: a guest's containers grouped by compose project, with **RESTART STACK** when
+  every running container of it is ticked with RESTART.
+- **CPU and RAM per container** (the ticked ones that run), on their rows and their cards; also
+  `agents.<name>.containers.<c>.cpu` / `mem` / `mem_pct` / `net_rx` / `net_tx` for metrics.
+- **Clean unused images**: the docker target `images` (ticked on its own, never by "Tick all"),
+  then ⚙ > Devices > Agents > *Clean unused images* or `labhud agent prune <agent>`: the images no
+  container uses, unused for a day at least, and the timeline says what that freed.
+- **Failed systemd units**: the alert rule `failed` (on by default, after 5 minutes), for every
+  unit of a host in the failed state.
+- **A year of history**: the charts in a card's panel have 30d and 1y, from a third series (an
+  average every 2 hours, kept like the others; `/api/history?year`).
+
+### Fixed
+- The agent's install line works as root without `sudo` (a Proxmox node has none): it uses `sudo`
+  only when it is not root.
+
 ## [0.3.14] - 2026-10-17
 
 ### Added

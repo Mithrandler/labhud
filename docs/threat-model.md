@@ -131,6 +131,7 @@ HTTP (`setupmode.py`).
 | Someone on the LAN reads the traffic | `https://` with a pinned certificate (the default) | with `LABHUD_HTTP=on`: names of containers, guests, services, and the sensors |
 | A web page opens the WebSocket | refused when the request has an `Origin` | nothing |
 | labhud itself is taken over | the agent acts only on the ticked targets, with the ticked verbs, and accepts no code | the ticked buttons can be pressed: that is their price |
+| Cleaning images by mistake or on purpose | `prune` only on the target `images`, ticked on its own (never by "Tick all"), the admin only; only images no container uses, unused for a day | an image to pull again |
 | Command injection through a target | targets have a strict shape, checked in labhud and in the agent; each verb is one API call | nothing |
 
 ### Availability

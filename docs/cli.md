@@ -25,6 +25,7 @@ also work while it is stopped: they write their files directly, like `init.py`.
     labhud agent allow <agent> <cap> [target ... | --all]      tick a capability (and its targets)
     labhud agent deny <agent> <cap> [target ...]   untick the targets, or the whole capability
     labhud agent logs <agent> <container>          a ticked container's last lines
+    labhud agent prune <agent>                     clean the unused images (the target "images" ticked)
     labhud agent update <agent> | --all            update to the release labhud pins (a service, not a container)
     labhud agent auto on|off                       older agents update themselves when they dial in
     labhud phone pair [name]                       a one-time link and QR code for the app
@@ -35,7 +36,7 @@ also work while it is stopped: they write their files directly, like `init.py`.
     labhud config show | edit | take-over          the config file: print it, edit it in $EDITOR, take it over
     labhud scan [<cidr>]                           look for services on the network
     labhud alert list                              the rules and what is wrong now
-    labhud alert add <card|*> <cpu|mem|disk|temp|offline> [above] [minutes]
+    labhud alert add <card|*> <cpu|mem|disk|temp|offline|failed> [above] [minutes]
     labhud alert remove <number>                   (the number from `alert list`)
     labhud notify test [<url>] [--token T]         one notification now (to <url>, or where it is set)
     labhud notify set <url> [--token T]            the ntfy topic labhud sends to (labhud restarts)

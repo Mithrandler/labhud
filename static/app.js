@@ -1680,17 +1680,56 @@ function container_rows(c) {
   });
 }
 
+/** "3% CPU · 42 MB": a running container's usage, from its agent (0.3.13+, ticked ones). */
+function container_usage(x) {
+  if (typeof x.cpu !== "number") return "";
+  return `${nf1.format(x.cpu)}% CPU · ${bytes(x.mem)}` + (x.restarts ? ` · ${x.restarts} restarts` : "");
+}
+
+/** What happened to a container lately (agents.<name>.history, newest last): its updates and its
+    crashes, as [{t, kind, ok, text, from, to}]. */
+function container_history(agent, name) {
+  return (get(`agents.${agent}.history`) || {})["docker:" + name] || [];
+}
+
+const HIST_TEXT = { crash: "stopped by itself", oom: "out of memory", loop: "keeps stopping" };
+
+/** One line for an entry: "updated 1.2 → 1.3", "update failed", "stopped by itself". */
+function history_text(h) {
+  if (h.kind === "update") return h.ok ? (h.from && h.to ? `updated ${h.from} → ${h.to}` : "updated") : "update failed";
+  return HIST_TEXT[h.kind] || h.kind;
+}
+
+/** The newest entry of the last 7 days, as a short line with its age, or "". */
+function container_last(agent, name) {
+  const h = container_history(agent, name).slice(-1)[0];
+  const age = h && Date.now() / 1000 - h.t;
+  return h && age < 7 * 86400 ? `${history_text(h)} · ${duration(Math.max(60, Math.round(age)))} ago` : "";
+}
+
 /** The containers the guest's own agent reports. A container ticked in ⚙ > Devices > Agents has
     its buttons on its row (signed in); the admin also gets LOGS, its last lines under the row. */
 function agent_containers(body, c) {
-  const rows = container_rows(c);
+  const all = get(`agents.${c.agent}.containers`) || {};
+  // grouped by compose project (stable: stopped first within each), with its usage and its last news
+  const rows = container_rows(c).map((x) => Object.assign(x, { project: (all[x.name] || {}).project || "",
+    usage: x.up ? container_usage(all[x.name] || {}) : "", last: container_last(c.agent, x.name) }))
+    .sort((a, b) => (a.project || "\uffff").localeCompare(b.project || "\uffff"));
   if (!rows.length) return;
   body.appendChild(el("h3", null, `docker containers (${rows.filter((r) => r.up).length}/${rows.length})`));
   const l = el("div", "list");
+  const stacks = new Set(rows.map((x) => x.project)).size > 1 || rows.some((x) => x.project);
+  let shownStack = null;
   for (const x of rows) {
+    if (stacks && x.project !== shownStack) {
+      shownStack = x.project;
+      l.appendChild(stack_row(rows.filter((y) => y.project === x.project), x.project));
+    }
     const r = el("div", "row" + (x.up ? "" : " bad"));
     r.appendChild(el("span", "n", x.name));
     const v = el("span", "v", x.status);
+    if (x.usage) v.appendChild(el("span", "sub", x.usage));
+    if (x.last) v.appendChild(el("span", "sub", x.last));
     if (x.updating && !(may_act() && x.card.actions.length)) v.appendChild(el("span", "badge", "updating…"));
     else if (x.update && !x.updating) v.appendChild(el("span", "badge", "update available"));
     r.appendChild(v);
@@ -1715,6 +1754,27 @@ function agent_containers(body, c) {
     logs_box(l, c.agent, x.name);
   }
   body.appendChild(l);
+}
+
+/** A compose project's title row in a guest's containers, with RESTART STACK when every running
+    container of it is ticked with RESTART: each of them restarted, as their own buttons would. */
+function stack_row(members, project) {
+  const r = el("div", "row compose");
+  r.appendChild(el("span", "n", project || "not in a stack"));
+  r.appendChild(el("span", "v", `${members.filter((y) => y.up).length}/${members.length} running`));
+  const restarts = members.filter((y) => y.up).map((y) => [y.card, y.card.actions.find((a) => action_verb(a) === "restart")]);
+  if (project && may_act() && restarts.length && restarts.every(([, a]) => a)) {
+    const box = el("span", "row-actions");
+    const b = el("button", null, "RESTART STACK");
+    b.type = "button";
+    b.addEventListener("click", () => {
+      put($("#confirm-text"), `Restart the ${restarts.length} running containers of ${project}?`);
+      ask([["YES", () => restarts.forEach(([card, a]) => send_action(a, card))]]);
+    });
+    box.appendChild(b);
+    r.appendChild(box);
+  }
+  return r;
 }
 
 // A container's logs, open under its row: kept here so the panel's redraws (on every update)
@@ -1802,7 +1862,13 @@ function fill_panel() {
   if (ct) {
     const name = c.agent_target.slice("docker:".length);
     section(body, "container", [["image", ct.image || "—"], ["state", ct.status || ct.state || "—", ct.state && ct.state !== "running"],
+      ...(ct.project ? [["stack", ct.project]] : []),
+      ...(typeof ct.cpu === "number" ? [["CPU", nf1.format(ct.cpu) + "%"], ["RAM", bytes(ct.mem) + (ct.mem_pct ? ` · ${nf1.format(ct.mem_pct)}% of its limit` : "")]] : []),
+      ...(ct.restarts ? [["restarts", String(ct.restarts)]] : []),
       ...(ct.updating ? [["update", "updating…"]] : ct.update ? [["update", "available"]] : [])]);
+    const hist = container_history(c.agent, name).slice().reverse();
+    if (hist.length) section(body, "history", hist.map((h) => [clock(h.t) + " · " + duration(Math.max(60, Math.round(Date.now() / 1000 - h.t))) + " ago",
+      history_text(h), !h.ok]));
     const ticked = ((get(`agents.${c.agent}.buttons`) || {}).docker || {})[name];
     if (signed_in() && ticked) {
       const l = el("div", "list");
@@ -2029,12 +2095,21 @@ function panel_uptime(body, c) {
 }
 
 // Charts in a card's panel: its numbers that have a history, and a host's agent sensors (charts),
-// over 1 hour, 6 hours, 24 hours or 7 days
+// over 1 hour, 6 hours, 24 hours, 7 days (15-minute points), 30 days or a year (2-hour points)
 // ---------------------------------------------------------------------------------------------
 
-const RANGES = [["1h", 3600], ["6h", 6 * 3600], ["24h", 86400], ["7d", 7 * 86400]];
+const RANGES = [["1h", 3600], ["6h", 6 * 3600], ["24h", 86400], ["7d", 7 * 86400], ["30d", 30 * 86400], ["1y", 365 * 86400]];
 let chartRange = "6h";
 let LONG_HIST = null, longAt = 0;
+let YEAR_HIST = null, yearAt = 0;
+
+/** The year's series (2-hour points, /api/history?year), for 30d and 1y, like load_long. */
+function load_year() {
+  if (Date.now() - yearAt < 1800000) return;
+  yearAt = Date.now();
+  fetch("/api/history?year").then((r) => r.json()).then((d) => { YEAR_HIST = d; if (panelCard) fill_panel(); })
+    .catch(() => { yearAt = 0; });
+}
 
 /** The long series (15-minute points, /api/history?long), asked when a 24h/7d chart is shown and
     at most every 5 minutes after that; the panel redraws itself when it arrives. */
@@ -2076,7 +2151,11 @@ function panel_charts(body, c) {
   body.appendChild(head);
   const seconds = RANGES.find(([n]) => n === chartRange)[1];
   let source = HIST, step = 60;
-  if (seconds > 6 * 3600) {
+  if (seconds > 7 * 86400) {
+    load_year();
+    if (!YEAR_HIST) { body.appendChild(el("p", "panel-spec", "loading…")); return; }
+    source = YEAR_HIST.series; step = YEAR_HIST.step;
+  } else if (seconds > 6 * 3600) {
     load_long();
     if (!LONG_HIST) { body.appendChild(el("p", "panel-spec", "loading…")); return; }
     source = LONG_HIST.series; step = LONG_HIST.step;
