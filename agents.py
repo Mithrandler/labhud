@@ -600,20 +600,38 @@ def release(releases=""):
             "@AGENT_SHA256_AMD64@": sums.get("amd64", ""), "@AGENT_SHA256_ARM64@": sums.get("arm64", "")}
 
 
-def install_lines(base, code, image="", releases=""):
+def install_script(releases=""):
+    """/agent/install-agent.sh as labhud serves it: with this labhud's release placeholders filled."""
+    with open(os.path.join(os.path.dirname(RELEASE_FILE), "install-agent.sh"), "rb") as f:
+        body = f.read()
+    for k, v in release(releases).items():
+        body = body.replace(k.encode(), v.encode())
+    return body
+
+
+def install_lines(base, code, image="", releases="", own_cert=False):
     """What ⚙ > Devices > Agents > Add an agent shows: the commands that work with this labhud as it is.
     With a release pinned, one curl line downloads and checks the agent, and the image exists.
     Without one the installer cannot download anything, so the line installs a binary you built
-    or copied, against the SHA-256 you got where you made it; a container only with `image` set."""
+    or copied, against the SHA-256 you got where you made it; a container only with `image` set.
+    `own_cert`: labhud serves its own certificate, which curl does not trust, so the script is
+    fetched with -k and its SHA-256, given in the line, is the check instead."""
     rel = release(releases)
     pinned = [a for a in ("amd64", "arm64") if rel[f"@AGENT_SHA256_{a.upper()}@"]]
     script = f"{base}/agent/install-agent.sh"
     out = {"version": rel["@AGENT_VERSION@"], "released": bool(pinned), "builds": pinned}
-    if pinned:
-        out["install"] = f"curl -fsSL {script} | sudo sh -s -- --url {base} --code {code}"
+    args = f"--url {base} --code {code}" + ("" if pinned else " --binary ./labhud-agent --sha256 YOUR_SHA256")
+    if own_cert:
+        try:
+            sha = hashlib.sha256(install_script(releases)).hexdigest()
+        except OSError:
+            sha = ""
+        out["install"] = (f"curl -fsSLk {script} -o install-agent.sh && echo '{sha}  install-agent.sh' | sha256sum -c "
+                          f"&& sudo sh install-agent.sh {args}")
+    elif pinned:
+        out["install"] = f"curl -fsSL {script} | sudo sh -s -- {args}"
     else:
-        out["install"] = (f"curl -fsSL {script} -o install-agent.sh && sudo sh install-agent.sh --url {base} "
-                          f"--code {code} --binary ./labhud-agent --sha256 YOUR_SHA256")
+        out["install"] = f"curl -fsSL {script} -o install-agent.sh && sudo sh install-agent.sh {args}"
     image = image or (IMAGE if pinned else "")
     # host network: Wake-on-LAN and the ARP table; / read-only: the host's sensors and disk; the
     # sockets: Docker and systemd

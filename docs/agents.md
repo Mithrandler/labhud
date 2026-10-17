@@ -55,7 +55,8 @@ the old one is switched off.
    sudo sh install-agent.sh --url http://labhud:8095 --code <code> --binary ./labhud-agent --sha256 <sha256>
    ```
 
-   ⚙ shows the right one, with the code already in it. Either way the installer writes
+   ⚙ shows the right one, with the code already in it (over labhud's own certificate, which curl
+   does not trust, the line fetches the installer with `-k` and checks its SHA-256 instead). Either way the installer writes
    `/etc/labhud-agent/config` (mode 600) and a systemd unit and starts it. On Proxmox VE it also
    makes a user `labhud@pve` with only `VM.PowerMgmt`, `VM.Audit` and `Sys.Audit`, and a token for
    it that stays on the host. For a Pterodactyl panel add `--ptero-url https://panel…`: the client

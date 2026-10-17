@@ -3,6 +3,7 @@ signed frames, what an agent may do, and removal. A minimal WebSocket client wri
 the agent against the real demo server; commands go through a fake connection in-process."""
 
 import base64
+import hashlib
 import json
 import os
 import queue
@@ -240,6 +241,14 @@ class Server(DemoServer):
         self.assertEqual(r["install"], "curl -fsSL http://wall:8095/agent/install-agent.sh | sudo sh -s -- "
                                        "--url http://wall:8095 --code CODE1")
         self.assertTrue(r["docker"].endswith("ghcr.io/mithrandler/labhud-agent:latest"))
+
+    def test_code_lines_with_labhud_own_certificate(self):
+        """curl does not trust labhud's own certificate: -k, and the script's SHA-256 in the line."""
+        r = agents.install_lines("https://wall:8095", "CODE1", own_cert=True)
+        sha = hashlib.sha256(agents.install_script()).hexdigest()
+        self.assertTrue(r["install"].startswith("curl -fsSLk https://wall:8095/agent/install-agent.sh -o install-agent.sh "
+                                                f"&& echo '{sha}  install-agent.sh' | sha256sum -c && sudo sh install-agent.sh "
+                                                "--url https://wall:8095 --code CODE1"), r["install"])
 
     # --- after pairing ---
 
