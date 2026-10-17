@@ -32,7 +32,11 @@ SUM_AMD64="@AGENT_SHA256_AMD64@"
 SUM_ARM64="@AGENT_SHA256_ARM64@"
 RELEASES="@AGENT_RELEASES@"
 DIR=/etc/labhud-agent
-BIN=/usr/local/bin/labhud-agent
+# The binary in a folder of its own, the only one besides $DIR the service may write (it
+# replaces itself on an update); /usr/local/bin has a link to it for the command line.
+BINDIR=/usr/local/lib/labhud-agent
+BIN=$BINDIR/labhud-agent
+LINK=/usr/local/bin/labhud-agent
 UNIT=/etc/systemd/system/labhud-agent.service
 
 URL="" CODE="" NAME="" BINARY="" WANT="" PTERO_URL="" PTERO_PIN="" BASE_W="" PRICE="" UNINSTALL=""
@@ -57,7 +61,8 @@ command -v systemctl >/dev/null || { echo "systemd is needed" >&2; exit 1; }
 
 if [ -n "$UNINSTALL" ]; then
   systemctl disable --now labhud-agent 2>/dev/null || true
-  rm -f "$UNIT" "$BIN"
+  rm -f "$UNIT" "$LINK"
+  rm -rf "$BINDIR"
   rm -rf "$DIR"
   systemctl daemon-reload
   if command -v pveum >/dev/null && pveum user list --output-format json 2>/dev/null | grep -q '"userid": *"labhud@pve"'; then
@@ -104,7 +109,9 @@ GOT="$(sha256sum "$TMP" | cut -d' ' -f1)"
 
 # the old Python agent of the same name (push) keeps running until its card moves over
 systemctl stop labhud-agent 2>/dev/null || true
+install -d -m 0755 "$BINDIR"
 install -m 0755 "$TMP" "$BIN"
+ln -sf "$BIN" "$LINK"   # also replaces the binary that was there before 0.3.15
 install -d -m 0700 "$DIR"
 
 # settings: kept across runs, only what this run gives is changed
@@ -168,7 +175,7 @@ ExecStart=$BIN
 # labhud's ⚙ > Agents and checked again by the agent itself; it never runs a shell.
 NoNewPrivileges=yes
 ProtectSystem=full
-ReadWritePaths=$DIR
+ReadWritePaths=$DIR $BINDIR
 ProtectHome=yes
 PrivateTmp=yes
 Restart=on-failure

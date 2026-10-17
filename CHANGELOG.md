@@ -6,6 +6,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Fixed
+- **Update in ⚙ failed on agents installed as a service** ("read-only file system"): the unit
+  keeps `/usr` read-only, and the binary was in `/usr/local/bin`. The installer now puts it in
+  `/usr/local/lib/labhud-agent`, the one folder besides its settings the service may write, with a
+  link in `/usr/local/bin`. An agent installed before needs its install line once more (without the
+  code); then Update works.
+
 ## [0.3.15] - 2026-10-17
 
 What Dockhand and Beszel had and labhud did not, through the agent (0.3.13 or newer).

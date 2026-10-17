@@ -305,6 +305,14 @@ class Server(DemoServer):
                                        "--url http://wall:8095 --code CODE1")
         self.assertTrue(r["docker"].endswith("ghcr.io/mithrandler/labhud-agent:latest"))
 
+    def test_service_may_replace_its_own_binary(self):
+        """The unit keeps /usr read-only (ProtectSystem=full): the binary lives in a folder the
+        service may write, or an update fails with "read-only file system"."""
+        script = agents.install_script().decode()
+        self.assertIn("BIN=$BINDIR/labhud-agent", script)
+        self.assertIn("ReadWritePaths=$DIR $BINDIR", script)
+        self.assertIn("ProtectSystem=full", script)
+
     def test_code_lines_with_labhud_own_certificate(self):
         """curl does not trust labhud's own certificate: -k, and the script's SHA-256 in the line."""
         r = agents.install_lines("https://wall:8095", "CODE1", own_cert=True)
