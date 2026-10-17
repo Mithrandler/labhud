@@ -82,6 +82,13 @@ In portrait the same page gets two columns, and the project name takes the free 
 
 <img src="docs/screenshots/portrait.png" width="240" alt="The general page in portrait, from the demo">
 
+Signed in as the admin, ⚙ changes everything on the display itself: the look, the pages, the
+alerts, the sources, the phones and the agents.
+
+| | |
+|---|---|
+| ![⚙ > Look](docs/screenshots/settings-look.png) | ![⚙ > Alerts](docs/screenshots/settings-alerts.png) |
+
 ## Docs
 
 - [docs/install.md](docs/install.md): installing and updating; `/status` for what is not working
@@ -111,7 +118,9 @@ node --check static/app.js
 
 The colours and icons live in `design/tokens.json`, the one place for the wall, ⚙, the setup
 pages and the Android app: after a change, `python3 design/build.py` (add `--android
-../labhud-android` for the app's `Tokens.kt`); a test fails while a page is not what it makes.
+../labhud-android` for the app's `Tokens.kt`); a test fails while a page is not what it makes. The pictures in
+`docs/screenshots` come from the demo: `node design/shoot.mjs <demo URL> [admin ticket]` (how to
+start the demo and a headless Chromium for it is at the top of the script).
 
 The source tests run on made-up API answers in `tests/fixtures/`, one file per service, keyed by
 a fragment of the requested URL. CI (`.github/workflows/ci.yml`) runs the same commands, then
