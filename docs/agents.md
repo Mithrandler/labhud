@@ -112,6 +112,17 @@ tooling, and ⚙ only shows which version each agent runs.
   agent `LABHUD_AGENT_AUTO_LABELS=dockhand.update=false`: the containers labhud updates on their own
   get that label when they are made again, and lose it when they are no longer labhud's, so each
   updater keeps to its own.
+- **Cards from labels**, as Homepage does: a container with `labhud.name` gets a card of its own,
+  with nothing in config.toml (agent 0.3.14+). `labhud.page` and `labhud.group` (an id or a title)
+  say where; without them it goes to a DISCOVERED page. `labhud.url` is its Web UI,
+  `labhud.description` the line under its name. Its buttons are those its container is ticked with.
+
+  ```yaml
+  labels:
+    labhud.name: Jellyfin
+    labhud.page: media
+    labhud.url: https://jellyfin.example.com
+  ```
 - **Webhooks** (⚙ > Devices > Agents > Docker > Webhooks): a secret URL per ticked container;
   `curl -fsSk -X POST https://labhud:8095/api/hook/<token>` from CI, after it pushed the image,
   updates that container as UPDATE does (at most once in 30 s). Shown once; a new one replaces it.

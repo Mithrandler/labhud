@@ -298,10 +298,14 @@ DEMO_CONTAINERS = {
     "sonarr": ("lscr.io/linuxserver/sonarr:latest", {"state": "running", "status": "Up 3 days", "project": "arr"}),
     "radarr": ("lscr.io/linuxserver/radarr:latest", {"state": "running", "status": "Up 3 days", "update": True, "updating": True,
                                                      "project": "arr"}),
-    "qbittorrent": ("lscr.io/linuxserver/qbittorrent:latest", {"state": "running", "status": "Up 3 days", "project": "arr"}),
+    "qbittorrent": ("lscr.io/linuxserver/qbittorrent:latest", {"state": "running", "status": "Up 3 days", "project": "arr",
+                                                               "labels": {"labhud.name": "qBittorrent", "labhud.page": "media",
+                                                                          "labhud.url": "http://192.0.2.30:8080"}}),
     "flaresolverr": ("ghcr.io/flaresolverr/flaresolverr:latest", {"state": "exited", "status": "Exited (1) 2 hours ago",
                                                                   "project": "arr"}),
-    "portainer": ("portainer/portainer-ce:2.21.4", {"state": "running", "status": "Up 3 days"}),
+    "portainer": ("portainer/portainer-ce:2.21.4", {"state": "running", "status": "Up 3 days",
+                                                    "labels": {"labhud.name": "Portainer", "labhud.url": "https://192.0.2.30:9443",
+                                                               "labhud.description": "from its labhud.* labels"}}),
 }
 
 

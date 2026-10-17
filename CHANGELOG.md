@@ -12,6 +12,9 @@ still change in a minor version; such changes are listed under **Changed** with 
   time; every day at 04:00 by default); `labhud agent schedule` and `labhud agent window`. With
   agent 0.3.14, `LABHUD_AGENT_AUTO_LABELS` (e.g. `dockhand.update=false`) marks them for another
   updater to leave alone.
+- **Cards from Docker labels**, as Homepage does: `labhud.name` on a container (agent 0.3.14) gives
+  it a card, on `labhud.page` / `labhud.group` or a DISCOVERED page, with `labhud.url` and
+  `labhud.description`; config.toml stays as it is.
 - **Webhooks for CI**: a secret URL per container (⚙ > Devices > Agents > Docker > Webhooks); a POST
   to it updates that container, as UPDATE does, at most once in 30 s. labhud keeps only its hash.
 - **The fleet's updates**: `list = "fleet.updates"`, every container with a newer image on every

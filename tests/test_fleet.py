@@ -25,3 +25,25 @@ class FleetUpdates(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LabelCards(unittest.TestCase):
+    TOP = {"pages": [{"id": "media", "title": "MEDIA", "groups": [{"id": "apps", "title": "Apps"}]}],
+           "cards": {"apps": [{"id": "own", "name": "Own", "agent": "box", "agent_target": "docker:own"}]}}
+
+    def test_cards_where_the_labels_say(self):
+        every = {"_t": 1, "box": {"containers": {
+            "jf": {"labels": {"labhud.name": "Jellyfin", "labhud.page": "Media", "labhud.url": "https://jf.lan"}},
+            "pt": {"labels": {"labhud.name": "Portainer", "labhud.url": "javascript:alert(1)"}},
+            "own": {"labels": {"labhud.name": "Twice"}},
+            "plain": {"labels": {"traefik.enable": "true"}}}}}
+        t = server.label_cards(self.TOP, every)
+        made = {c["id"]: (gid, c.get("url")) for gid, cs in t["cards"].items() for c in cs if c.get("labels")}
+        self.assertEqual(made, {"docker-box-jf": ("apps", "https://jf.lan"), "docker-box-pt": ("discovered", None)})
+        self.assertEqual([p["id"] for p in t["pages"]], ["media", "discovered"])
+        self.assertEqual(self.TOP["pages"][0]["groups"], [{"id": "apps", "title": "Apps"}])   # the file's stays as it was
+        jf = next(c for c in t["cards"]["apps"] if c["id"] == "docker-box-jf")
+        self.assertEqual((jf["agent"], jf["agent_target"], jf["check"]), ("box", "docker:jf", ["agent", "box", "docker", "jf"]))
+
+    def test_nothing_labelled_nothing_changes(self):
+        self.assertIs(server.label_cards(self.TOP, {"box": {"containers": {"a": {}}}}), self.TOP)

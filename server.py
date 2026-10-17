@@ -206,6 +206,75 @@ def auto_guests(topology, px, previous=None):
     return dict(topology, cards=cards)
 
 
+DISCOVERED = {"id": "discovered", "title": "DISCOVERED"}
+
+
+def label_cards(topology, every):
+    """`topology` with a card for every container that has a `labhud.name` label (agents.<name>.
+    containers.<c>.labels, agent 0.3.14+), as Homepage does: `labhud.page` / `labhud.group` (an id
+    or a title; else the page's first group, or the DISCOVERED page), `labhud.url`,
+    `labhud.description`. Nothing is written to config.toml: the cards live as long as the labels.
+    A container that already has a card of its own (agent + agent_target) is left alone."""
+    found = []
+    for agent, a in sorted((every or {}).items()):
+        if agent.startswith("_") or not isinstance(a, dict):
+            continue
+        for c, x in sorted((a.get("containers") or {}).items()):
+            labels = (x or {}).get("labels") if isinstance(x, dict) else None
+            if isinstance(labels, dict) and str(labels.get("labhud.name") or "").strip():
+                found.append((agent, c, labels))
+    if not found:
+        return topology
+    have = {(c.get("agent"), c.get("agent_target")) for cs in topology["cards"].values() for c in cs}
+    ids = {c["id"] for cs in topology["cards"].values() for c in cs}
+    pages = [dict(p, groups=list(p["groups"])) for p in topology["pages"]]
+    cards = {gid: list(cs) for gid, cs in topology["cards"].items()}
+
+    def where(page, group):
+        p = next((p for p in pages if page and page.lower() in (p["id"].lower(), str(p.get("title", "")).lower())), None)
+        if p is None or p.get("games"):
+            p = next((p for p in pages if p["id"] == DISCOVERED["id"]), None)
+            if p is None:
+                p = dict(DISCOVERED, groups=[{"id": "discovered", "title": "Docker"}])
+                pages.append(p)
+                cards["discovered"] = []
+        g = next((g for g in p["groups"] if group and group.lower() in (g["id"].lower(), str(g.get("title", "")).lower())), None)
+        if g is None and not p["groups"]:
+            g = {"id": f"{p['id']}-docker", "title": "Docker"}
+            p["groups"].append(g)
+            cards.setdefault(g["id"], [])
+        return (g or p["groups"][0])["id"]
+
+    for agent, c, labels in found:
+        if (agent, "docker:" + c) in have:
+            continue
+        cid = re.sub(r"[^A-Za-z0-9_-]", "-", f"docker-{agent}-{c}")[:64]
+        if cid in ids:
+            continue
+        card = {"id": cid, "name": str(labels["labhud.name"])[:40], "agent": agent, "agent_target": "docker:" + c,
+                "check": ["agent", agent, "docker", c], "labels": True}
+        url = str(labels.get("labhud.url") or "")
+        if re.fullmatch(r"https?://[^\s\"'<>]{1,190}", url):
+            card["url"] = url
+        if labels.get("labhud.description"):
+            card["subtitle"] = str(labels["labhud.description"])[:80]
+        cards.setdefault(where(labels.get("labhud.page"), labels.get("labhud.group")), []).append(card)
+        ids.add(cid)
+    return dict(topology, pages=pages, cards=cards)
+
+
+def _label_ids(topology):
+    return sorted((c["id"], c.get("url", ""), c["name"]) for cs in topology["cards"].values() for c in cs if c.get("labels"))
+
+
+def derive(file_topology, previous=None):
+    """What the display gets from config.toml: the guests' cards, the labelled containers' cards,
+    the agents' buttons on all of them."""
+    t = auto_guests(file_topology, (globals().get("_data") or {}).get("proxmox"), previous)
+    t = label_cards(t, (globals().get("_data") or {}).get("agents"))
+    return with_agents(t)
+
+
 def with_agents(topology):
     """`topology` with the agents' buttons on the cards they control (agents.card_actions). An
     agent's buttons for a Proxmox guest replace that guest's own vm-<node>-<vmid>-* ones."""
@@ -236,8 +305,7 @@ def _apply(topology):
     """Everything derived from config.toml, computed again when the file changes."""
     global TOPOLOGY, ACTIVE, INACTIVE, SOURCES, TARGETS, SOURCE_HOST, FILE_TOPOLOGY
     FILE_TOPOLOGY = topology
-    topology = auto_guests(topology, (globals().get("_data") or {}).get("proxmox"), globals().get("TOPOLOGY"))
-    topology = with_agents(topology)
+    topology = derive(topology, globals().get("TOPOLOGY"))
     # Only the sources whose settings are present run; the others are reported as not configured.
     active, inactive = (demo.sources(), {}) if DEMO else sources.load(topology)
     # name -> interval in seconds. The paces follow how fast the measured thing changes, not "as
@@ -984,10 +1052,13 @@ def publish_agents():
         _data["fleet"] = fleet
     _publish({"agents": result, "fleet": fleet})
     check_rules()
-    if "TOPOLOGY" in globals() and _agent_buttons(with_agents(FILE_TOPOLOGY)) != _agent_buttons(TOPOLOGY):
-        _apply(FILE_TOPOLOGY)
-        print(f"agent buttons now on: {', '.join(sorted({c for c, _ in _agent_buttons(TOPOLOGY)})) or 'no card'}", flush=True)
-        _send("config", {"reload": True})
+    if "TOPOLOGY" in globals():
+        new = derive(FILE_TOPOLOGY, TOPOLOGY)
+        if _agent_buttons(new) != _agent_buttons(TOPOLOGY) or _label_ids(new) != _label_ids(TOPOLOGY):
+            _apply(FILE_TOPOLOGY)
+            print(f"agent buttons now on: {', '.join(sorted({c for c, _ in _agent_buttons(TOPOLOGY)})) or 'no card'}; "
+                  f"cards from labels: {len(_label_ids(TOPOLOGY))}", flush=True)
+            _send("config", {"reload": True})
 
 
 agents.on_change = publish_agents
