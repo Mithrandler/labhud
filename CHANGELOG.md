@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Fixed
+- A source's optional settings (`CROWDSEC_WATCH`, `GITEA_REPOS`) can be set in ⚙ > Sources and with
+  `labhud source add`: they were refused as unknown.
+
 ## [0.3.17] - 2026-10-17
 
 From Portainer, Dockhand, Homarr and Homepage. The agent's release is 0.3.14.

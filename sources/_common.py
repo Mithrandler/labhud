@@ -154,6 +154,12 @@ class Source:
                     seen.add(n)
                     out.append({"name": PREFIX + n, "label": field_label(n), "secret": is_secret(n),
                                 "hint": (self.hints or {}).get(n, "")})
+        # a hint for a variable that is not needed: an optional one (CROWDSEC_WATCH, GITEA_REPOS)
+        for n, hint in (self.hints or {}).items():
+            if n not in seen:
+                seen.add(n)
+                out.append({"name": PREFIX + n, "label": field_label(n), "secret": is_secret(n), "hint": hint,
+                            "optional": True})
         return out
 
     def missing(self, topology):
