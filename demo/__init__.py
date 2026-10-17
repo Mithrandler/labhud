@@ -8,6 +8,7 @@ a browser. Addresses are from the ranges reserved for documentation (192.0.2.0/2
 
 import math
 import os
+import re
 import time
 
 from sources._common import Source
@@ -273,6 +274,69 @@ DEMO_CONTAINERS = {
     "flaresolverr": ("ghcr.io/flaresolverr/flaresolverr:latest", {"state": "exited", "status": "Exited (1) 2 hours ago"}),
     "portainer": ("portainer/portainer-ce:2.21.4", {"state": "running", "status": "Up 3 days"}),
 }
+
+
+# ⚙ > Devices > Agents in the demo: the docker VM's agent and one on the Proxmox node, with what each
+# found. Their ticks can be changed (in memory, until a restart), so the tabs and the app can be tried.
+DEMO_PVE_AGENT = "d0c4e101"
+MAC = re.compile(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}")
+_ROWS = {
+    DEMO_AGENT: {"name": "docker", "addr": "192.0.2.30", "install": "container", "version": "0.3.0", "found": ["sensors", "docker", "systemd", "host"],
+                 "host": {"hostname": "docker", "os": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.48+deb13-amd64", "arch": "amd64"},
+                 "caps": ["sensors", "docker"],
+                 "targets": {"docker": [n for n in DEMO_CONTAINERS if n != "portainer"]},
+                 "choices": {"docker": sorted(DEMO_CONTAINERS), "systemd": ["cron.service", "docker.service", "ssh.service"],
+                             "host": ["host"]},
+                 "labels": {}},
+    DEMO_PVE_AGENT: {"name": "pve", "addr": "192.0.2.10", "install": "service", "version": "0.2.9",   # one release behind
+                     "found": ["sensors", "host", "pve", "wol", "systemd"],
+                     "host": {"hostname": "pve", "os": "Proxmox VE 9.1", "kernel": "6.17.2-1-pve", "arch": "amd64"},
+                     "caps": ["sensors", "host", "pve", "wol"],
+                     "targets": {"host": ["host"], "pve": ["100", "101", "106"], "wol": ["7c:83:34:bb:36:47"]},
+                     "choices": {"pve": [str(g[0]) for g in GUESTS], "wol": ["7c:83:34:bb:36:47", "b8:27:eb:12:34:56"],
+                                 "host": ["host"], "systemd": ["pveproxy.service", "pvedaemon.service", "ssh.service"]},
+                     "labels": {"pve": {str(g[0]): g[1] for g in GUESTS},
+                                "wol": {"7c:83:34:bb:36:47": "192.0.2.50", "b8:27:eb:12:34:56": "192.0.2.61"}}},
+}
+
+
+def agent_rows(now=None):
+    """The made-up agents as agents.listing() gives real ones."""
+    now = int(now or time.time())
+    return [dict({k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v) for k, v in r.items()},
+                 id=aid, online=True, paired=now - 86400 * (12 if aid == DEMO_PVE_AGENT else 9), seen=now)
+            for aid, r in _ROWS.items()]
+
+
+def agent_change(aid, op, body, caps, verbs):
+    """A tick in ⚙ or the app on a made-up agent: True, False (not a valid choice), or None (not one of them)."""
+    r = _ROWS.get(aid)
+    if r is None:
+        return None
+    if op == "caps":
+        want = body.get("caps")
+        if not (isinstance(want, list) and all(c in r["found"] and c in caps for c in want)):
+            return False
+        r["caps"] = list(dict.fromkeys(want))
+        return True
+    if op == "targets":
+        cap, want = body.get("cap"), body.get("targets")
+        if cap not in verbs or cap not in r["caps"] or not (isinstance(want, list) and all(isinstance(t, str) for t in want)):
+            return False
+        known = set(r["choices"].get(cap, []))
+        if cap == "wol":   # a machine that is off: its MAC typed in
+            known |= {t for t in want if MAC.fullmatch(t)}
+        if not set(want) <= known:
+            return False
+        r["targets"][cap] = list(dict.fromkeys(want))
+        if cap == "wol":
+            r["choices"]["wol"] = sorted(set(r["choices"]["wol"]) | set(want))
+        return True
+    if op == "update":   # as if it had downloaded the release and dialled in again
+        r["version"] = body.get("version") or r["version"]
+        return True
+    return False   # rename and remove: the demo's agents stay as they are
+
 
 
 def logs(name):

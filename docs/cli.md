@@ -25,6 +25,8 @@ also work while it is stopped: they write their files directly, like `init.py`.
     labhud agent allow <agent> <cap> [target ... | --all]      tick a capability (and its targets)
     labhud agent deny <agent> <cap> [target ...]   untick the targets, or the whole capability
     labhud agent logs <agent> <container>          a ticked container's last lines
+    labhud agent update <agent> | --all            update to the release labhud pins (a service, not a container)
+    labhud agent auto on|off                       older agents update themselves when they dial in
     labhud phone pair [name]                       a one-time link and QR code for the app
     labhud phone list / phone remove <name>        the paired phones
     labhud page list                               pages, groups and cards

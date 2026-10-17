@@ -113,11 +113,12 @@ a browser always sends one with a WebSocket and an agent never does, so no web p
 ```json
 {"type":"hello","version":"0.1.0","name":"pve2",
  "host":{"hostname":"pve2","os":"Debian GNU/Linux 13","kernel":"6.12.43","arch":"amd64"},
- "caps":["sensors","docker","systemd","host","wol","pve"]}
+ "caps":["sensors","docker","systemd","host","wol","pve"],"install":"service"}
 ```
 
 `caps` is what the agent **found** (a Docker socket, D-Bus, the Proxmox API, a Pterodactyl key),
-not what it may use.
+not what it may use. `install` is `service` (it can replace its own binary) or `container` (its
+image is the agent); agents before 0.3.12 leave it out and cannot update themselves.
 
 `state` — after `hello`, on change and at least every 30 s. Every part is optional; a missing
 part means "this capability is not here", an empty one "found, nothing in it".
@@ -164,6 +165,10 @@ as an `event`. A read verb (`logs`) answers with `output`: text, at most 48 KiB 
 
 `command` — `{"type":"command","cmd":"<16 hex>","cap":"docker","verb":"restart","target":"jellyfin"}`.
 
+`update` — `{"type":"update","cmd":"<16 hex>","version":"0.3.12","sha256":"<64 hex>"}`: replace
+the agent's binary with that release. Answered by a `result` with the same `cmd`; on success the
+agent then execs the new binary (same PID) and dials again with the new version. See *Updates*.
+
 `bye` — `{"type":"bye","reason":"removed"}`: the agent was removed in ⚙. It deletes its key and
 stops (`systemctl` will not restart it: it exits with status 0 and the unit has
 `Restart=on-failure`). Any reason other than `removed` is only logged.
@@ -196,7 +201,24 @@ So labhud cannot be made to send something the admin did not tick, and an agent 
 made to do it even if labhud were changed to send it. What a compromised labhud *can* do is
 use the ticked targets — that is the price of the buttons.
 
+## Updates
+
+labhud pins one release of the agent (`agents/agent-release.json`: its version and each build's
+SHA-256). An agent installed as a service that is older than it gets **Update** in ⚙ > Agents,
+the app and `labhud agent update`; with *Update agents automatically* it gets the `update` as it
+dials in. labhud never sends code, only a version and a SHA-256, and the agent decides the rest:
+
+- it downloads `<releases>/v<version>/labhud-agent-linux-<arch>` and `SHA256SUMS` from **its own**
+  releases address: compiled in (`https://github.com/Mithrandler/labhud-agent/releases/download`),
+  or `LABHUD_AGENT_RELEASES` in the host's own config — never an address labhud sends;
+- the file must match the SHA-256 labhud sent **and** the one in that release's `SHA256SUMS`;
+- only a release newer than its own (no going back to an older one with a known fault);
+- never in a container (`install` = `container`): there the image is updated instead.
+
+So a compromised labhud can at most move agents forward to a genuine newer release. The new file
+replaces the binary by a rename in its folder (a crash halfway leaves the old one).
+
 ## Versions
 
-`hello.version` is shown in ⚙; labhud never sends code or updates to an agent. A future v2
-changes `V`, so a v1 frame can never pass as v2.
+`hello.version` is shown in ⚙ and compared with the pinned release. A future v2 changes `V`, so a
+v1 frame can never pass as v2.

@@ -61,8 +61,11 @@ the old one is switched off.
    makes a user `labhud@pve` with only `VM.PowerMgmt`, `VM.Audit` and `Sys.Audit`, and a token for
    it that stays on the host. For a Pterodactyl panel add `--ptero-url https://panel…`: the client
    API key is asked for, not given on the command line. `--base-w` and `--price-kwh` set the power
-   estimate. Run it again to upgrade (no `--code` needed: the agent keeps its key); `--uninstall`
-   removes everything.
+   estimate. From agent 0.3.12 on it **updates itself**: ⚙ > Agents shows *Update to vX* when
+   labhud pins a newer release (also in the app and `labhud agent update`), and *Update agents
+   automatically* does it as each one dials in. The agent downloads the release from its own
+   releases address and checks it twice (see agent-protocol.md, *Updates*). An older agent: run
+   the line again (no `--code` needed: the agent keeps its key). `--uninstall` removes everything.
 2. **As a container** instead: with a release pinned (or `LABHUD_AGENT_IMAGE` set), ⚙ also shows
    a `docker run` with the host's network (Wake-on-LAN, the ARP table), `/` read-only at `/host`
    (sensors, disk, name), and the Docker and D-Bus sockets. Leave out a socket and that

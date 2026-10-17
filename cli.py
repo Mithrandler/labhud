@@ -20,6 +20,8 @@ only `admin` and `pin` work, as with init.py.
     labhud agent allow <agent> <cap> [target ... | --all]      tick a capability (and its targets)
     labhud agent deny <agent> <cap> [target ...]   untick the targets, or the whole capability
     labhud agent logs <agent> <container>          a ticked container's last lines
+    labhud agent update <agent> | --all            update to the release labhud pins (a service, not a container)
+    labhud agent auto on|off                       older agents update themselves when they dial in
     labhud phone pair [name]                       a one-time link and QR code for the app
     labhud phone list / phone remove <name>        the paired phones
     labhud page list                               pages, groups and cards
@@ -225,9 +227,12 @@ def agent(args):
         rows = []
         for a in listing["agents"]:
             ticked = [c + (f"({len(a['targets'].get(c, []))})" if c in listing["verbs"] else "") for c in a["caps"]]
-            rows.append([a["name"], "yes" if a["online"] else "no", a["version"] or "—", a["addr"] or "—",
+            version = (a["version"] or "—") + (f" → {a['update']}" if a.get("update") else "")
+            rows.append([a["name"], "yes" if a["online"] else "no", version, a["addr"] or "—",
                          " ".join(ticked) or "nothing ticked", " ".join(c for c in a["found"] if c not in a["caps"])])
-        return table(rows, ["NAME", "ONLINE", "VERSION", "ADDRESS", "TICKED (targets)", "FOUND, NOT TICKED"])
+        table(rows, ["NAME", "ONLINE", "VERSION", "ADDRESS", "TICKED (targets)", "FOUND, NOT TICKED"])
+        return print(f"\nrelease {listing.get('release') or '—'}; automatic updates "
+                     f"{'on' if listing.get('auto_update') else 'off'} (labhud agent auto on|off)")
     if sub == ["code"]:
         r = call("/api/agents/code", {})
         print(f"Pairing code: {r['code']}  (once, within {r['minutes']} minutes)\n")
@@ -261,10 +266,30 @@ def agent(args):
             call("/api/agents/targets", {"id": a["id"], "cap": cap, "targets": sorted(now)})
         state = "ticked" if cap in caps else "off"
         return print(f"✓ {a['name']}: {cap} {state}" + (f", {len(now)} target(s)" if cap in listing["verbs"] and cap in caps else ""))
+    if sub == ["update"] and len(args) == 2:   # the agent downloads the pinned release itself, checks it, starts again
+        listing = call("/api/agents/list", {})
+        todo = [a for a in listing["agents"] if a.get("update")] if args[1] == "--all" else [find_agent(args[1])[0]]
+        if not todo:
+            return print("every agent that can update itself is on " + (listing.get("release") or "the release"))
+        failed = 0
+        for a in todo:
+            try:
+                call("/api/agents/update", {"id": a["id"]})
+                print(f"✓ {a['name']}: updating {a['version']} → {a.get('update') or listing.get('release')}")
+            except Failed as e:
+                failed += 1
+                print(f"✗ {a['name']}: {e}")
+        if failed:
+            raise Failed(f"{failed} not updated")
+        return
+    if sub == ["auto"] and len(args) == 2 and args[1] in ("on", "off"):
+        r = call("/api/agents/auto", {"on": args[1] == "on"})
+        return print(f"✓ automatic updates {'on' if r['auto_update'] else 'off'}")
     if sub == ["logs"] and len(args) == 3:
         print(setup("logs", {"agent": args[1], "target": args[2]}).get("output", ""), end="")
         return
-    raise Failed("usage: labhud agent list | code | allow <agent> <cap> [target … | --all] | deny <agent> <cap> [target …] | logs <agent> <container>")
+    raise Failed("usage: labhud agent list | code | allow <agent> <cap> [target … | --all] | deny <agent> <cap> [target …] "
+                 "| logs <agent> <container> | update <agent> | update --all | auto on|off")
 
 
 def phone(args):

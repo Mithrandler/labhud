@@ -186,6 +186,15 @@ class DemoServer(unittest.TestCase):
         self.assertIn("opnsense.cpu", h["series"])
         self.assertEqual(len(h["series"]["opnsense.cpu"]), 360)  # the demo's made-up six hours
 
+    def test_uptime_for_the_panel(self):
+        day = json.loads(self.get("/api/uptime")[2])
+        week = json.loads(self.get("/api/uptime?range=7d")[2])
+        self.assertEqual(day["step"], 900)
+        some = next(iter(day["cards"]))
+        self.assertEqual(len(day["cards"][some]), 96)               # the demo's made-up week
+        self.assertEqual(len(week["cards"][some]), 7 * 96)
+        self.assertIn(some, day["percent"])
+
     def test_every_config_path_has_data(self):
         with open(os.path.join(ROOT, "demo", "config.toml"), "rb") as f:
             paths = data_paths(tomllib.load(f))

@@ -158,6 +158,12 @@ class Command(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("Pairing code:", out)
         self.assertIn("--url http://labhud.example:8095 ", out)   # a name in LABHUD_HOSTS, not loopback
+        code, out = self.labhud("agent", "auto", "on")
+        self.assertEqual((code, out.strip()), (0, "✓ automatic updates on"))
+        self.assertIn("automatic updates on", self.labhud("agent", "list")[1])
+        self.assertEqual(self.labhud("agent", "auto", "off")[0], 0)
+        code, out = self.labhud("agent", "update", "nobody")
+        self.assertEqual(code, 1)
         code, out = self.labhud("agent", "allow", "nobody", "docker")
         self.assertEqual(code, 1)
         self.assertIn("no agent 'nobody'", out)

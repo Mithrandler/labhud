@@ -114,6 +114,20 @@ class Server(DemoServer):
         status, data = self.post_json(f"/api/agents/{op}", body or {}, f"http://{self.host}" if origin else None)
         return status, json.loads(data)
 
+    # the demo's made-up agents in ⚙ > Devices > Agents: listed first, ticks kept in memory
+    def test_demo_agents_listed_and_ticked(self):
+        rows = {r["name"]: r for r in self.manage("list")[1]["agents"]}
+        pve = rows["pve"]
+        self.assertTrue(pve["online"] and "wol" in pve["caps"])
+        self.assertEqual(pve["labels"]["pve"]["106"], "windows")
+        self.assertEqual(self.manage("targets", {"id": pve["id"], "cap": "wol", "targets": pve["targets"]["wol"] + ["aa:bb:cc:dd:ee:01"]})[0], 200)
+        self.assertEqual(self.manage("targets", {"id": pve["id"], "cap": "pve", "targets": ["999"]})[0], 400)   # no such guest
+        self.assertEqual(self.manage("caps", {"id": pve["id"], "caps": ["docker"]})[0], 400)                   # not found there
+        self.assertEqual(self.manage("remove", {"id": pve["id"]})[0], 400)                                     # the demo's stay
+        pve = {r["name"]: r for r in self.manage("list")[1]["agents"]}["pve"]
+        self.assertIn("aa:bb:cc:dd:ee:01", pve["targets"]["wol"])
+        self.assertIn("aa:bb:cc:dd:ee:01", pve["choices"]["wol"])
+
     def pair(self, code=None, name="box1"):
         """(client, session, agent id, key) after a full pairing with a fresh code."""
         code = code or self.manage("code")[1]["code"]
@@ -150,6 +164,55 @@ class Server(DemoServer):
                 return True
             time.sleep(0.05)
         return False
+
+    # --- updates ---
+
+    def test_update_asked_and_answered(self):
+        c, session, aid, key = self.pair(name="old1")
+        c.close()
+        pinned = agents.release()
+        if not pinned["@AGENT_SHA256_AMD64@"]:
+            self.skipTest("no agent release pinned")
+        c, session = WSClient(self.port), None
+        session = c.recv_json()["session"]
+        c.send_signed(key, session, aid, dict(HELLO, version="0.2.9", install="service",
+                                              host={"hostname": "old1", "arch": "amd64"}))
+        self.assertEqual(c.read_signed(key, session)["type"], "allow")
+        self.assertTrue(self.wait_for(lambda: self.listed(aid)["update"] == pinned["@AGENT_VERSION@"]))
+        got = {}
+
+        def agent_side():   # the agent: the update, then its result
+            msg = c.read_signed(key, session)
+            got.update(msg)
+            c.send_signed(key, session, aid, {"type": "result", "cmd": msg["cmd"], "ok": True})
+        t = threading.Thread(target=agent_side)
+        t.start()
+        status, r = self.manage("update", {"id": aid})
+        t.join(5)
+        self.assertEqual((status, r["ok"]), (200, True), r)
+        self.assertEqual((got["type"], got["version"], got["sha256"]),
+                         ("update", pinned["@AGENT_VERSION@"], pinned["@AGENT_SHA256_AMD64@"]))
+        c.close()
+
+    def test_update_refused_without_a_newer_release_or_in_a_container(self):
+        c, session, aid, key = self.pair(name="box9")
+        c.close()
+        c = WSClient(self.port)
+        session = c.recv_json()["session"]
+        c.send_signed(key, session, aid, dict(HELLO, version="0.3.0", install="container", host={"arch": "amd64"}))
+        c.read_signed(key, session)
+        self.assertTrue(self.wait_for(lambda: self.listed(aid)["install"] == "container"))
+        self.assertEqual(self.listed(aid)["update"], "")
+        status, r = self.manage("update", {"id": aid})
+        self.assertEqual(status, 409)
+        self.assertIn("image", r["error"])
+        c.close()
+
+    def test_auto_update_flag(self):
+        self.assertEqual(self.manage("auto", {"on": True})[1]["auto_update"], True)
+        self.assertTrue(self.manage("list")[1]["auto_update"])
+        self.assertEqual(self.manage("auto", {"on": False})[1]["auto_update"], False)
+        self.assertEqual(self.manage("auto", {"on": True}, origin=False)[0], 403)
 
     # --- pairing ---
 
@@ -365,6 +428,25 @@ class Logs(Server):
         finally:
             self.ticket = ticket
         c.close()
+
+
+class Versions(unittest.TestCase):
+    def test_newer(self):
+        for v, own, want in [("0.3.12", "0.3.0", True), ("0.3.0", "0.3.0", False), ("0.3.0", "0.3.12", False),
+                             ("0.3.0", "0.3.0-dev.a0e2b4d", True), ("0.3.0", "", True), ("0.3.0-rc1", "0.2.0", False),
+                             ("1.0.0", "0.9.99", True)]:
+            self.assertEqual(agents.newer(v, own), want, (v, own))
+
+    def test_update_for(self):
+        rel = agents.release()
+        if not rel["@AGENT_SHA256_AMD64@"]:
+            self.skipTest("no agent release pinned")
+        v = rel["@AGENT_VERSION@"]
+        self.assertEqual(agents.update_for({"install": "service", "version": "0.0.1", "host": {"arch": "amd64"}}), v)
+        self.assertEqual(agents.update_for({"install": "container", "version": "0.0.1", "host": {"arch": "amd64"}}), "")
+        self.assertEqual(agents.update_for({"install": "", "version": "0.0.1", "host": {"arch": "amd64"}}), "")   # too old to say
+        self.assertEqual(agents.update_for({"install": "service", "version": v, "host": {"arch": "amd64"}}), "")
+        self.assertEqual(agents.update_for({"install": "service", "version": "0.0.1", "host": {"arch": "riscv64"}}), "")
 
 
 class Names(unittest.TestCase):

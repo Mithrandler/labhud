@@ -34,8 +34,4 @@ version.
 
 ## Not done yet
 
-- **Screenshots** of 0.3 (⚙'s tabs, the bell, the agents) in the README and the docs site.
-- **Agents' ticks of Wake-on-LAN by a typed MAC** in the app (⚙ and the CLI have it).
-- **An agent that updates itself** from its release (today: the installer again, or the image).
-- Per-card uptime on the display too (the app shows it first).
-- Demo data for the newer sources.
+Nothing planned is left from 0.3. Next ideas come from using it; open an issue for one.

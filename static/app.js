@@ -1794,6 +1794,7 @@ function fill_panel() {
     }
     body.appendChild(row);
   }
+  panel_uptime(body, c);
   const afterStatus = body.children.length;
 
   // ---- a container from an agent (agent_target = "docker:<name>"): its image, and its logs ----
@@ -1972,6 +1973,61 @@ function fill_panel() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// A card's uptime in its panel (/api/uptime): slices of the last 24 hours or 7 days, oldest on the
+// left, each the worst of its 15-minute points, and the share of the known time it was up. The
+// app's tiles show the same slices, in the same colours.
+// ---------------------------------------------------------------------------------------------
+
+let uptimeRange = "24h";
+const UPTIME = {};   // range -> {at, data}
+
+function load_uptime(range) {
+  const u = UPTIME[range] || (UPTIME[range] = { at: 0, data: null });
+  if (Date.now() - u.at < 300000) return;
+  u.at = Date.now();
+  fetch("/api/uptime?range=" + range).then((r) => r.json()).then((d) => { u.data = d; if (panelCard) fill_panel(); })
+    .catch(() => { u.at = 0; });
+}
+
+function uptime_slices(values, n) {
+  const per = Math.max(1, Math.ceil(values.length / n));
+  const out = [];
+  for (let i = 0; i < values.length; i += per) {
+    const known = values.slice(i, i + per).filter((v) => v !== null && v !== undefined);
+    out.push(!known.length ? null : known.every((v) => v < 0) ? -1 : Math.min(...known.filter((v) => v >= 0)));
+  }
+  return out;
+}
+
+function uptime_class(v) {
+  return v === null ? "none" : v < 0 ? "off" : v >= 0.999 ? "up" : v >= 0.9 ? "part" : "down";
+}
+
+function panel_uptime(body, c) {
+  if (!c.check || LIST_VIEW) return;
+  load_uptime(uptimeRange);
+  const d = (UPTIME[uptimeRange] || {}).data;
+  const values = d && d.cards && d.cards[c.id];
+  if (!values || !values.length) return;
+  const head = el("div", "chart-head");
+  head.appendChild(el("h3", null, "uptime"));
+  for (const name of ["24h", "7d"]) {
+    const b = el("button", "range" + (name === uptimeRange ? " on" : ""), name);
+    b.type = "button";
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); uptimeRange = name; fill_panel(); });
+    head.appendChild(b);
+  }
+  const pct = d.percent && d.percent[c.id];
+  head.appendChild(el("span", "uptime-pct" + (pct !== undefined && pct < 99 ? " low" : ""), pct === undefined ? "—" : pct + "%"));
+  body.appendChild(head);
+  const n = 48;
+  const bar = el("div", "uptime-bar");
+  const parts = uptime_slices(values, n);
+  for (let i = parts.length; i < n; i++) bar.appendChild(el("span", "none"));   // a young history fills from the right
+  for (const v of parts) bar.appendChild(el("span", uptime_class(v)));
+  body.appendChild(bar);
+}
+
 // Charts in a card's panel: its numbers that have a history, and a host's agent sensors (charts),
 // over 1 hour, 6 hours, 24 hours or 7 days
 // ---------------------------------------------------------------------------------------------

@@ -250,6 +250,7 @@ def listing():
                   "ptero": {k: (v or {}).get("name") for k, v in (st.get("servers") or {}).items()},
                   "wol": {k: (v or {}).get("ip") for k, v in (st.get("neighbours") or {}).items()}}
         out.append({"id": aid, "name": a["name"], "online": aid in _live, "version": a.get("version", ""),
+                    "install": a.get("install", ""), "update": update_for(a),
                     "addr": getattr(_live.get(aid), "peer", "") or "",
                     "host": a.get("host", {}), "paired": a.get("paired", 0), "seen": a.get("seen", 0),
                     "found": a.get("found", []), "caps": a.get("caps", []),
@@ -384,6 +385,66 @@ def read(aid, cap, verb, target, wait=COMMAND_WAIT):
     return s.command(cap, verb, target, wait)
 
 
+# --- updates (the agent replaces its own binary: labhud-agent's internal/selfupdate) ---
+#
+# labhud only names the release it pins (agents/agent-release.json) and that build's SHA-256; the
+# agent downloads it from its own releases, checks it against the release's SHA256SUMS too, takes
+# only a newer version, and never in a container (its image is updated instead).
+
+AUTO_KEY = "agents_auto_update"
+UPDATE_WAIT = 110   # the download takes seconds; this stays under the CLI's and a browser's patience
+
+
+def newer(v, own):
+    """Is release v later than own? A dev build (0.3.0-dev.x) is older than its release."""
+    def parts(x):
+        m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(-.*)?", x or "")
+        return (tuple(int(n) for n in m.groups()[:3]), bool(m.group(4))) if m else None
+    a, b = parts(v), parts(own)
+    if not a or a[1]:
+        return False
+    if not b:
+        return True
+    return a[0] > b[0] or (a[0] == b[0] and b[1])
+
+
+def update_for(a, releases=""):
+    """The version this agent can update itself to, or "": a service, older than the pinned release."""
+    rel = release(releases)
+    v = rel["@AGENT_VERSION@"]
+    arch = (a.get("host") or {}).get("arch", "")
+    if a.get("install") != "service" or arch not in ("amd64", "arm64") or not rel[f"@AGENT_SHA256_{arch.upper()}@"]:
+        return ""
+    return v if newer(v, a.get("version", "")) else ""
+
+
+def update(aid, releases=""):
+    """(ok, error): asks the agent to update itself to the pinned release; it then dials again."""
+    a = get(aid)
+    if not a:
+        return False, "no such agent"
+    v = update_for(a, releases)
+    if not v:
+        return False, ("a container is updated by its image" if a.get("install") == "container"
+                       else "nothing newer to update to" if a.get("install") == "service"
+                       else "this agent is too old to update itself: run its install line again")
+    s = _live.get(aid)
+    if not s:
+        return False, "the agent is offline"
+    sha = release(releases)[f"@AGENT_SHA256_{a['host']['arch'].upper()}@"]
+    ok, error, _ = s.ask({"type": "update", "version": v, "sha256": sha}, UPDATE_WAIT)
+    on_event(f"Agent {a['name']}: {'updating to ' + v if ok else 'update to ' + v + ' failed: ' + error}", not ok)
+    return ok, error
+
+
+def auto_update():
+    return bool(store.load(AUTO_KEY)) if store.enabled() else False
+
+
+def set_auto_update(on):
+    store.save(AUTO_KEY, bool(on))
+
+
 def _send_allow(aid):
     s = _live.get(aid)
     if s:
@@ -425,11 +486,15 @@ class Session:
         self.ws.close(1000, reason)
 
     def command(self, cap, verb, target, wait):
+        return self.ask({"type": "command", "cap": cap, "verb": verb, "target": target}, wait)
+
+    def ask(self, message, wait):
+        """Sends a command or an update and waits for its result: (ok, error, output)."""
         cmd = secrets.token_hex(8)
         slot = [threading.Event(), (False, "no answer from the agent", "")]
         self._waiting[cmd] = slot
         try:
-            self.send({"type": "command", "cmd": cmd, "cap": cap, "verb": verb, "target": target})
+            self.send(dict(message, cmd=cmd))
         except websock.Closed:
             self._waiting.pop(cmd, None)
             return False, "the agent is offline", ""
@@ -519,6 +584,7 @@ class Session:
         host = hello.get("host") if isinstance(hello.get("host"), dict) else {}
         host = {k: str(host.get(k, ""))[:80] for k in ("hostname", "os", "kernel", "arch") if host.get(k)}
         version = str(hello.get("version", ""))[:32]
+        install = hello.get("install") if hello.get("install") in ("service", "container") else ""
         with _lock:
             agents = _load()
             if pending:
@@ -528,7 +594,7 @@ class Session:
                 agents[self.aid] = {"name": name, "key": self.key, "paired": now, "caps": [], "targets": {}}
             elif self.aid not in agents:
                 raise Refused("removed")
-            agents[self.aid].update(version=version, host=host, found=found, seen=now)
+            agents[self.aid].update(version=version, host=host, found=found, seen=now, install=install)
             store.save(AGENTS_KEY, agents)
             old = _live.get(self.aid)
             _live[self.aid] = self
@@ -543,6 +609,8 @@ class Session:
             print(f"agent connected: {name} from {self.peer}", flush=True)
         self.send(dict({"type": "allow"}, **allowance(self.aid)))
         on_change()
+        if auto_update() and update_for(agents[self.aid]):   # ⚙'s "Update agents automatically"
+            threading.Thread(target=update, args=(self.aid,), daemon=True, name="agent-update").start()
 
     def _handle(self, msg):
         kind = msg["type"]

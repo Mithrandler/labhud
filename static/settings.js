@@ -615,7 +615,15 @@ function agents_settings(s) {
   add.type = "button";
   const detail = el("div", "agents-detail");
   add.addEventListener("click", () => { agentSel = "add"; addType = ""; add_agent(detail, list); draw_agent_list(list, lastAgents, detail); });
-  side.append(list, add);
+  // "Update agents automatically": an older agent installed as a service updates itself when it dials in
+  const auto = el("button", "choice agent-auto");
+  auto.type = "button";
+  auto.addEventListener("click", () => agents_post("auto", { on: !agentsAuto }).then((r) => {
+    if (!r.ok) return show_message(r.error || "Refused.");
+    agentsAuto = r.auto_update;
+    draw_auto(auto);
+  }));
+  side.append(list, add, auto);
   split.append(side, detail);
   s.appendChild(split);
   s.appendChild(el("p", "hint", "An agent runs on a host and acts only through its own APIs. Nothing is allowed "
@@ -625,6 +633,14 @@ function agents_settings(s) {
 
 let agentsWatch = null;
 let lastAgents = [];
+let agentsRelease = "", agentsAuto = false;   // the agent release labhud pins, and ⚙'s automatic updates
+
+function draw_auto(b) {
+  if (!b) return;
+  b.classList.toggle("on", agentsAuto);
+  b.textContent = (agentsAuto ? "✓ " : "") + "Update agents automatically";
+  b.title = agentsRelease ? `An agent older than ${agentsRelease}, installed as a service, updates itself when it dials in` : "";
+}
 /** The list (and the open agent), drawn again every 10 s while ⚙ is open: online, last seen,
     new targets. A redraw waits while a tick is on its way or the filter is being typed in. */
 function load_agents(list, quiet, detail) {
@@ -642,6 +658,9 @@ function load_agents(list, quiet, detail) {
       && document.activeElement.tagName === "INPUT");
     if (quiet && busy) return;
     lastAgents = r.agents;
+    agentsRelease = r.release || "";
+    agentsAuto = !!r.auto_update;
+    draw_auto(list.parentNode && list.parentNode.querySelector(".agent-auto"));
     if (agentSel !== "add" && !r.agents.some((a) => a.id === agentSel)) agentSel = r.agents.length ? r.agents[0].id : null;
     draw_agent_list(list, r.agents, detail);
     if (agentSel === "add") return;
@@ -674,6 +693,37 @@ function draw_agent_list(list, agents, detail) {
   }
 }
 
+/** "Update to vX": labhud names the release it pins; the agent downloads and checks it itself. */
+function agent_update_row(a, box, reload) {
+  if (a.update) {
+    const row = el("div", "agent-update");
+    row.appendChild(el("span", null, `v${a.update} is out (this one is v${a.version}).`));
+    const b = el("button", "choice on", "Update to v" + a.update);
+    b.type = "button";
+    b.disabled = !a.online;
+    b.addEventListener("click", () => {
+      put($("#confirm-text"), `Update ${a.name} to v${a.update}? It downloads the release from GitHub, checks it, `
+        + "and starts again in a few seconds.");
+      ask([["UPDATE", () => {
+        b.disabled = true;
+        b.classList.add("pending");
+        b.textContent = "updating…";
+        agents_post("update", { id: a.id }).then((r) => {
+          show_message(r.ok ? `${a.name} is updating to v${a.update}.` : (r.error || "Refused."));
+          setTimeout(reload, r.ok ? 8000 : 0);
+        });
+      }, false]]);
+    });
+    row.appendChild(b);
+    box.appendChild(row);
+  } else if (agentsRelease && a.version && a.version !== agentsRelease && !a.install) {
+    box.appendChild(el("p", "hint", `v${agentsRelease} is out. This agent is too old to update itself: run its install line `
+      + "again (+ Add system), without the code; from then on it updates from here."));
+  } else if (agentsRelease && a.version && a.version !== agentsRelease && a.install === "container") {
+    box.appendChild(el("p", "hint", "In a container the image is the agent: your image updater (or a new docker run) updates it."));
+  }
+}
+
 function agent_detail(a, box, reload) {
   const head = el("div", "device");
   const text = el("div", "device-text");
@@ -694,6 +744,7 @@ function agent_detail(a, box, reload) {
   });
   head.append(text, rm);
   box.appendChild(head);
+  agent_update_row(a, box, reload);
 
   const caps = a.found.filter((c) => CAP_TEXT[c]);
   if (!caps.length) { box.appendChild(el("p", "hint", "It found nothing it could act on (sensors only).")); return; }

@@ -1366,6 +1366,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(health())
         if path == "/api/history":   # ?long: 15-minute points over 7 days, for the panel's charts
             return self._json(history(long="long" in self.path.partition("?")[2]))
+        if path == "/api/uptime":    # ?range=7d: a card's uptime in its panel, as /api/v1/uptime gives the app
+            return self._json(uptime(7 * 86400 if "range=7d" in self.path.partition("?")[2] else 86400))
         if path == "/api/events":   # every kept event, newest first: the day's timeline
             return self._json({"events": EVENTS.all()})
         if path == "/status":
@@ -1392,7 +1394,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._app_admin(self.path.rsplit("/", 1)[1])
         if self.path == "/api/v1/push":
             return self._app_push()
-        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove)", self.path)
+        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
         st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs)", self.path)
@@ -1716,11 +1718,28 @@ class Handler(BaseHTTPRequestHandler):
         body = self._small_json(64 * 1024)
         if body is None or not self._may_manage():
             return self._json({"ok": False, "error": "forbidden"}, 403)
+        if DEMO and op == "list":   # the demo's made-up agents first, then any real one paired with it
+            made_up = [dict(r, update=agents.update_for(r, AGENT_RELEASES)) for r in demo.agent_rows()]
+            return self._json({"ok": True, "agents": made_up + (agents.listing() if agents.enabled() else []),
+                               "caps": list(agents.CAPS), "verbs": {c: list(v) for c, v in agents.VERBS.items()},
+                               "release": agents.release(AGENT_RELEASES)["@AGENT_VERSION@"],
+                               "auto_update": agents.auto_update() if agents.enabled() else False})
+        if DEMO and op not in ("list", "code"):
+            if op == "update":
+                body = dict(body, version=agents.release(AGENT_RELEASES)["@AGENT_VERSION@"])
+            done = demo.agent_change(body.get("id"), op, body, agents.CAPS, agents.VERBS)
+            if done is not None:
+                return self._json({"ok": True} if done else {"ok": False, "error": "not a valid choice in the demo"}, 200 if done else 400)
         if not agents.enabled():
             return self._json({"ok": False, "error": "agents need LABHUD_DATA (a folder labhud can write)"}, 409)
         if op == "list":
             return self._json({"ok": True, "agents": agents.listing(), "caps": list(agents.CAPS),
-                               "verbs": {c: list(v) for c, v in agents.VERBS.items()}})
+                               "verbs": {c: list(v) for c, v in agents.VERBS.items()},
+                               "release": agents.release(AGENT_RELEASES)["@AGENT_VERSION@"], "auto_update": agents.auto_update()})
+        if op == "auto":   # ⚙'s "Update agents automatically": an older agent updates itself when it dials in
+            agents.set_auto_update(body.get("on") is True)
+            print(f"agents: automatic updates {'on' if body.get('on') is True else 'off'} from {self.client_address[0]}", flush=True)
+            return self._json({"ok": True, "auto_update": agents.auto_update()})
         if op == "code":
             code = agents.new_code()
             host = (self.headers.get("Host") or "").lower()
@@ -1739,6 +1758,10 @@ class Handler(BaseHTTPRequestHandler):
         elif op == "targets":
             ok = agents.set_targets(aid, body.get("cap"), body.get("targets"))
             what = f"{body.get('cap')} targets {body.get('targets')}"
+        elif op == "update":
+            ok, error = agents.update(aid, AGENT_RELEASES)
+            print(f"agent {name}: update from {self.client_address[0]}: {'ok' if ok else error}", flush=True)
+            return self._json({"ok": ok, **({} if ok else {"error": error})}, 200 if ok else 409)
         elif op == "rename":
             new = agents.rename(aid, body.get("name"))
             ok, what = new is not None, f"renamed to {new}"

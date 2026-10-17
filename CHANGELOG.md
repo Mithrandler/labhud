@@ -6,6 +6,17 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- **Agents update themselves.** ⚙ > Agents shows *Update to vX* on an agent older than the release
+  labhud pins (also `labhud agent update <agent>|--all`), and *Update agents automatically* does
+  it as each one dials in. labhud only names the version and its SHA-256: the agent (0.3.12 or
+  newer, installed as a service) downloads it from its own releases, checks it against the
+  release's SHA256SUMS too, and takes only a newer one. A container agent is updated by its image.
+- **Uptime in a card's panel**: the last 24 hours or 7 days as slices, and the share of time up,
+  as the app's tiles show it (`/api/uptime`).
+- **The demo has agents** in ⚙ > Devices: the docker VM's and the Proxmox node's, with what they
+  found; their ticks can be tried (kept until the demo restarts), and one has an update waiting.
+
 ### Changed
 - **One design for the wall, ⚙ and the app**: the colours and icons are in `design/tokens.json`,
   and `design/build.py` writes them into the pages, `static/icons.js` and the app's `Tokens.kt`

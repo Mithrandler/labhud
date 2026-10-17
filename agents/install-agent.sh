@@ -122,6 +122,12 @@ set_conf LABHUD_URL "$URL"
 [ -z "$NAME" ] || set_conf LABHUD_AGENT_NAME "$NAME"
 [ -z "$BASE_W" ] || set_conf LABHUD_AGENT_BASE_W "$BASE_W"
 [ -z "$PRICE" ] || set_conf LABHUD_AGENT_PRICE_KWH "$PRICE"
+# where the agent's own updates come from: a mirror is written here, by root on this host, never
+# sent by labhud (the agent's default is its GitHub releases)
+case "$RELEASES" in
+  https://github.com/Mithrandler/labhud-agent/releases/download|"") ;;
+  https://*) set_conf LABHUD_AGENT_RELEASES "$RELEASES" ;;
+esac
 
 if command -v pveum >/dev/null && ! grep -q '^LABHUD_PVE_TOKEN=' "$CONF"; then
   echo "Proxmox VE: making the user labhud@pve and its token (VM.PowerMgmt, VM.Audit, Sys.Audit)…"
