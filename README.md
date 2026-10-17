@@ -10,8 +10,8 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
   snapshot over Server-Sent Events.
 - **A setup page on first start.** Start it on an empty folder, open the link from its log, and
   it walks you through Proxmox (nodes, VMs, LXCs), every other service (tried before it is
-  kept) and the display, then writes the config and starts. `init.py agent <name>` adds any
-  Linux machine with one `curl | sh` line; `init.py edit` opens the config in a browser.
+  kept) and the display, then writes the config and starts. After that, ⚙ on the display (or
+  the `labhud` command) changes everything.
 - **Optional sources.** Proxmox VE (guests, backups, snapshots, storage running out), Proxmox
   Backup Server, OPNsense, Synology DSM, OpenMediaVault, Docker (with `labhud.*` labels), a UPS
   through NUT, certificate expiry, Technitium / Pi-hole / AdGuard, Beszel, Uptime Kuma,
@@ -22,24 +22,44 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **Made for a wall.** Problems take the screen; numbers past a mark notify after 5 minutes, not
   on every spike; a calm mode shows only the clock when all is well; Fully Kiosk's screen goes
   off at night; a separate public status page shows names and states only.
+- **Its own agents.** `labhud-agent` (one small Go binary or container per host) pairs with a
+  one-time code from ⚙ > Agents and does only what you tick there: sensors and charts, Docker
+  containers (start, stop, update, logs), systemd services, Proxmox guests, Pterodactyl game
+  servers, Wake-on-LAN, the host's reboot and updates. See [docs/agents.md](docs/agents.md).
+- **Set up from the screen.** ⚙ holds everything: sources (tried before they are kept, or found
+  by scanning your network), pages and groups by drag and drop, agents, alert rules, phones, the
+  PIN, the config file itself. The `labhud` command does the same from a terminal
+  ([docs/cli.md](docs/cli.md)).
+- **Alerts on hosts.** CPU, RAM, disk, temperature or an agent gone for some minutes, on one host
+  or on every one; quiet hours; sent to ntfy, to the app, or both.
+- **One admin, with two factors.** A password and an authenticator app. A screen or phone that
+  is not signed in only looks: no buttons, no ⚙.
+- **A PIN for a screen anyone walks by.** With a 4-digit PIN, a signed-in screen goes back to only
+  looking after 2 minutes without a touch. Only a scrypt hash is kept; wrong guesses are slowed.
+- **A phone app.** [LabHUD for Android](https://github.com/Mithrandler/labhud-android) pairs with a
+  QR code and shows the wall's pages, the devices, the timeline and the alerts; signed in as the
+  admin, its buttons work after the PIN or a fingerprint. Instant notifications through
+  UnifiedPush, with nothing of the news leaving your network. See [docs/app-api.md](docs/app-api.md).
 - **Each screen its own look.** The ⚙ next to the clock sets, for that screen only: OLED black or
-  dark grey, an accent colour, the font (Roboto, Inter, JetBrains Mono) and text size, which pages
-  rotate and how fast, and its own night and calm hours. Nothing changes on the server.
-- **A PIN for a screen anyone walks by.** With a 4-digit PIN set, the display is only for looking:
-  any touch asks for the PIN, and it locks again after 10 minutes without a touch, or from the
-  lock next to ⚙. Only a scrypt hash is kept; wrong guesses are slowed down.
-- **A phone app.** The LabHUD Android app pairs with a QR code (⚙ > Devices > Phones, or
-  `init.py pair`) and shows what is red, every card and its charts, the actions, and the wall
-  itself, over your LAN or VPN. See [docs/app-api.md](docs/app-api.md).
-- **One admin, with two factors.** A password and an authenticator app guard pairing phones and
-  editing the config from the display. Set in the setup page, or `init.py admin`.
-- **One config file** (TOML) describing your pages and cards, reloaded on save.
+  dark grey, an accent colour, the font and text size, which pages rotate and how fast, and its
+  own night and calm hours.
+- **HTTPS by default**, with labhud's own certificate, pinned by the app and the agents.
 - **Demo mode** with made-up data, so you can try it without touching your lab.
 
 > [!WARNING]
-> **Looking needs no login.** The page shows your internal addresses and, if you enable actions,
-> buttons that act on your lab (behind the display's PIN, if you set one). Keep it behind a
+> **Looking needs no login.** The page shows your internal addresses; its buttons need the admin
+> (and the display's PIN, if you set one). Keep it behind a
 > firewall rule that lets only the display in, or behind a VPN. See [docs/security.md](docs/security.md).
+
+## In five steps
+
+1. **Start it** on an empty data folder (Docker Compose in [docs/install.md](docs/install.md)) and
+   open the link with the setup code from its log.
+2. **Make the admin**: user, password, and the code from your authenticator app.
+3. **Add your sources**: Proxmox first, then the rest, each tried before it is kept; or ⚙ >
+   Sources > Scan my network.
+4. **Add agents** from ⚙ > Agents > Add an agent: one line on each host, then tick what it may do.
+5. **Pair your phone** from ⚙ > Phones (the QR code), and put the display on the wall.
 
 ## Try it
 
@@ -72,7 +92,8 @@ In portrait the same page gets two columns, and the project name takes the free 
 - [docs/live-agent.md](docs/live-agent.md): your own data (alerts, DNS, logins, game servers) as one JSON document
 - [docs/actions.md](docs/actions.md): buttons that wake hosts or start VMs, signed for the agent (off by default)
 - [docs/app-api.md](docs/app-api.md): the API of the Android app, pairing and phone tokens
-- [docs/agents.md](docs/agents.md): the plan for labhud's own agents (not built yet)
+- [docs/agents.md](docs/agents.md): labhud's own agents: install, pair, what each capability may do
+- [docs/cli.md](docs/cli.md): the `labhud` command, everything ⚙ does from a terminal
 - [docs/integrations.md](docs/integrations.md): Docker, NUT, certificates, DNS filters, Beszel, Uptime Kuma, Healthchecks, Scrutiny, Traefik, feeds, the screen, the public page, MQTT and Home Assistant
 - [config.example.toml](config.example.toml): every config option, commented
 - [.env.example](.env.example): every source and the variables it reads

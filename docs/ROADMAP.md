@@ -20,14 +20,24 @@ version.
 - **Apps:** `/api/v1` for the [Android app](https://github.com/Mithrandler/labhud-android):
   pairing by QR code or admin sign-in, a token per phone, each card's state worked out on the
   server, history and per-card uptime, notifications that open the app.
+- **0.3 (October 2026): agents, setup from the screen, one version for all three.**
+  [labhud-agent](https://github.com/Mithrandler/labhud-agent) (Go, binary or container) paired
+  from ⚙ > Agents: sensors and charts, Docker (start, stop, update, logs), systemd, Proxmox
+  guests, Pterodactyl, Wake-on-LAN, the host. ⚙ on seven tabs: sources (tried, or found by a
+  network scan), pages and groups by drag and drop and by kind, agents, alert rules with quiet
+  hours, phones, the PIN, the config file kept by labhud. The `labhud` command does the same from
+  a terminal. Only the admin acts; a PIN sends a signed-in screen back to looking after 2
+  minutes. HTTPS by default. The app 0.3: Status / Devices / Activity / Settings, the bell,
+  games, containers, agents' ticks, the admin's sign-in with the PIN or a fingerprint, instant
+  notifications through UnifiedPush with nothing of the news in the push. Audited with bandit,
+  gosec, govulncheck, Android lint and a history scan ([threat-model.md](threat-model.md)).
 
-## Next: labhud agents
+## Not done yet
 
-One agent per host, added from ⚙ with a pairing code, that controls what runs there through
-local APIs (Proxmox, Docker, systemd, Pterodactyl) instead of scripts. The design and the open
-questions are in [agents.md](agents.md).
-
-Smaller:
-
-- Demo data and screenshots for the newer sources.
+- **A design system shared by the wall, ⚙ and the app** (colours, type, icons): they look alike
+  but are kept by hand in three places.
+- **Screenshots** of 0.3 (⚙'s tabs, the bell, the agents) in the README and the docs site.
+- **Agents' ticks of Wake-on-LAN by a typed MAC** in the app (⚙ and the CLI have it).
+- **An agent that updates itself** from its release (today: the installer again, or the image).
 - Per-card uptime on the display too (the app shows it first).
+- Demo data for the newer sources.
