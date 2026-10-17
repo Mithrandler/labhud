@@ -301,10 +301,12 @@ class AdminPhone(DemoServer):
         super().tearDownClass()
         cls.data.cleanup()
 
-    def call(self, path, body=None, token=None, page=False, unlock=None, admin=True):
+    def call(self, path, body=None, token=None, page=False, unlock=None, admin=True, cookie=None):
         headers = {"Host": self.host, "Content-Type": "application/json"}
         if token:
             headers["Authorization"] = "Bearer " + token
+        if cookie:
+            headers["Cookie"] = "labhud_device=" + cookie
         if page:
             headers["Origin"] = f"http://{self.host}"
             if admin:
@@ -318,16 +320,46 @@ class AdminPhone(DemoServer):
         conn.close()
         return out
 
-    def test_pin_then_buttons(self):
+    def paired(self, name, admin=True):
         status, p = self.call("/api/v1/pair-code", page=True)
         self.assertEqual(status, 200, p)
         code = urllib.parse.parse_qs(urllib.parse.urlsplit(p["link"]).query)["c"][0]
-        token = self.call("/api/v1/pair", {"code": code, "name": "Pixel"})[1]["token"]
-        # the admin's signature on the device, as admin-login would leave it (a TOTP code works once)
-        env = dict(os.environ, LABHUD_DATA=self.data.name, **signin.ENV)
-        subprocess.run([sys.executable, "-c", "import sys, admin, devices; "
-                        "devices.set_admin(devices.lookup(sys.argv[1])[0], admin.Admin().sign())", token],
-                       cwd=ROOT, env=env, check=True, timeout=30)
+        token = self.call("/api/v1/pair", {"code": code, "name": name})[1]["token"]
+        if admin:
+            # the admin's signature on the device, as admin-login would leave it (a TOTP code works once)
+            env = dict(os.environ, LABHUD_DATA=self.data.name, **signin.ENV)
+            subprocess.run([sys.executable, "-c", "import sys, admin, devices; "
+                            "devices.set_admin(devices.lookup(sys.argv[1])[0], admin.Admin().sign())", token],
+                           cwd=ROOT, env=env, check=True, timeout=30)
+        return token
+
+    def test_wall_mode_is_the_admin_of_its_phone(self):
+        maint = "/api/maintenance/vm-pve-100"
+        looking = self.paired("Looker", admin=False)
+        self.assertEqual(self.call("/api/admin/check", page=True, admin=False, cookie=looking)[0], 403)
+        self.assertEqual(self.call(maint, {"minutes": 0}, page=True, admin=False, cookie=looking)[0], 403)
+        token = self.paired("Wall")
+        status, r = self.call("/api/admin/check", page=True, admin=False, cookie=token)
+        self.assertEqual((status, r.get("id")), (200, "phone:Wall"), r)
+        self.assertEqual(self.call(maint, {"minutes": 0}, page=True, admin=False, cookie=token)[0], 200)
+        self.assertEqual(self.call(maint, {"minutes": 0}, admin=False, cookie=token)[0], 403)   # not from the page
+        status, r = self.call("/api/lock/pin", {"new": "4321"}, page=True)
+        self.assertEqual(status, 200, r)
+        try:
+            self.assertEqual(self.call(maint, {"minutes": 0}, page=True, admin=False, cookie=token)[0], 403)   # the PIN holds
+            status, u = self.call("/api/lock/unlock", {"pin": "4321"}, page=True, admin=False, cookie=token)
+            self.assertEqual(status, 200, u)
+            self.assertEqual(self.call(maint, {"minutes": 0}, page=True, admin=False, cookie=token, unlock=u["ticket"])[0], 200)
+        finally:
+            status, t = self.call("/api/lock/unlock", {"pin": "4321"}, page=True)
+            self.call("/api/lock/pin", {"old": "4321", "new": None}, page=True, unlock=t.get("ticket"))
+        # Sign out in Wall mode signs its phone out: the app, too, only shows after that
+        self.assertEqual(self.call("/api/admin/logout", page=True, admin=False, cookie=token)[0], 200)
+        self.assertEqual(self.call("/api/admin/check", page=True, admin=False, cookie=token)[0], 403)
+        self.assertEqual(self.call(maint, {"minutes": 0}, token=token)[0], 403)
+
+    def test_pin_then_buttons(self):
+        token = self.paired("Pixel")
         maint = "/api/maintenance/vm-pve-100"
         self.assertEqual(self.call(maint, {"minutes": 0}, token=token)[0], 200)        # no PIN yet
         status, r = self.call("/api/lock/pin", {"new": "4321"}, page=True)

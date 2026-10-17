@@ -1313,8 +1313,9 @@ class Handler(BaseHTTPRequestHandler):
                 for part in (self.headers.get("Cookie") or "").split(";"):
                     k, _, v = part.strip().partition("=")
                     if k == "labhud_device":
-                        name = devices.check(v)
-                        self._dev = (name, "cookie") if name else (None, None)
+                        found = devices.lookup(v)
+                        if found:
+                            self._dev, self._dev_rec = (found[1]["name"], "cookie"), found
         return self._dev
 
     def _device_admin(self):
@@ -1578,7 +1579,14 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "link": link, "svg": qr.svg(link), "minutes": devices.PAIR_MINUTES})
 
     def _admin_ok(self):
-        return ADMIN.valid(self.headers.get("X-Labhud-Admin"))
+        return ADMIN.valid(self.headers.get("X-Labhud-Admin")) or self._wall_admin()
+
+    def _wall_admin(self):
+        """The wall page in the app's Wall mode (the labhud_device cookie) of a phone signed in as
+        the admin: the admin too, without a second sign-in, but only from labhud's own page, and
+        the PIN still holds (_unlocked), so the wall goes back to only showing after 2 minutes."""
+        return (self._device()[1] == "cookie" and ADMIN.is_on() and self._same_page()
+                and devices.is_admin(self._dev_rec[1], ADMIN.sign()))
 
     def _operator(self):
         """The cards' buttons and maintenance: a display or a phone signed in as the admin, and
@@ -1615,8 +1623,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "ticket": ticket, "idle": ADMIN.idle, "user": ADMIN.user()})
         if step == "logout":
             ADMIN.close(self.headers.get("X-Labhud-Admin"))
+            if self._wall_admin():   # Wall mode is the admin because its phone is: sign the phone out
+                devices.set_admin(self._dev_rec[0], None)
+                print(f"admin: phone {self._dev[0]} signed out from its Wall mode", flush=True)
             return self._json({"ok": True})
-        current = ADMIN.session_id(self.headers.get("X-Labhud-Admin"))
+        current = ADMIN.session_id(self.headers.get("X-Labhud-Admin")) or (
+            f"phone:{self._dev[0]}" if self._wall_admin() else None)
         if not current:
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if step == "check":
@@ -1715,7 +1727,8 @@ class Handler(BaseHTTPRequestHandler):
             base = f"{'https' if TLS_CERT else 'http'}://{host}"
             print(f"agent pairing code made from {self.client_address[0]}", flush=True)
             return self._json({"ok": True, "code": code, "minutes": agents.PAIR_MINUTES, "url": base,
-                               **agents.install_lines(base, code, AGENT_IMAGE, AGENT_RELEASES)})
+                               **agents.install_lines(base, code, AGENT_IMAGE, AGENT_RELEASES,
+                                                       own_cert=bool(TLS_CERT) and not os.environ.get("LABHUD_TLS_CERT"))})
         aid = body.get("id")
         if not isinstance(aid, str) or not agents.get(aid):
             return self._json({"ok": False, "error": "no such agent"}, 404)
@@ -2090,8 +2103,7 @@ class Handler(BaseHTTPRequestHandler):
                 with open(AGENT_FILES["/agent/labhud-agent.py"], "rb") as f:
                     body = body.replace(b"@AGENT_SHA256@", hashlib.sha256(f.read()).hexdigest().encode())
             elif path == "/agent/install-agent.sh":
-                for k, v in agents.release(AGENT_RELEASES).items():
-                    body = body.replace(k.encode(), v.encode())
+                body = agents.install_script(AGENT_RELEASES)
         except OSError:
             return self._json({"error": "not found"}, 404)
         self._headers(200, "text/plain; charset=utf-8", len(body), "no-cache")

@@ -15,6 +15,10 @@ let ADMIN_USER = "";      // set once the server said the ticket is live
 let ADMIN_SESSION = "";   // this browser's session id, to mark it in the list
 let ADMIN_IDLE = 30 * 86400;
 
+/** The wall page in the app's Wall mode: the app put its token in the labhud_device cookie. A phone
+ * signed in as the admin makes its Wall mode the admin too (server.py _wall_admin), no ticket here. */
+function in_wall_mode() { try { return document.cookie.split(/;\s*/).some((c) => c.startsWith("labhud_device=")); } catch (e) { return false; } }
+
 function admin_on() { return !!(typeof CFG !== "undefined" && CFG && CFG.admin && CFG.admin.on); }
 function signed_in() { return admin_on() && !!ADMIN_USER; }
 
@@ -41,7 +45,7 @@ function set_admin(ticket, user, id) {
 /** At start, when ⚙ opens and every few minutes: is this browser's ticket still live? Only a
  * refusal signs out; a network failure keeps the ticket for the next try. */
 function check_admin() {
-  if (!admin_on() || !ADMIN_TICKET) {
+  if (!admin_on() || (!ADMIN_TICKET && !in_wall_mode())) {
     if (ADMIN_USER) set_admin(""); else render_account();
     return Promise.resolve(false);
   }

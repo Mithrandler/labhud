@@ -103,6 +103,7 @@ HTTP (`setupmode.py`).
 | Guessing the admin's password | scrypt; the authenticator code too; 5 wrong tries stop the checks for 1 min, doubling up to 1 h; a code works once | none known |
 | Stealing a display's admin session | it lives in that browser only; it ends after 30 days unused, at Sign out, from ⚙ > Security on any screen, or with a new admin (`init.py admin`) | whoever copies the browser's storage has the session until one of those |
 | Pairing a phone without being asked | a one-time code (5 minutes) shown by the admin, or the admin's own sign-in | a phone paired by QR code only looks |
+| A visitor at a wall that runs the app's Wall mode | the page is the admin only while its phone is; with a PIN, every button and ⚙ need it, and the wall goes back to only showing after 2 minutes | a wall phone signed in as the admin on a display without a PIN: anyone at the wall has ⚙ |
 | A phone's token copied out of the phone | sealed with a Keystore key that never leaves the phone; only a hash on the server | a rooted phone that is unlocked |
 | The wall's PIN read from a phone | kept only behind a fingerprint-bound Keystore key, voided when a fingerprint is added | none known |
 | The first sign-in without a QR code over HTTPS | the certificate seen then is pinned for good | that first connection trusts what answers: do it on your own network |

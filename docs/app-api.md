@@ -59,6 +59,9 @@ phones and agents need `device_admin`, and with a PIN, a live unlock ticket too.
 For the wall page inside a WebView, set the token as the cookie `labhud_device` for labhud's
 address instead: the page then loads under any name. It stays a wall: its buttons need their
 Origin to be the page's own, and the display's PIN, when one is set, as on any other screen.
+When the phone is signed in as the admin, the page is the admin too (no second sign-in):
+`/api/admin/check` answers for it with the id `phone:<name>`, and Sign out on that page signs the
+phone out.
 
 ### Pairing
 
