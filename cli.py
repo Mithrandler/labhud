@@ -21,6 +21,8 @@ only `admin` and `pin` work, as with init.py.
     labhud agent deny <agent> <cap> [target ...]   untick the targets, or the whole capability
     labhud agent logs <agent> <container>          a ticked container's last lines
     labhud agent prune <agent>                     clean the unused images (the target "images" ticked)
+    labhud agent schedule <agent> <container> on|off   update it on its own, in the window
+    labhud agent window daily|mon,thu <HH:MM>      when those updates run (labhud's local time)
     labhud agent update <agent> | --all            update to the release labhud pins (a service, not a container)
     labhud agent auto on|off                       older agents update themselves when they dial in
     labhud phone pair [name]                       a one-time link and QR code for the app
@@ -289,10 +291,22 @@ def agent(args):
     if sub == ["logs"] and len(args) == 3:
         print(setup("logs", {"agent": args[1], "target": args[2]}).get("output", ""), end="")
         return
+    if sub == ["schedule"] and len(args) == 4 and args[3] in ("on", "off"):
+        a = find_agent(args[1])[0]
+        now = set(a.get("auto", []))
+        now = now | {args[2]} if args[3] == "on" else now - {args[2]}
+        call("/api/agents/autoupdate", {"id": a["id"], "targets": sorted(now)})
+        return print(f"✓ {a['name']}: updated on their own: {', '.join(sorted(now)) or 'none'}")
+    if sub == ["window"] and len(args) == 3:
+        names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        days = list(range(7)) if args[1] == "daily" else [names.index(d) for d in args[1].lower().split(",") if d in names]
+        r = call("/api/agents/window", {"days": days, "at": args[2]})
+        return print(f"✓ containers on their own: {', '.join(names[d] for d in r['window']['days'])} at {r['window']['at']}")
     if sub == ["prune"] and len(args) == 2:
         return print(f"✓ {args[1]}: {setup('prune', {'agent': args[1]}).get('output', '')}")
     raise Failed("usage: labhud agent list | code | allow <agent> <cap> [target … | --all] | deny <agent> <cap> [target …] "
-                 "| logs <agent> <container> | prune <agent> | update <agent> | update --all | auto on|off")
+                 "| logs <agent> <container> | prune <agent> | schedule <agent> <container> on|off | window daily|mon,thu HH:MM "
+                 "| update <agent> | update --all | auto on|off")
 
 
 def phone(args):

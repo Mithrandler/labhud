@@ -511,6 +511,52 @@ class PruneRules(unittest.TestCase):
         self.assertNotIn("a1b2c3d4", agents.history)
 
 
+class Schedule(unittest.TestCase):
+    """Containers labhud updates on its own, in the window (agents.due, run_auto)."""
+
+    def setUp(self):
+        self.real = agents.store
+        agents.store = FakeStore()
+        agents.store.save(agents.AGENTS_KEY, {"a1b2c3d4": {"name": "n", "key": "k", "caps": ["docker"],
+                                                          "targets": {"docker": ["web", "db", "images"]}}})
+        agents._state.clear()
+
+    def tearDown(self):
+        agents.store = self.real
+        agents._live.pop("a1b2c3d4", None)
+
+    def test_auto_only_ticked_and_sent_with_allow(self):
+        self.assertTrue(agents.set_auto("a1b2c3d4", ["web", "gone"]))
+        self.assertFalse(agents.set_auto("a1b2c3d4", ["images"]))
+        self.assertEqual(agents.allowance("a1b2c3d4")["auto"], {"docker": ["web"]})   # "gone" is not ticked
+
+    def test_window(self):
+        at = lambda y, mo, d, h, mi: time.mktime((y, mo, d, h, mi, 0, 0, 0, -1))   # noqa: E731
+        self.assertTrue(agents.set_window([6], "04:00"))   # Sundays
+        self.assertFalse(agents.set_window([7], "04:00"))
+        self.assertFalse(agents.set_window([1], "4am"))
+        sunday = at(2026, 10, 18, 4, 0)
+        self.assertEqual(agents.due(sunday), "2026-10-18")
+        self.assertIsNone(agents.due(sunday, last="2026-10-18"))      # once a day
+        self.assertEqual(agents.due(at(2026, 10, 18, 4, 40)), "2026-10-18")   # a restart within the hour
+        self.assertIsNone(agents.due(at(2026, 10, 18, 5, 1)))        # later: the next window
+        self.assertIsNone(agents.due(at(2026, 10, 18, 3, 59)))
+        self.assertIsNone(agents.due(at(2026, 10, 19, 4, 0)))        # Monday
+
+    def test_run_auto_only_with_an_update_waiting(self):
+        agents.set_auto("a1b2c3d4", ["web", "db"])
+        sent = []
+
+        class Live:
+            def command(self, cap, verb, target, wait):
+                sent.append((cap, verb, target))
+                return True, "", ""
+        agents._live["a1b2c3d4"] = Live()
+        agents._state["a1b2c3d4"] = {"containers": {"web": {"update": True}, "db": {"update": True, "updating": True}}}
+        self.assertEqual(agents.run_auto(), [("n", "web", True, "")])
+        self.assertEqual(sent, [("docker", "update", "web")])   # db is being updated already
+
+
 class Versions(unittest.TestCase):
     def test_newer(self):
         for v, own, want in [("0.3.12", "0.3.0", True), ("0.3.0", "0.3.0", False), ("0.3.0", "0.3.12", False),

@@ -6,6 +6,17 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- **Containers updated on a schedule**: ⚙ > Devices > Agents > Docker > *Update on their own*:
+  ticked containers labhud updates by itself when their image has a newer one, in a window (days,
+  time; every day at 04:00 by default); `labhud agent schedule` and `labhud agent window`. With
+  agent 0.3.14, `LABHUD_AGENT_AUTO_LABELS` (e.g. `dockhand.update=false`) marks them for another
+  updater to leave alone.
+- **The fleet's updates**: `list = "fleet.updates"`, every container with a newer image on every
+  host, with UPDATE and UPDATE ALL in the card's panel; `fleet.update_count`.
+- **A container's DETAILS** (the admin): ports, volumes, networks, restart policy, labels, the
+  environment by name only (agent 0.3.14).
+
 ## [0.3.16] - 2026-10-17
 
 ### Fixed

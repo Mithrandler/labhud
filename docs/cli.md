@@ -26,6 +26,8 @@ also work while it is stopped: they write their files directly, like `init.py`.
     labhud agent deny <agent> <cap> [target ...]   untick the targets, or the whole capability
     labhud agent logs <agent> <container>          a ticked container's last lines
     labhud agent prune <agent>                     clean the unused images (the target "images" ticked)
+    labhud agent schedule <agent> <container> on|off   update it on its own, in the window
+    labhud agent window daily|mon,thu <HH:MM>      when those updates run (labhud's local time)
     labhud agent update <agent> | --all            update to the release labhud pins (a service, not a container)
     labhud agent auto on|off                       older agents update themselves when they dial in
     labhud phone pair [name]                       a one-time link and QR code for the app

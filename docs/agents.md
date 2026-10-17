@@ -104,6 +104,19 @@ tooling, and ⚙ only shows which version each agent runs.
 - **Clean unused images**: tick `images` under Docker (it is no container, and "Tick all" leaves it
   out), then ⚙ > Devices > Agents > *Clean unused images*, or `labhud agent prune <agent>`: the
   images no container uses, unused for a day at least, go, and the timeline says what that freed.
+- **Update on their own**: under Docker in ⚙ > Devices > Agents, the ticked containers labhud
+  updates by itself when their registry has a newer image, in a window the same for every agent
+  (every day at 04:00 unless changed; labhud's local time, `TZ`), one after the other, as UPDATE
+  does; the timeline says what started. `labhud agent schedule <agent> <container> on|off`,
+  `labhud agent window sun 04:00`. When another updater (Dockhand, Watchtower) runs too, give the
+  agent `LABHUD_AGENT_AUTO_LABELS=dockhand.update=false`: the containers labhud updates on their own
+  get that label when they are made again, and lose it when they are no longer labhud's, so each
+  updater keeps to its own.
+- **The fleet's updates**: a card with `list = "fleet.updates"` (and `fleet.update_count` as a
+  metric) lists every container with a newer image on every host; its panel has UPDATE on each
+  ticked one and UPDATE ALL.
+- **DETAILS** (the admin), beside LOGS: how a container is made (ports, volumes, networks,
+  restart policy, labels), its environment by name only: values are where passwords live.
 - **Failed units**: the `failed` alert rule (on by default, after 5 minutes) watches every systemd
   unit of a host in the failed state, ticked or not.
 - `wake = "<agent>:<mac>"`: WAKE from another agent, one that is up while this machine is off

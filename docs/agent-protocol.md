@@ -181,6 +181,10 @@ or `loop` (3 crashes in 10 minutes, said once, then quiet for 30 minutes).
  "targets":{"docker":["jellyfin"],"pve":["101","113"]}}
 ```
 
+`auto` (labhud 0.3.17+, only when there are some): `{"docker":["sonarr"]}`, the containers labhud
+updates on its own on a schedule. The agent gives them `LABHUD_AGENT_AUTO_LABELS` when it makes
+them again on an update, and takes those labels off the others.
+
 `command` — `{"type":"command","cmd":"<16 hex>","cap":"docker","verb":"restart","target":"jellyfin"}`.
 
 `update` — `{"type":"update","cmd":"<16 hex>","version":"0.3.12","sha256":"<64 hex>"}`: replace
@@ -196,7 +200,7 @@ stops (`systemctl` will not restart it: it exits with status 0 and the unit has
 | cap | targets | verbs | done through |
 |---|---|---|---|
 | `sensors` | — | — (state only) | `/proc`, hwmon, `nvidia-smi`, RAPL, `statvfs` |
-| `docker` | container names, and `images` | `start` `stop` `restart` `update` `logs`; `prune` on `images` only | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only; `prune` = the images no container uses, unused for 24 hours, removed (`docker image prune -a --filter until=24h`), answered with what it freed. `images` takes no other verb |
+| `docker` | container names, and `images` | `start` `stop` `restart` `update` `logs` `inspect`; `prune` on `images` only | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only; `inspect` = how it is made (ports, mounts, networks, restart policy, labels, the environment's names without values), read only; `prune` = the images no container uses, unused for 24 hours, removed (`docker image prune -a --filter until=24h`), answered with what it freed. `images` takes no other verb |
 | `systemd` | unit names | `start` `stop` `restart` | D-Bus `org.freedesktop.systemd1` |
 | `host` | `host` | `reboot` `shutdown` `update` | D-Bus `login1`; `update` = a transient unit running apt-get/dnf |
 | `wol` | MAC addresses (`aa:bb:…`, lowercase) | `wake` | UDP broadcast to port 9 |

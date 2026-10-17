@@ -316,7 +316,7 @@ _ROWS = {
                  "targets": {"docker": [n for n in DEMO_CONTAINERS if n != "portainer"] + ["images"]},
                  "choices": {"docker": sorted(DEMO_CONTAINERS) + ["images"], "systemd": ["cron.service", "docker.service", "ssh.service"],
                              "host": ["host"]},
-                 "labels": {"docker": {"images": "Unused images"}}, "prune": True},
+                 "labels": {"docker": {"images": "Unused images"}}, "prune": True, "auto": ["sonarr", "radarr"]},
     DEMO_PVE_AGENT: {"name": "pve", "addr": "192.0.2.10", "install": "service", "version": "0.2.9",   # one release behind
                      "found": ["sensors", "host", "pve", "wol", "systemd"],
                      "host": {"hostname": "pve", "os": "Proxmox VE 9.1", "kernel": "6.17.2-1-pve", "arch": "amd64"},
@@ -360,6 +360,12 @@ def agent_change(aid, op, body, caps, verbs):
         r["targets"][cap] = list(dict.fromkeys(want))
         if cap == "wol":
             r["choices"]["wol"] = sorted(set(r["choices"]["wol"]) | set(want))
+        return True
+    if op == "autoupdate":
+        want = body.get("targets")
+        if not (isinstance(want, list) and set(want) <= set(r["targets"].get("docker", [])) - {"images"}):
+            return False
+        r["auto"] = sorted(set(want))
         return True
     if op == "update":   # as if it had downloaded the release and dialled in again
         r["version"] = body.get("version") or r["version"]

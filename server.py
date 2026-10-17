@@ -1444,7 +1444,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._app_admin(self.path.rsplit("/", 1)[1])
         if self.path == "/api/v1/push":
             return self._app_push()
-        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto)", self.path)
+        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto|autoupdate|window)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
         st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune)", self.path)
@@ -1774,7 +1774,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "agents": made_up + (agents.listing() if agents.enabled() else []),
                                "caps": list(agents.CAPS), "verbs": {c: list(v) for c, v in agents.VERBS.items()},
                                "release": agents.release(AGENT_RELEASES)["@AGENT_VERSION@"],
-                               "auto_update": agents.auto_update() if agents.enabled() else False})
+                               "auto_update": agents.auto_update() if agents.enabled() else False,
+                               "window": agents.window()})
         if DEMO and op not in ("list", "code"):
             if op == "update":
                 body = dict(body, version=agents.release(AGENT_RELEASES)["@AGENT_VERSION@"])
@@ -1786,7 +1787,13 @@ class Handler(BaseHTTPRequestHandler):
         if op == "list":
             return self._json({"ok": True, "agents": agents.listing(), "caps": list(agents.CAPS),
                                "verbs": {c: list(v) for c, v in agents.VERBS.items()},
-                               "release": agents.release(AGENT_RELEASES)["@AGENT_VERSION@"], "auto_update": agents.auto_update()})
+                               "release": agents.release(AGENT_RELEASES)["@AGENT_VERSION@"], "auto_update": agents.auto_update(),
+                               "window": agents.window()})
+        if op == "window":   # when the containers ticked "on their own" are updated
+            if not agents.set_window(body.get("days"), body.get("at")):
+                return self._json({"ok": False, "error": "days: 0 (Monday) to 6; at: HH:MM"}, 400)
+            print(f"agents: update window {agents.window()} from {self.client_address[0]}", flush=True)
+            return self._json({"ok": True, "window": agents.window()})
         if op == "auto":   # ⚙'s "Update agents automatically": an older agent updates itself when it dials in
             agents.set_auto_update(body.get("on") is True)
             print(f"agents: automatic updates {'on' if body.get('on') is True else 'off'} from {self.client_address[0]}", flush=True)
@@ -1809,6 +1816,9 @@ class Handler(BaseHTTPRequestHandler):
         elif op == "targets":
             ok = agents.set_targets(aid, body.get("cap"), body.get("targets"))
             what = f"{body.get('cap')} targets {body.get('targets')}"
+        elif op == "autoupdate":
+            ok = agents.set_auto(aid, body.get("targets"))
+            what = f"containers updated on their own {body.get('targets')}"
         elif op == "update":
             ok, error = agents.update(aid, AGENT_RELEASES)
             print(f"agent {name}: update from {self.client_address[0]}: {'ok' if ok else error}", flush=True)
@@ -2287,6 +2297,7 @@ if __name__ == "__main__":
     agents.tls_fp = devices.tls_fingerprint(TLS_CERT)
     agents.load_history()
     threading.Thread(target=agents.pinger, args=(threading.Event(),), daemon=True, name="agents").start()
+    threading.Thread(target=agents.scheduler, args=(threading.Event(),), daemon=True, name="agent-updates").start()
     publish_agents()
     # Maintenance as kept at the last stop is not news: in the snapshot before the watcher starts.
     _data["maintenance"] = dict(maintenance_now(), _t=int(time.time()))

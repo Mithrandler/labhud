@@ -162,10 +162,99 @@ def by_name(name):
 
 
 def allowance(aid):
-    """{"caps": [...], "targets": {cap: [...]}}: what the agent may do, as sent to it."""
+    """{"caps": [...], "targets": {cap: [...]}, "auto": {"docker": [...]}}: what the agent may do,
+    as sent to it, and which containers labhud updates on its own (the agent marks them: its
+    LABHUD_AGENT_AUTO_LABELS)."""
     a = get(aid) or {}
     caps = [c for c in a.get("caps", []) if c in CAPS]
-    return {"caps": caps, "targets": {c: list(a.get("targets", {}).get(c, [])) for c in caps if c in VERBS}}
+    auto = auto_targets(a)
+    return {"caps": caps, "targets": {c: list(a.get("targets", {}).get(c, [])) for c in caps if c in VERBS},
+            **({"auto": {"docker": auto}} if auto else {})}
+
+
+# --- containers updated on a schedule (⚙ > Devices > Agents, "Update on their own") ---
+#
+# Each agent keeps `auto`: the ticked containers labhud updates by itself, in the window (every
+# day or some days, at one time, the server's local time), when their registry has a newer image.
+# Only containers ticked with UPDATE; one after the other, as UPDATE would.
+
+WINDOW_KEY = "agents_update_window"
+WINDOW_DEFAULT = {"days": [0, 1, 2, 3, 4, 5, 6], "at": "04:00"}   # Monday = 0
+HHMM = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
+
+
+def auto_targets(a):
+    """The containers of one agent labhud updates on its own: still ticked, not the images' target."""
+    ticked = set(a.get("targets", {}).get("docker", [])) if "docker" in a.get("caps", []) else set()
+    return sorted(t for t in a.get("auto", []) if t in ticked and t != PRUNE_TARGET)
+
+
+def set_auto(aid, targets):
+    a = get(aid)
+    if not a or not isinstance(targets, list) or len(targets) > MAX_TARGETS \
+            or any(not isinstance(t, str) or not TARGET["docker"].fullmatch(t) or t == PRUNE_TARGET for t in targets):
+        return False
+    if not _save(aid, auto=sorted(set(targets))):
+        return False
+    _send_allow(aid)
+    return True
+
+
+def window():
+    w = store.load(WINDOW_KEY) if store.enabled() else None
+    return w if isinstance(w, dict) and "days" in w and "at" in w else dict(WINDOW_DEFAULT)
+
+
+def set_window(days, at):
+    if not (isinstance(days, list) and days and all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6 for d in days)
+            and isinstance(at, str) and HHMM.fullmatch(at)):
+        return False
+    store.save(WINDOW_KEY, {"days": sorted(set(days)), "at": at})
+    return True
+
+
+def due(now=None, last=None):
+    """The date (YYYY-MM-DD) when the window is open at `now` and not yet run that day, else None."""
+    t = time.localtime(now or time.time())
+    w = window()
+    today = time.strftime("%Y-%m-%d", t)
+    if t.tm_wday not in w["days"] or time.strftime("%H:%M", t) < w["at"] or last == today:
+        return None
+    # open for an hour: a labhud restarted at 04:20 still does it, one started at noon waits a day
+    h, m = map(int, w["at"].split(":"))
+    return today if (t.tm_hour * 60 + t.tm_min) - (h * 60 + m) < 60 else None
+
+
+def run_auto(wait=COMMAND_WAIT):
+    """Updates, on every agent online, the auto containers whose registry has a newer image.
+    Returns [(agent name, container, ok, error)]."""
+    out = []
+    for aid, a in _load().items():
+        if aid not in _live:
+            continue
+        st = (_state.get(aid) or {}).get("containers") or {}
+        for t in auto_targets(a):
+            x = st.get(t) or {}
+            if x.get("update") is True and not x.get("updating") and allowed(aid, "docker", "update", t):
+                ok, error = command(aid, "docker", "update", t, wait)
+                out.append((a["name"], t, ok, error))
+    return out
+
+
+def scheduler(stop, every=30):
+    """One thread: opens the window once a day (its days), and says what it started."""
+    last = None
+    while not stop.wait(every):
+        today = due(last=last)
+        if not today:
+            continue
+        last = today
+        started = run_auto()
+        if started:
+            good = [f"{n}/{c}" for n, c, ok, _ in started if ok]
+            bad = [f"{n}/{c} ({e})" for n, c, ok, e in started if not ok]
+            on_event(f"Scheduled updates: {len(good)} started" + (f", {len(bad)} refused: {', '.join(bad)}" if bad else "")
+                     + (f" ({', '.join(good[:6])}{'…' if len(good) > 6 else ''})" if good else ""), bool(bad))
 
 
 def set_caps(aid, caps):
@@ -272,6 +361,7 @@ def listing():
                     "host": a.get("host", {}), "paired": a.get("paired", 0), "seen": a.get("seen", 0),
                     "found": a.get("found", []), "caps": a.get("caps", []),
                     "prune": "docker" in a.get("caps", []) and PRUNE_TARGET in a.get("targets", {}).get("docker", []),
+                    "auto": auto_targets(a),
                     "targets": {c: _wings(a, c, v) for c, v in a.get("targets", {}).items()},
                     "choices": {c: v for c, v in found.items() if c in a.get("found", [])},
                     "labels": labels})

@@ -634,6 +634,8 @@ function agents_settings(s) {
 let agentsWatch = null;
 let lastAgents = [];
 let agentsRelease = "", agentsAuto = false;   // the agent release labhud pins, and ⚙'s automatic updates
+let agentsWindow = { days: [0, 1, 2, 3, 4, 5, 6], at: "04:00" };   // when the containers "on their own" are updated
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function draw_auto(b) {
   if (!b) return;
@@ -660,6 +662,7 @@ function load_agents(list, quiet, detail) {
     lastAgents = r.agents;
     agentsRelease = r.release || "";
     agentsAuto = !!r.auto_update;
+    agentsWindow = r.window || agentsWindow;
     draw_auto(list.parentNode && list.parentNode.querySelector(".agent-auto"));
     if (agentSel !== "add" && !r.agents.some((a) => a.id === agentSel)) agentSel = r.agents.length ? r.agents[0].id : null;
     draw_agent_list(list, r.agents, detail);
@@ -784,7 +787,56 @@ function agent_detail(a, box, reload) {
   }
   box.appendChild(tabs);
   box.appendChild(agent_targets(a, cur, reload));
+  if (cur === "docker") agent_auto_row(a, box, reload);
   if (cur === "docker" && a.prune) agent_prune_row(a, box);
+}
+
+/** "Update on their own": the ticked containers labhud updates by itself in the window, when their
+    image has a newer one; the window (days, time) is the same for every agent. */
+function agent_auto_row(a, box, reload) {
+  const ticked = ((a.targets || {}).docker || []).filter((x) => x !== "images");
+  if (!ticked.length) return;
+  const auto = a.auto || [];
+  box.appendChild(el("h4", null, "Update on their own"));
+  const w = agentsWindow;
+  const when = w.days.length === 7 ? "every day" : w.days.map((d) => DAY_NAMES[d]).join(", ");
+  box.appendChild(el("p", "hint", `When their registry has a newer image: ${when} at ${w.at}, one after the other, `
+    + "as UPDATE does (the old container comes back if the new one does not stay up)."));
+  const grid = el("div", "choices targets");
+  for (const x of ticked) {
+    const on = auto.includes(x);
+    const b = el("button", "choice" + (on ? " on" : ""), x);
+    b.type = "button";
+    b.addEventListener("click", () => {
+      b.classList.add("pending");
+      agents_post("autoupdate", { id: a.id, targets: on ? auto.filter((y) => y !== x) : [...auto, x] })
+        .then((r) => { if (!r.ok) show_message(r.error || "Refused."); reload(); });
+    });
+    grid.appendChild(b);
+  }
+  box.appendChild(grid);
+  // the window: days and the time
+  const row = el("div", "choices");
+  const days = new Set(w.days);
+  DAY_NAMES.forEach((name, d) => {
+    const b = el("button", "choice small" + (days.has(d) ? " on" : ""), name);
+    b.type = "button";
+    b.addEventListener("click", () => { if (days.has(d)) days.delete(d); else days.add(d); b.classList.toggle("on", days.has(d)); });
+    row.appendChild(b);
+  });
+  const at = el("input", "agent-at");
+  at.type = "time";
+  at.value = w.at;
+  const save = el("button", "choice small", "Save");
+  save.type = "button";
+  save.addEventListener("click", () => agents_post("window", { days: [...days].sort(), at: at.value }).then((r) => {
+    if (!r.ok) return show_message(r.error || "Refused.");
+    agentsWindow = r.window;
+    show_message("✓ saved");
+    reload();
+  }));
+  row.append(at, save);
+  box.appendChild(row);
 }
 
 /** "images" ticked under Docker: the button that removes the images no container uses (unused
