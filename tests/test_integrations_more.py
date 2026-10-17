@@ -29,6 +29,20 @@ class MoreIntegrations(SourceTest):
         self.assertEqual(out["rows"][0], {"name": "YOUR 198.51.100.0/24 is banned", "value": "http-probing · 2h 1m left", "bad": True})
         self.assertEqual(out["rows"][1], {"name": "ssh-bf", "value": "2 banned"})
 
+    def test_crowdsec_two_instances_one_down(self):
+        self.env(CROWDSEC_URL="router=http://r:8080,vps=http://v:8080", CROWDSEC_KEY="router=k1==,vps=k2/",
+                 CROWDSEC_WATCH="198.51.100.7")
+        fake = self.serve(crowdsec, {"http://r:8080/v1/decisions": [{"value": "203.0.113.5", "scope": "Ip", "scenario": "a/x"}],
+                                     "http://v:8080/v1/decisions": OSError("timed out")})
+        out = crowdsec.crowdsec()
+        self.assertEqual([c["headers"]["X-Api-Key"] for c in fake.calls], ["k1==", "k2/"])
+        self.assertEqual((out["bans"], out["by"]), (1, {"router": 1}))
+        self.assertEqual(out["rows"][0], {"name": "vps: no answer", "value": "timed out", "bad": True})
+        fake.routes["http://v:8080/v1/decisions"] = [{"value": "198.51.100.7", "scope": "Ip", "scenario": "b/http-probing", "duration": "1h"}]
+        out = crowdsec.crowdsec()
+        self.assertEqual(out["rows"][0]["name"], "YOUR 198.51.100.7 is banned on vps")
+        self.assertEqual(out["by"], {"router": 1, "vps": 1})
+
     def test_gitea_failed_first(self):
         self.env(GITEA_URL="https://git.example.test", GITEA_TOKEN="t", GITEA_REPOS="me/a,me/b,me/c")
         fake = self.serve(gitea, {

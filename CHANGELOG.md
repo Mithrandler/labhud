@@ -6,6 +6,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- **CrowdSec: several instances** on one card (`CROWDSEC_URL = "router=http://…,vps=http://…"`, the keys
+  named the same); `crowdsec.by` per instance, a ban on your own address says where, and an instance
+  that does not answer is a red row while the others are still read.
+
 ## [0.3.18] - 2026-10-17
 
 ### Fixed
