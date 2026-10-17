@@ -1734,7 +1734,7 @@ function agent_containers(body, c) {
     else if (x.update && !x.updating) v.appendChild(el("span", "badge", "update available"));
     r.appendChild(v);
     const box = el("span", "row-actions");
-    if (signed_in() && x.card.actions.length) box.appendChild(logs_button(c.agent, x.name));
+    if (signed_in() && x.card.actions.length) box.append(details_button(c.agent, x.name), logs_button(c.agent, x.name));
     // while it is updated the row keeps its shape: the same buttons, greyed, UPDATE as UPDATING…
     const key = `${c.agent}/${x.name}`;
     if (!x.updating) ROW_ACTS[key] = x.actions;
@@ -1751,9 +1751,61 @@ function agent_containers(body, c) {
     }
     if (box.children.length) r.appendChild(box);
     l.appendChild(r);
+    details_box(l, c.agent, x.name);
     logs_box(l, c.agent, x.name);
   }
   body.appendChild(l);
+}
+
+// A container's details (ports, volumes, networks, the names of its environment), open under its
+// row like its logs: read from the agent (POST /api/setup/inspect, the admin only).
+let DETAILS = {};   // "agent/container" -> {data, error, loading}
+
+function details_button(agent, name) {
+  const key = `${agent}/${name}`;
+  const b = el("button", DETAILS[key] ? "on" : "", "DETAILS");
+  b.type = "button";
+  b.addEventListener("click", () => {
+    if (DETAILS[key]) delete DETAILS[key];
+    else {
+      DETAILS[key] = { loading: true };
+      setup_post("inspect", { agent, target: name }).then((r) => {
+        if (!DETAILS[key]) return;
+        let data = null;
+        try { data = r.ok ? JSON.parse(r.output || "{}") : null; } catch (e) { data = null; }
+        DETAILS[key] = data ? { data } : { error: r.ok ? "an older agent: update it" : r.error === "forbidden" ? "sign in as the admin" : r.error || "failed" };
+        fill_panel();
+      });
+    }
+    fill_panel();
+  });
+  return b;
+}
+
+function details_box(list, agent, name) {
+  const st = DETAILS[`${agent}/${name}`];
+  if (!st) return;
+  const box = el("div", "details-box");
+  if (st.loading || st.error) {
+    box.appendChild(el("p", "panel-spec", st.error ? "✕ " + st.error : "reading…"));
+  } else {
+    const d = st.data;
+    const rows = [["image", d.image], ["restart", `${d.restart}${d.restarts ? ` · ${d.restarts} restarts` : ""}`],
+      ["started", d.started ? d.started.replace("T", " ").slice(0, 16) : "—"],
+      ["ports", (d.ports || []).join(", ") || "none"], ["networks", (d.networks || []).join(", ") || "—"],
+      ...(d.health ? [["health", d.health]] : []), ...(d.command ? [["command", d.command]] : [])];
+    for (const m of d.mounts || []) rows.push(["volume", m]);
+    if ((d.env || []).length) rows.push(["environment", d.env.join(", ") + " (values not shown)"]);
+    for (const [k, v] of Object.entries(d.labels || {})) rows.push([k, v]);
+    const l = el("div", "list");
+    for (const [k, v] of rows) {
+      const r = el("div", "row");
+      r.append(el("span", "n", k), el("span", "v", String(v)));
+      l.appendChild(r);
+    }
+    box.appendChild(l);
+  }
+  list.appendChild(box);
 }
 
 /** `list = "fleet.updates"`: every container with a newer image, on every host, with its UPDATE
@@ -1922,9 +1974,10 @@ function fill_panel() {
       const r = el("div", "row");
       r.appendChild(el("span", "n", "logs"));
       const box = el("span", "row-actions");
-      box.appendChild(logs_button(c.agent, name));
+      box.append(details_button(c.agent, name), logs_button(c.agent, name));
       r.appendChild(box);
       l.appendChild(r);
+      details_box(l, c.agent, name);
       logs_box(l, c.agent, name);
       body.appendChild(l);
     }

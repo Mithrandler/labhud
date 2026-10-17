@@ -40,7 +40,7 @@ EVENTS_PER_MINUTE = 10
 MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this much, the newest part)
 
 VERBS = {
-    "docker": ("start", "stop", "restart", "update", "logs", "prune"),
+    "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect"),
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
@@ -49,7 +49,7 @@ VERBS = {
 }
 CAPS = ("sensors",) + tuple(VERBS)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs", "prune")}
+READS = {"docker": ("logs", "prune", "inspect")}
 # docker's prune cleans the host's unused images: ticked as this target, which is no container
 # and takes no other verb (the agent checks the same)
 PRUNE_TARGET = "images"

@@ -1447,7 +1447,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|prune)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
@@ -1863,15 +1863,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._source(op, body, who)
             if op in ("alerts", "alerts-save", "notify-test"):
                 return self._alerts(op, body, who)
-            if op == "logs":   # a container's last lines, from the agent that has it ticked
+            if op in ("logs", "inspect"):   # a ticked container's last lines, or how it is made (no secrets)
                 target = str(body.get("target") or "")
                 if DEMO and str(body.get("agent")) == "docker" and target in demo.DEMO_CONTAINERS:
-                    return self._json({"ok": True, "output": demo.logs(target)})
+                    return self._json({"ok": True, "output": demo.logs(target) if op == "logs" else demo.inspect(target)})
                 aid, a = agents.by_name(str(body.get("agent") or "")) if agents.enabled() else (None, None)
                 if not a:
                     return self._json({"ok": False, "error": "no such agent"}, 404)
-                ok, error, output = agents.read(aid, "docker", "logs", target)
-                print(f"setup: logs of {target} on {a['name']} from {who}: {'ok' if ok else error}", flush=True)
+                ok, error, output = agents.read(aid, "docker", op, target)
+                print(f"setup: {op} of {target} on {a['name']} from {who}: {'ok' if ok else error}", flush=True)
                 return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error}, 200 if ok else 502)
             if op == "prune":   # a host's unused images, by the agent that has "images" ticked
                 if DEMO and str(body.get("agent")) == "docker":

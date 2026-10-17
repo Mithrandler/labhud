@@ -6,6 +6,7 @@ a browser. Addresses are from the ranges reserved for documentation (192.0.2.0/2
 203.0.113.0/24).
 """
 
+import json
 import math
 import os
 import re
@@ -421,3 +422,17 @@ def sources():
 def status(targets):
     """The ping/TCP checks, without sending a packet: every host is up except the ones in DOWN."""
     return {ident: ident not in DOWN for ident in targets}
+
+
+def inspect(name):
+    """How a container is made, as agent 0.3.13's `inspect` says it (no values of the environment)."""
+    img, x = DEMO_CONTAINERS[name]
+    port = {"jellyfin": "8096", "sonarr": "8989", "radarr": "7878", "qbittorrent": "8080", "flaresolverr": "8191",
+            "portainer": "9443"}.get(name, "80")
+    return json.dumps({"image": img, "created": "2026-10-14T08:12:00Z", "started": "2026-10-14T08:12:03Z",
+                       "restart": "unless-stopped", "restarts": 2 if name == "qbittorrent" else 0,
+                       "ports": [f"{port}→{port}/tcp"], "networks": [x.get("project", "bridge") + "_default"],
+                       "mounts": [f"/opt/{name}/config → /config (rw)", "/srv/media → /media (ro)"],
+                       "env": ["PGID", "PUID", "TZ"] + (["WEBUI_PASSWORD"] if name == "qbittorrent" else []),
+                       "labels": {"com.docker.compose.project": x.get("project", "")} if x.get("project") else {},
+                       "health": x.get("health", "")})
