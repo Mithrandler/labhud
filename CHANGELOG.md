@@ -6,6 +6,19 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-10-17
+
+### Changed
+- **Wall mode needs no second sign-in.** The wall page in the app's Wall mode is the admin when
+  its phone is signed in as the admin: ⚙ and the cards' buttons are there at once, behind the
+  display's PIN when one is set (and only showing again after 2 minutes, as on any screen). Sign
+  out on that page signs the phone out.
+
+### Fixed
+- **The agent's install line in ⚙ works over labhud's own HTTPS.** curl refused labhud's own
+  certificate, so the line failed at once; it now fetches the installer with `-k` and checks it
+  against its SHA-256, which the line carries.
+
 ## [0.3.12] - 2026-10-17
 
 ### Security
