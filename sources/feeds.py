@@ -10,6 +10,7 @@
 #
 # Data: rss.<name> [{name, value}], releases.list [{name, value}], agenda.{events, today}.
 
+import calendar
 import time
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
@@ -28,7 +29,7 @@ def _when(text):
     except (TypeError, ValueError):
         pass
     try:
-        return time.mktime(time.strptime(text.strip()[:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+        return calendar.timegm(time.strptime(text.strip()[:19], "%Y-%m-%dT%H:%M:%S"))
     except ValueError:
         return None
 
@@ -113,7 +114,7 @@ def parse_events(ical_texts):
                         if len(v) == 8:  # a date: all day
                             start, all_day = time.mktime(time.strptime(v, "%Y%m%d")), True
                         elif v.endswith("Z"):
-                            start = time.mktime(time.strptime(v, "%Y%m%dT%H%M%SZ")) - time.timezone
+                            start = calendar.timegm(time.strptime(v, "%Y%m%dT%H%M%SZ"))
                         else:  # local time (a TZID is taken as this machine's zone)
                             start = time.mktime(time.strptime(v[:15], "%Y%m%dT%H%M%S"))
                     except ValueError:

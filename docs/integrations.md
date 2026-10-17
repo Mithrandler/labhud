@@ -142,6 +142,26 @@ user with read access is enough.
 - `homeassistant.<domain>.<object>.value` for each entity in `LABHUD_HA_ENTITIES`: a room's
   temperature is `homeassistant.sensor.rack_temperature.value`; on/off become 1/0.
 
+## CrowdSec, Gitea Actions, Nextcloud, authentik
+
+Each reads with a key that can only read, set in ⚙ > Sources or as variables:
+
+| source | variables | what a card shows |
+|---|---|---|
+| `crowdsec` | `CROWDSEC_URL` (the Local API), `CROWDSEC_KEY` (`cscli bouncers add labhud`), `CROWDSEC_WATCH` (optional: your own addresses or names) | `crowdsec.rows`: **your own address banned** in red first (a ban on your home IP cuts the VPN), then the scenarios that ban most; `crowdsec.bans`. Only this LAPI's own decisions, not the community lists |
+| `gitea` | `GITEA_URL`, `GITEA_TOKEN` (read:repository), `GITEA_REPOS` (optional) | `gitea.runs`: each repository's latest CI run, failed first; `gitea.failed`, `gitea.queued` (waiting for a runner) |
+| `nextcloud` | `NEXTCLOUD_URL`, `NEXTCLOUD_TOKEN` (the serverinfo token: `occ config:app:set serverinfo token --value <random>`) | `nextcloud.rows`: version, an update out, users now / today, files, free space |
+| `authentik` | `AUTHENTIK_URL`, `AUTHENTIK_TOKEN` (a user that may only view events, users and outposts) | `authentik.rows`: failed logins of the last day by user and address (red from 5), outposts that stopped checking in; `authentik.failed_24h` |
+
+```toml
+[[page.group.card]]
+id = "crowdsec"
+name = "CrowdSec"
+metrics = [{ key = "crowdsec.bans", label = "Banned", format = "count" }]
+list = "crowdsec.rows"
+limit = 4
+```
+
 ## Game servers
 
 `LABHUD_GAMES=rust=a2s://192.0.2.70:28017,mc=minecraft://192.0.2.71:25565` asks each server

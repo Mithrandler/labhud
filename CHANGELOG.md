@@ -28,7 +28,12 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **A container's DETAILS** (the admin): ports, volumes, networks, restart policy, labels, the
   environment by name only (agent 0.3.14).
 
+- **Four integrations**: CrowdSec (its own bans, and a ban on your own address in red), Gitea
+  Actions (the latest CI runs, failed first), Nextcloud (version, updates, users, space), authentik
+  (failed logins of the day, outposts that stopped checking in). Read-only keys; docs/integrations.md.
+
 ### Fixed
+- Times given in UTC by a service ("3h ago", the feeds' dates) were an hour off in summer.
 - The page menu no longer runs under the bell and the account button when there are many pages:
   it keeps clear of them and scrolls, the open page in sight.
 

@@ -9,6 +9,7 @@
 # browser: the phone only sees the result, through SSE.
 
 import base64
+import calendar
 import functools
 import hashlib
 import hmac
@@ -335,7 +336,7 @@ def fmt_bytes(n):
 def ago(iso):
     """\"2026-10-06T19:27:24Z\" -> \"1d ago\" / \"5h ago\" / \"12m ago\"."""
     try:
-        t = time.mktime(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+        t = calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))   # UTC (mktime was an hour off in summer)
     except (ValueError, TypeError):
         return ""
     d = max(0, time.time() - t)
