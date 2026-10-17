@@ -6,7 +6,12 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.18] - 2026-10-17
+
 ### Fixed
+- `labhud source add crowdsec|gitea|nextcloud|authentik --page …` makes their card too.
+- Gitea Actions: a run's time from its own end or start, with its offset (it showed "20743d ago"),
+  and a repository whose runs no runner takes is one quiet row instead of a queue of waiting ones.
 - A source's optional settings (`CROWDSEC_WATCH`, `GITEA_REPOS`) can be set in ⚙ > Sources and with
   `labhud source add`: they were refused as unknown.
 

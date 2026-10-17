@@ -7,7 +7,10 @@
 # Data: gitea.{failed, running, queued, runs}; `runs` is a list for a card, failed and running
 # first: list = "gitea.runs". `failed` counts the repositories whose latest run failed.
 
-from ._common import ago, env, request, source
+import datetime
+import time
+
+from ._common import env, request, source
 
 RUNS = 5
 REPOS = 10
@@ -17,6 +20,23 @@ def _get(path):
     return request(env("GITEA_URL").rstrip("/") + "/api/v1" + path,
                    {"Authorization": "token " + env("GITEA_TOKEN"), "Accept": "application/json"},
                    timeout=15)
+
+
+def _when(run):
+    """When a run ended (or started), from its own time with its offset; None if it never started."""
+    for k in ("completed_at", "started_at", "updated_at"):
+        try:
+            t = datetime.datetime.fromisoformat(str(run.get(k) or "").replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+        if t > 946684800:   # Gitea gives year 1 for a run that never started
+            return t
+    return None
+
+
+def _ago(t):
+    d = max(0, time.time() - t)
+    return f"{int(d // 86400)}d ago" if d >= 86400 else f"{int(d // 3600)}h ago" if d >= 3600 else f"{int(d // 60)}m ago"
 
 
 def _repos():
@@ -41,6 +61,10 @@ def gitea():
         if not runs:
             continue
         latest = runs[0]
+        name = full.split("/")[-1]
+        if not any(_when(r) for r in runs):   # nothing ever started: no runner serves this repository
+            rows.append({"name": name, "value": "no runner takes its runs", "quiet": True, "_rank": 3})
+            continue
         for r in runs:
             st = r.get("status") or ""
             if st in ("running", "in_progress"):
@@ -57,9 +81,9 @@ def gitea():
             value = "waiting for a runner"
         else:
             value = concl or status or "?"
-        when = ago(latest.get("updated_at") or latest.get("started_at") or "")
-        title = str(latest.get("display_title") or latest.get("head_branch") or "")[:40]
-        name = full.split("/")[-1] + " · " + title
+        t = _when(latest)
+        when = _ago(t) if t else ""
+        name += " · " + str(latest.get("display_title") or latest.get("head_branch") or "")[:40]
         rows.append({"name": name, "value": value + (" · " + when if when else ""),
                      "bad": concl == "failure" and value == "failure",
                      "_rank": 0 if concl == "failure" else 1 if value != concl else 2})

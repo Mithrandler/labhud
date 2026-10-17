@@ -30,17 +30,19 @@ class MoreIntegrations(SourceTest):
         self.assertEqual(out["rows"][1], {"name": "ssh-bf", "value": "2 banned"})
 
     def test_gitea_failed_first(self):
-        self.env(GITEA_URL="https://git.example.test", GITEA_TOKEN="t", GITEA_REPOS="me/a,me/b")
+        self.env(GITEA_URL="https://git.example.test", GITEA_TOKEN="t", GITEA_REPOS="me/a,me/b,me/c")
         fake = self.serve(gitea, {
             "/repos/me/a/actions/runs": {"workflow_runs": [{"status": "completed", "conclusion": "success",
-                                                            "display_title": "fine", "updated_at": iso(60)}]},
+                                                            "display_title": "fine", "completed_at": iso(60)}]},
+            "/repos/me/c/actions/runs": {"workflow_runs": [{"status": "waiting", "started_at": "0001-01-01T00:00:00Z"}]},
             "/repos/me/b/actions/runs": {"workflow_runs": [{"status": "completed", "conclusion": "failure",
-                                                            "display_title": "broke", "updated_at": iso(7200)},
+                                                            "display_title": "broke", "completed_at": iso(7200)},
                                                            {"status": "queued"}]}})
         out = gitea.gitea()
         self.assertEqual(fake.calls[0]["headers"]["Authorization"], "token t")
         self.assertEqual((out["failed"], out["queued"]), (1, 1))
-        self.assertEqual([(r["name"], r["bad"]) for r in out["runs"]], [("b · broke", True), ("a · fine", False)])
+        self.assertEqual([(r["name"], r.get("bad", False)) for r in out["runs"]], [("b · broke", True), ("a · fine", False), ("c", False)])
+        self.assertEqual(out["runs"][2], {"name": "c", "value": "no runner takes its runs", "quiet": True})
         self.assertTrue(out["runs"][0]["value"].startswith("failure · 2h"))
 
     def test_nextcloud(self):
