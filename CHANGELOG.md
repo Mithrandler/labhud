@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.3.17] - 2026-10-17
+
+From Portainer, Dockhand, Homarr and Homepage. The agent's release is 0.3.14.
+
 ### Added
 - **Containers updated on a schedule**: ⚙ > Devices > Agents > Docker > *Update on their own*:
   ticked containers labhud updates by itself when their image has a newer one, in a window (days,
