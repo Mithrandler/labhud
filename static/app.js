@@ -316,6 +316,9 @@ function go(i) {
   document.body.className = document.body.className.replace(/\bp-\w+\b/g, "").trim();
   document.body.classList.add("p-" + CFG.pages[page].id);
   for (const b of $("#menu").children) cls(b, "active", Number(b.dataset.page) === page);
+  // more pages than the menu's width: the open one is scrolled into sight
+  const on = $("#menu .active");
+  if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "nearest" });
   mount();
   apply_focus();
   history.replaceState(null, "", "#" + CFG.pages[page].id);
@@ -768,8 +771,57 @@ function is_guest(c) {
     `c.subtitle` alone does NOT count: it is already on the card's face, so repeating it in the
     panel is not detail (see mikrotik/openwrt — only spec + status, nothing more). */
 function has_details(c) {
-  return !!(c.metrics || c.list || c.torrents || c.panel || (c.links && c.links.length) ||
+  return !!(c.metrics || c.list || c.torrents || c.panel || c.notes || (c.links && c.links.length) ||
     (c.actions && c.actions.length) || (c.check && c.check[0] === "proxmox"));
+}
+
+/** `bookmarks = true` (or a group's name): the [[bookmark]] links, by group, each opening in a new tab. */
+function make_bookmarks(c) {
+  const box = el("div", "bookmarks");
+  const all = (CFG.bookmarks || []).filter((b) => c.bookmarks === true || b.group === c.bookmarks);
+  const groups = [...new Set(all.map((b) => b.group))];
+  for (const g of groups) {
+    if (groups.length > 1) box.appendChild(el("div", "bm-group", g));
+    const row = el("div", "bm-row");
+    for (const b of all.filter((x) => x.group === g)) {
+      const a = el("a", "bm", b.name);
+      a.href = b.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.addEventListener("click", (ev) => ev.stopPropagation());   // the link, not the card's panel
+      row.appendChild(a);
+    }
+    box.appendChild(row);
+  }
+  if (!all.length) box.appendChild(el("div", "spec", "No [[bookmark]] in the config."));
+  return box;
+}
+
+/** `notes = true`: the text written in the card's panel (the admin) or in the app. */
+function make_notes() {
+  const t = el("div", "notes-text");
+  updaters.push(() => put(t, (get("notes") || {}).text || "—"));
+  return t;
+}
+
+/** The notes card's panel: the text, and for the admin a box to change it. */
+function notes_panel(body) {
+  const n = get("notes") || {};
+  if (!signed_in()) {
+    body.appendChild(el("div", "notes-text big", n.text || "—"));
+  } else {
+    const ta = el("textarea", "notes-edit");
+    ta.value = n.text || "";
+    ta.maxLength = 4000;
+    ta.rows = 8;
+    const save = el("button", "choice", "Save");
+    save.type = "button";
+    const say = el("span", "hint", n.t ? `changed ${when(n.t)}${n.by ? " by " + n.by : ""}` : "");
+    save.addEventListener("click", () => setup_post("notes", { text: ta.value }).then((r) => {
+      put(say, r.ok ? "✓ saved" : "✕ " + (r.error === "forbidden" ? "sign in as the admin" : r.error || "failed"));
+    }));
+    const bar = el("div", "logs-bar");
+    bar.append(say, save);
+    body.append(ta, bar);
+  }
 }
 
 /** `merged`: the card is named like its group, whose heading already shows its name and dot. */
@@ -788,6 +840,8 @@ function make_card(c, merged = false, node = false) {
   if (c.metrics) n.appendChild(make_metrics(c.metrics));
   if (c.list) n.appendChild(make_list(c.list, c.limit || 6));
   if (c.torrents) n.appendChild(make_torrents(c.torrents));
+  if (c.bookmarks) n.appendChild(make_bookmarks(c));
+  if (c.notes) n.appendChild(make_notes());
 
   let age = null;
   if (c.age) { age = el("div", "age"); n.appendChild(age); }
@@ -2128,6 +2182,7 @@ function fill_panel() {
     if (c.metrics) {
       section(body, "numbers", c.metrics.map(([path, label, fmt]) => [label, format(get(path), fmt)]));
     }
+    if (c.notes) notes_panel(body);
     if (c.list === "fleet.updates") fleet_updates_panel(body);
     else if (c.list) {
       section(body, "details", (get(c.list) || []).map(detail_row));

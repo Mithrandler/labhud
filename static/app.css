@@ -173,7 +173,11 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #brand { display: none; text-align: center; font: 900 17px/1 var(--font); letter-spacing: 1px; color: var(--title); }
 #brand b { font-weight: 900; color: var(--title); }
 
-#menu { display: flex; justify-content: center; gap: 4px; }
+/* the tools (bell, account…) sit over the menu's column, left of the clock: the menu keeps clear of
+   them (--tools-w, measured in search.js) and scrolls sideways when the pages do not fit */
+#menu { display: flex; justify-content: safe center; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  margin-right: var(--tools-w, 0px); }
+#menu::-webkit-scrollbar { display: none; }
 #menu button {
   appearance: none; white-space: nowrap; border: 1px solid transparent; background: transparent;
   color: var(--muted); font: 700 13px/1 var(--font); letter-spacing: .6px;
@@ -692,6 +696,10 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 .panel-links a { color: var(--title); text-decoration: none; font-size: 12px; font-weight: 500; padding: 6px 10px;
   border: 1px solid var(--line); border-radius: 7px; background: var(--block); }
 /* The bell (bell.js): beside the account, faint like it; the badge is what draws the eye. */
+/* in the weather's corner (its column has its own width; the right one is the menu's) */
+#search-btn { visibility: visible; margin-right: 4px; appearance: none; border: 0; background: transparent; color: var(--title); opacity: .55; padding: 4px; line-height: 0; cursor: pointer; }
+#search-btn:hover { opacity: 1; }
+#search-btn svg { display: block; }
 #bell { appearance: none; position: relative; border: 0; background: transparent; color: var(--title); opacity: .55;
   padding: 4px; line-height: 0; cursor: pointer; }
 #bell svg { display: block; }
@@ -898,3 +906,24 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
   border: 1px solid var(--title); border-radius: 4px; padding: 2px 5px; }
 #settings .alr-now { margin: 2px 0; font-size: 13px; color: var(--red); }
 #settings .alr-notify .alr-row { border: 0; padding: 0 0 6px; }
+
+/* the search box (search.js): over the page, near the top */
+#search { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.6); display: flex; justify-content: center; align-items: flex-start; padding-top: 10vh; }
+#search[hidden] { display: none; }
+#search .search-box { width: min(520px, 92vw); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+#search .search-input { width: 100%; font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+#search .search-list { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow: auto; }
+#search .search-hit { display: flex; align-items: center; gap: 8px; text-align: left; font: inherit; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; }
+#search .search-hit.on, #search .search-hit:hover { background: var(--line); }
+#search .search-hit .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#search .search-hit .h { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* bookmarks = true: links as small buttons; notes = true: the text as written */
+.bookmarks { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.bookmarks .bm-group { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.bookmarks .bm-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.bookmarks .bm { font-size: 12px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); text-decoration: none; }
+.bookmarks .bm:hover { border-color: var(--accent); }
+.notes-text { white-space: pre-wrap; font-size: 13px; line-height: 1.35; margin-top: 4px; overflow-wrap: anywhere; }
+.notes-text.big { font-size: 15px; }
+#panel-body .notes-edit { width: 100%; font: inherit; font-size: 14px; padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); resize: vertical; }

@@ -41,7 +41,7 @@ PAGE_KEYS = {"id", "title", "group", "games"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
              "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links",
-             "agent", "agent_target", "wake", "kind"}
+             "agent", "agent_target", "wake", "kind", "bookmarks", "notes"}
 CARD_KINDS = ("proxmox", "nas", "docker", "vm", "pc")   # cardtype.KINDS: for ⚙ > Pages > Organize by type
 # agent_target = "<capability>:<target>": what a card controls through its agent (agents.py)
 AGENT_TARGET = {"docker": r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
@@ -61,7 +61,9 @@ CALM_KEYS = {"after"}
 LOCK_KEYS = {"idle"}
 PUBLIC_KEYS = {"title", "groups"}
 TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "include", "sparklines",
-            "maintenance", "lock", "alert", "notify"}
+            "maintenance", "lock", "alert", "notify", "search", "bookmark"}
+SEARCH_KEYS = {"url"}
+BOOKMARK_KEYS = {"group", "name", "url"}
 NOTIFY_KEYS = {"via", "quiet_from", "quiet_to"}
 NOTIFY_VIA = ("ntfy", "app", "both")
 # The formats whose numbers get a sparkline (the last hours, behind the value)
@@ -183,6 +185,16 @@ def _card(ck, where, c):
         out["large"] = True
     if ck.opt(where, c, "on_demand", bool, "true or false"):
         out["on_demand"] = True
+    # bookmarks = true: the [[bookmark]] links (or only one group: bookmarks = "<group>");
+    # notes = true: the notes written in ⚙ or in the app
+    bm = c.get("bookmarks")
+    if bm is not None:
+        if bm is True or (isinstance(bm, str) and bm.strip()):
+            out["bookmarks"] = bm
+        elif bm is not False:
+            ck.err(where, 'bookmarks must be true or the name of a [[bookmark]] group')
+    if ck.opt(where, c, "notes", bool, "true or false"):
+        out["notes"] = True
     if "metrics" in c:
         ms = c["metrics"]
         if not isinstance(ms, list) or not all(isinstance(m, dict) for m in ms):
@@ -279,6 +291,35 @@ def _card_agent(ck, where, c, out):
         out["charts"] = [[f"agents.{name}.sensors.{key}", label, fmt] for key, label, fmt in AGENT_CHARTS]
     if "check" not in out:
         out["check"] = ["agent", name, cap, target.partition(":")[2] if target else ""]
+
+
+def _search_and_bookmarks(ck, raw):
+    """[search] url = "https://search.example/?q=%s": where the search box sends what matches no card.
+    [[bookmark]] group, name, url: plain links, for the `bookmarks = true` card and the search."""
+    search = {}
+    if "search" in raw:
+        s = raw["search"]
+        if not isinstance(s, dict):
+            ck.err("search", "must be a table: [search] url = \"https://…?q=%s\"")
+        else:
+            ck.unknown("search", s, SEARCH_KEYS)
+            url = ck.opt("search", s, "url", str, '"https://…?q=%s"')
+            if url is not None and not (re.match(r"^https?://", url) and "%s" in url):
+                ck.err("search", f"url must start with http(s):// and have %s where the words go, got {url!r}")
+            elif url:
+                search["url"] = url
+    bookmarks = []
+    for i, b in enumerate(ck.tables("top level", raw, "bookmark")):
+        where = f"bookmark #{i + 1}"
+        ck.unknown(where, b, BOOKMARK_KEYS)
+        name = ck.need(where, b, "name", str, "a string")
+        url = ck.need(where, b, "url", str, "https://…")
+        group = ck.opt(where, b, "group", str, "a string") or "Links"
+        if url is not None and not re.match(r"^https?://", url):
+            ck.err(where, f"url must start with http:// or https://, got {url!r}")
+        elif name and url:
+            bookmarks.append({"group": group, "name": name, "url": url})
+    return search, bookmarks
 
 
 def _alert_rules(ck, raw, cards):
@@ -496,6 +537,7 @@ def _validate(raw, path):
     ck.unknown("top level", raw, TOP_KEYS)
     title = ck.opt("top level", raw, "title", str, "a string")
     sparklines = ck.opt("top level", raw, "sparklines", bool, "true or false")
+    search, bookmarks = _search_and_bookmarks(ck, raw)
 
     pages, cards = [], {}
     page_ids, group_ids, card_ids = set(), set(), set()
@@ -770,7 +812,7 @@ def _validate(raw, path):
         raise ConfigError(path, ck.problems)
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
             "weather": weather, "night": night, "calm": calm, "lock": lock, "public": public_page,
-            "alert_rules": alert_rules, "notify": notify_cfg,
+            "alert_rules": alert_rules, "notify": notify_cfg, "search": search, "bookmarks": bookmarks,
             "trends": [] if sparklines is False else sorted({
                 m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) + c.get("charts", [])
                 if m[2] in TREND_FORMATS})}
@@ -780,6 +822,8 @@ def public(topology):
     """What the browser gets from /api/config: the layout, without the server-side schedules
     and without the weather coordinates (only the city name is shown)."""
     out = {k: topology[k] for k in ("title", "pages", "cards", "strip", "actions", "alerts", "night", "trends")}
+    out["search"] = topology.get("search") or {}
+    out["bookmarks"] = topology.get("bookmarks") or []
     out["calm"] = topology.get("calm")
     out["maintenance_buttons"] = topology["maintenance"]["buttons"]
     out["city"] = (topology.get("weather") or {}).get("city", "")

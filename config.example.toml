@@ -244,6 +244,18 @@ longitude = 13.41
 timezone = "Europe/Berlin"   # optional, defaults to the location's own
 city = "Berlin"              # optional, shown next to the temperature
 
+# Optional: the search box (🔍 in the top bar, or "/") finds every card and bookmark; what matches
+# nothing goes here, %s standing for the words.
+# [search]
+# url = "https://duckduckgo.com/?q=%s"
+
+# Optional: plain links, by group, on a card with `bookmarks = true` (or `bookmarks = "Docs"` for
+# one group) and in the search. A card with `notes = true` shows the text written in its panel.
+# [[bookmark]]
+# group = "Docs"
+# name = "Proxmox wiki"
+# url = "https://pve.proxmox.com/wiki/Main_Page"
+
 # Optional: when nothing is red for `after` seconds (300), the screen shows only a big clock and
 # "ALL GOOD"; a problem or a touch brings the cards back. The clock jumps to another spot every
 # 5 minutes so an OLED does not burn in.

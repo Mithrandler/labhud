@@ -1024,6 +1024,9 @@ def check_rules():
         _publish({"alerting": result})
 
 
+NOTES_MAX = 4000
+
+
 def fleet_updates(every):
     """`fleet.updates`: every container, on every agent, whose registry has a newer image, as a
     card's list (`list = "fleet.updates"`), host by host; `action` is its UPDATE button when it is
@@ -1521,7 +1524,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|rename|remove|update|auto|autoupdate|window|hook|unhook)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|config|save|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|notes)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all|edit)", self.path)
@@ -1968,6 +1971,17 @@ class Handler(BaseHTTPRequestHandler):
                 ok, error, output = agents.read(aid, "docker", op, target)
                 print(f"setup: {op} of {target} on {a['name']} from {who}: {'ok' if ok else error}", flush=True)
                 return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error}, 200 if ok else 502)
+            if op == "notes":   # the notes card's text (notes = true), written in its panel or in the app
+                text = body.get("text")
+                if not isinstance(text, str) or len(text) > NOTES_MAX:
+                    return self._json({"ok": False, "error": f"text, at most {NOTES_MAX} characters"}, 400)
+                notes = {"text": text.replace("\r\n", "\n"), "t": int(time.time()), "by": who[:40]}
+                store.save("notes", notes)
+                with _lock:
+                    _data["notes"] = notes
+                _publish({"notes": notes})
+                print(f"setup: notes saved by {who} ({len(text)} characters)", flush=True)
+                return self._json({"ok": True, "notes": notes})
             if op == "prune":   # a host's unused images, by the agent that has "images" ticked
                 if DEMO and str(body.get("agent")) == "docker":
                     return self._json({"ok": True, "output": "freed 2.4 GB (31 image layers)"})
@@ -2392,6 +2406,8 @@ if __name__ == "__main__":
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
     agents.tls_fp = devices.tls_fingerprint(TLS_CERT)
     agents.load_history()
+    _data["notes"] = store.load("notes") or ({"text": "Synology sleeps 00:00–08:00.\nBackups at 02:00.", "t": int(time.time())}
+                                            if DEMO else {"text": "", "t": 0})
     threading.Thread(target=agents.pinger, args=(threading.Event(),), daemon=True, name="agents").start()
     threading.Thread(target=agents.scheduler, args=(threading.Event(),), daemon=True, name="agent-updates").start()
     publish_agents()

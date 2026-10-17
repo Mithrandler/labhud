@@ -120,6 +120,16 @@ title = "GENERAL"
     limit = 6
 
     [[page.group.card]]
+    id = "notes"
+    name = "NOTES"
+    notes = true
+
+    [[page.group.card]]
+    id = "links"
+    name = "LINKS"
+    bookmarks = true
+
+    [[page.group.card]]
     id = "fleet-updates"
     name = "UPDATES"
     metrics = [{ key = "fleet.update_count", label = "Images", format = "count" }]
@@ -377,3 +387,21 @@ ip = "192.0.2.30"
 latitude = 52.52
 longitude = 13.41
 city = "Berlin"
+
+[search]
+url = "https://duckduckgo.com/?q=%s"
+
+[[bookmark]]
+group = "Docs"
+name = "LabHUD docs"
+url = "https://mithrandler.github.io/labhud/"
+
+[[bookmark]]
+group = "Docs"
+name = "Proxmox wiki"
+url = "https://pve.proxmox.com/wiki/Main_Page"
+
+[[bookmark]]
+group = "Tools"
+name = "Router"
+url = "https://192.0.2.1/"

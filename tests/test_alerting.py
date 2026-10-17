@@ -92,6 +92,17 @@ class Config(unittest.TestCase):
     def load(self, extra=""):
         return config.loads(CFG + extra, "test.toml")
 
+    def test_search_and_bookmarks(self):
+        t = self.load('[search]\nurl = "https://s.example/?q=%s"\n[[bookmark]]\nname = "Wiki"\nurl = "https://w.example"\n')
+        self.assertEqual(t["search"], {"url": "https://s.example/?q=%s"})
+        self.assertEqual(t["bookmarks"], [{"group": "Links", "name": "Wiki", "url": "https://w.example"}])
+        self.assertEqual(config.public(t)["bookmarks"][0]["name"], "Wiki")
+        for bad, why in (('[search]\nurl = "https://s.example/"', "%s"),
+                         ('[[bookmark]]\nname = "x"\nurl = "javascript:alert(1)"', "http")):
+            with self.assertRaises(config.ConfigError) as e:
+                self.load("\n" + bad + "\n")
+            self.assertIn(why, str(e.exception.problems))
+
     def test_defaults_without_any_rule(self):
         t = self.load()
         self.assertEqual(t["alert_rules"], alerting.DEFAULT_RULES)

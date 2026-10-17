@@ -12,6 +12,12 @@ still change in a minor version; such changes are listed under **Changed** with 
   time; every day at 04:00 by default); `labhud agent schedule` and `labhud agent window`. With
   agent 0.3.14, `LABHUD_AGENT_AUTO_LABELS` (e.g. `dockhand.update=false`) marks them for another
   updater to leave alone.
+- **Search**: 🔍 in the top bar (or "/"): every card on every page and the bookmarks; Enter opens
+  the card's Web UI or its panel; what matches nothing goes to `[search] url`.
+- **Bookmarks**: `[[bookmark]]` (group, name, url) on a card with `bookmarks = true` and in the
+  search.
+- **Notes**: a card with `notes = true` shows a text written in its panel (the admin) or in the
+  app, kept across restarts.
 - **Cards from Docker labels**, as Homepage does: `labhud.name` on a container (agent 0.3.14) gives
   it a card, on `labhud.page` / `labhud.group` or a DISCOVERED page, with `labhud.url` and
   `labhud.description`; config.toml stays as it is.
@@ -21,6 +27,10 @@ still change in a minor version; such changes are listed under **Changed** with 
   host, with UPDATE and UPDATE ALL in the card's panel; `fleet.update_count`.
 - **A container's DETAILS** (the admin): ports, volumes, networks, restart policy, labels, the
   environment by name only (agent 0.3.14).
+
+### Fixed
+- The page menu no longer runs under the bell and the account button when there are many pages:
+  it keeps clear of them and scrolls, the open page in sight.
 
 ## [0.3.16] - 2026-10-17
 
