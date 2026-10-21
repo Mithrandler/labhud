@@ -28,7 +28,7 @@ function api_tokens(ctx) {
   const input = el("input");
   input.type = "text"; input.placeholder = "Name (e.g. home-assistant)"; input.maxLength = 40; input.className = "tok-name";
   const scope = el("select", "tok-scope");
-  for (const v of ["read", "act", "admin"]) { const o = el("option"); o.value = v; o.textContent = v; scope.appendChild(o); }
+  for (const [v, label] of [["read", "viewer"], ["act", "operator"], ["admin", "admin"]]) { const o = el("option"); o.value = v; o.textContent = label; scope.appendChild(o); }
   const days = el("select", "tok-days");
   for (const [v, label] of [["", "never expires"], ["30", "30 days"], ["90", "90 days"], ["365", "1 year"]]) { const o = el("option"); o.value = v; o.textContent = label; days.appendChild(o); }
   const btn = el("button", "choice on", "Make token"); btn.type = "button";
@@ -68,7 +68,7 @@ function load_tokens(host) {
       const text = el("div", "device-text");
       const nameSpan = el("span", "device-name");
       nameSpan.appendChild(document.createTextNode(t.name + " "));
-      nameSpan.appendChild(el("span", "tok-scope-tag " + t.scope, t.scope));
+      nameSpan.appendChild(el("span", "tok-scope-tag " + t.scope, t.role || t.scope));
       const parts = ["made " + ago(t.made), t.last ? "used " + ago(t.last) + (t.ip ? " from " + t.ip : "") : "never used", t.expires ? (t.expired ? "expired" : "expires " + new Date(t.expires * 1000).toLocaleDateString()) : "no expiry"];
       text.append(nameSpan, el("span", "device-seen", parts.join(" · ")));
       const b = el("button", "choice danger", "Revoke"); b.type = "button";
@@ -83,7 +83,18 @@ function load_tokens(host) {
 }
 
 function api_audit(ctx) {
-  const s = ctx.section("Audit log", { wide: true, about: "Who did what, when and from where: sign-ins, buttons pressed, changes in ⚙, refusals. Kept 90 days." });
+  const s = ctx.section("Audit log", { wide: true, about: "Who did what, when and from where: sign-ins, buttons pressed, changes in ⚙, refusals." });
+  const keep = el("div", "aud-bar");
+  const days = el("input"); days.type = "number"; days.min = 7; days.max = 730; days.className = "aud-keep";
+  const kb = el("button", "choice", "Save"); kb.type = "button";
+  const kmsg = el("span", "device-seen", "");
+  keep.append(el("span", "device-seen", "Keep entries for (days)"), days, kb, kmsg);
+  s.appendChild(keep);
+  fetch("/api/v1/audit?limit=1", { headers: lock_headers() }).then((r) => r.json()).then((r) => { if (r.keep_days) days.value = r.keep_days; });
+  kb.addEventListener("click", () => {
+    fetch("/api/audit/settings", { method: "POST", headers: { ...lock_headers(), "Content-Type": "application/json" }, body: JSON.stringify({ keep_days: Number(days.value) }) })
+      .then((r) => r.json()).then((r) => { kmsg.textContent = r.ok ? "Saved" : (r.error || "Not saved"); });
+  });
   const bar = el("div", "aud-bar");
   const who = el("input"); who.type = "text"; who.className = "aud-who"; who.placeholder = "who"; who.value = AUD.who;
   const act = el("input"); act.type = "text"; act.className = "aud-action"; act.placeholder = "action"; act.value = AUD.action;

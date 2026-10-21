@@ -6,6 +6,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+
+- **Roles for API tokens**: ⚙ calls the scopes viewer (`read`), operator (`act`) and admin; the API
+  takes either name and lists both (`role`, `roles`).
+- **Audit retention**: `[audit] keep_days` (7 to 730, default 90), set from ⚙ > System > API & audit
+  (`POST /api/audit/settings`, written to the kept config, no restart) and read back as `keep_days`.
+
 ## [0.1.1] - 2026-10-21
 
 ### Added

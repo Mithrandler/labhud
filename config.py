@@ -68,8 +68,9 @@ CALM_KEYS = {"after"}
 LOCK_KEYS = {"idle"}
 PUBLIC_KEYS = {"title", "groups"}
 TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "include", "sparklines",
-            "maintenance", "lock", "alert", "notify", "search", "bookmark", "display", "admin", "registry", "update"}
+            "maintenance", "lock", "alert", "notify", "search", "bookmark", "display", "admin", "registry", "update", "audit"}
 UPDATE_KEYS = {"check"}
+AUDIT_KEYS = {"keep_days"}
 SEARCH_KEYS = {"url"}
 REGISTRY_KEYS = {"host", "user"}
 REGISTRY_HOST_RE = re.compile(r"[a-z0-9]([a-z0-9.-]{0,58}[a-z0-9])?(:[0-9]{1,5})?")
@@ -961,6 +962,18 @@ def _validate(raw, path):
             else:
                 update_cfg["check"] = raw["update"].get("check", True)
 
+    audit_cfg = {"keep_days": 90}
+    if "audit" in raw:
+        if not isinstance(raw["audit"], dict):
+            ck.err("top level", "audit must be written as an [audit] table")
+        else:
+            ck.unknown("audit", raw["audit"], AUDIT_KEYS)
+            kd = raw["audit"].get("keep_days", 90)
+            if isinstance(kd, bool) or not isinstance(kd, int) or not 7 <= kd <= 730:
+                ck.err("audit", "keep_days must be a whole number of days, 7 to 730")
+            else:
+                audit_cfg["keep_days"] = kd
+
     for name, a in actions.items():
         if a.get("choices") and not any(name in c.get("actions", ()) for cs in cards.values() for c in cs):
             ck.err(f"action.{name}", "has choices but no card offers it (add it to a card's actions)")
@@ -969,7 +982,7 @@ def _validate(raw, path):
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
             "weather": weather, "night": night, "calm": calm, "lock": lock, "public": public_page,
             "alert_rules": alert_rules, "notify": notify_cfg, "search": search, "bookmarks": bookmarks,
-            "display": display, "admin": admin_cfg, "update": update_cfg, "registries": registries,
+            "display": display, "admin": admin_cfg, "update": update_cfg, "audit": audit_cfg, "registries": registries,
             "marks": {k: v for cs in cards.values() for c in cs for k, v in (c.get("marks") or {}).items()},
             "trends": [] if sparklines is False else sorted({
                 m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) + c.get("charts", [])

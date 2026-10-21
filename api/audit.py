@@ -34,7 +34,7 @@ import admin
 from routes import route
 
 SUB = "audit"
-KEEP_DAYS = 90
+KEEP_DAYS = 90                        # [audit] keep_days, 7 to 730, set by configure()
 MAX_DAY_BYTES = 32 * 1024 * 1024      # a day that grew this big stops taking entries (a loop somewhere)
 MAX_LIMIT = 500
 DAY_FILE = re.compile(r"(\d{4}-\d{2}-\d{2})\.jsonl")
@@ -51,6 +51,11 @@ QUIET = frozenset({
 _lock = threading.Lock()
 _pruned = {"day": ""}
 _full = {"day": ""}
+
+
+def configure(cfg):
+    global KEEP_DAYS
+    KEEP_DAYS = int((cfg or {}).get("keep_days", 90))
 
 
 def folder():
@@ -273,4 +278,22 @@ def audit_list(h, body):
         return 400, {"ok": False, "error": str(e)}
     rows, more = query(**args)
     return 200, {"ok": True, "rows": rows, "more": more, "offset": args["offset"],
-                 "limit": max(1, min(args["limit"], MAX_LIMIT)), "enabled": enabled(), "days": KEEP_DAYS}
+                 "limit": max(1, min(args["limit"], MAX_LIMIT)), "enabled": enabled(), "days": KEEP_DAYS, "keep_days": KEEP_DAYS}
+
+
+@route("POST", "/api/audit/settings")
+def audit_settings(h, body):
+    """⚙ > System > API & audit: how many days the log keeps ([audit] keep_days, 7 to 730)."""
+    import managed
+    kd = body.get("keep_days")
+    if isinstance(kd, bool) or not isinstance(kd, int) or not 7 <= kd <= 730:
+        return 400, {"ok": False, "error": "keep_days is a whole number of days, 7 to 730"}
+    try:
+        raw = managed.read_config()
+        raw["audit"] = {**(raw.get("audit") or {}), "keep_days": kd}
+        managed.save_config(raw)
+    except ValueError as e:
+        return 409, {"ok": False, "error": str(e)}
+    record(h, "audit-keep-days", str(kd))
+    print(f"setup: audit keeps {kd} days, saved from {h._who()}", flush=True)
+    return 200, {"ok": True, "keep_days": kd}

@@ -33,6 +33,7 @@ from routes import route
 KEY = "api_tokens"
 PREFIX = "lh_"
 SCOPES = ("read", "act", "admin")      # each includes the ones before it
+ROLES = {"viewer": "read", "operator": "act", "admin": "admin"}   # what ⚙ and the app call the scopes
 MAX_TOKENS = 32
 MAX_DAYS = 3650
 USED_EVERY = 60                        # "last used" is written at most this often per token
@@ -70,8 +71,9 @@ def make(name, scope, days=None, now=None):
     name = clean_name(name)
     if not name:
         raise ValueError("give the token a name: up to 40 letters, digits, spaces and .,'()+:/@-")
+    scope = ROLES.get(scope, scope)
     if scope not in SCOPES:
-        raise ValueError("scope is one of read, act, admin")
+        raise ValueError("scope is one of read, act, admin (viewer, operator, admin)")
     if days in (None, "", 0):
         days = None
     elif isinstance(days, bool) or not isinstance(days, int) or not 0 < days <= MAX_DAYS:
@@ -123,7 +125,8 @@ def lookup(token, ip="", now=None):
 def public(tid, rec, now=None):
     """What lists show: never the hash."""
     now = now or time.time()
-    return {"id": tid, "name": rec.get("name", ""), "scope": rec.get("scope", ""), "made": rec.get("made", 0),
+    return {"id": tid, "name": rec.get("name", ""), "scope": rec.get("scope", ""),
+            "role": {v: k for k, v in ROLES.items()}.get(rec.get("scope", ""), ""), "made": rec.get("made", 0),
             "expires": rec.get("expires", 0), "last": rec.get("last", 0), "ip": rec.get("ip", ""),
             "expired": bool(rec.get("expires") and rec["expires"] <= now)}
 
@@ -158,7 +161,7 @@ def _audit(h, action, target, ok=True):
 
 @route("POST", "/api/tokens/list")
 def list_tokens(h, body):
-    return 200, {"ok": True, "tokens": listing(), "enabled": enabled(), "scopes": list(SCOPES)}
+    return 200, {"ok": True, "tokens": listing(), "enabled": enabled(), "scopes": list(SCOPES), "roles": list(ROLES)}
 
 
 @route("POST", "/api/tokens/create")

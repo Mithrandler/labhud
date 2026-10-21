@@ -383,6 +383,7 @@ def _apply(topology):
     admin.configure(topology.get("admin"))   # session length, trusted proxies, admin networks, OIDC
     notify.configure(topology.get("notify") or {}, topology.get("title"))
     updates.configure(topology.get("update"))
+    audit.configure(topology.get("audit"))
     agents.registries = topology.get("registries") or []   # the logins api/registries.py hands out
 
 

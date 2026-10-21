@@ -200,6 +200,10 @@ sources = ["synology"]
 # [update]
 # check = true
 
+# The audit log (⚙ > System > API & audit) keeps this many days of entries, 7 to 730.
+# [audit]
+# keep_days = 90
+
 # [notify]
 # via = "both"
 # quiet_from = 23

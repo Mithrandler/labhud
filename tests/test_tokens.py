@@ -47,7 +47,7 @@ class Tokens(unittest.TestCase):
         token, rec = tokens.make("Test", "read", now=1000)
         self.assertTrue(token.startswith("lh_"))
         self.assertTrue(TOKEN_RE.fullmatch(token))
-        self.assertEqual(set(rec), {"id", "name", "scope", "made", "expires", "last", "ip", "expired"})
+        self.assertEqual(set(rec), {"id", "name", "scope", "role", "made", "expires", "last", "ip", "expired"})
         self.assertEqual(rec["name"], "Test")
         self.assertEqual(rec["scope"], "read")
         self.assertEqual(rec["made"], 1000)
