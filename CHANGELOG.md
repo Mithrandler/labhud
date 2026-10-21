@@ -8,6 +8,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Boards as files**: ⚙ > Dashboard > Export and import (`POST /api/boards/export`, `/api/boards/import`)
+  writes the pages, groups and the cards' places, kinds, icons and sizes to a JSON file and reads
+  one back, showing first what it drops (cards this labhud does not have) and what it keeps in a
+  group "Unplaced" (cards the file leaves out). No address or key leaves labhud.
 - **Roles for API tokens**: ⚙ calls the scopes viewer (`read`), operator (`act`) and admin; the API
   takes either name and lists both (`role`, `roles`).
 - **Audit retention**: `[audit] keep_days` (7 to 730, default 90), set from ⚙ > System > API & audit

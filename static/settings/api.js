@@ -92,7 +92,7 @@ function api_audit(ctx) {
   s.appendChild(keep);
   fetch("/api/v1/audit?limit=1", { headers: lock_headers() }).then((r) => r.json()).then((r) => { if (r.keep_days) days.value = r.keep_days; });
   kb.addEventListener("click", () => {
-    fetch("/api/audit/settings", { method: "POST", headers: { ...lock_headers(), "Content-Type": "application/json" }, body: JSON.stringify({ keep_days: Number(days.value) }) })
+    fetch("/api/audit/settings", { method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: JSON.stringify({ keep_days: Number(days.value) }) })
       .then((r) => r.json()).then((r) => { kmsg.textContent = r.ok ? "Saved" : (r.error || "Not saved"); });
   });
   const bar = el("div", "aud-bar");

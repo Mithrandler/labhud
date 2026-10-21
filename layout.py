@@ -168,3 +168,56 @@ def organize(raw, page_id, agents=None):
             groups.append({"id": gid, "title": cardtype.TITLES[k], "auto": False, "cards": buckets[k]})
     page["groups"] = groups + rest
     return v
+
+
+FORMAT = "labhud-board"
+
+
+def export(raw):
+    """The pages as a document that import (adopt) takes back: order, titles, icons, groups, and per
+    card its id, kind, icon and size. Nothing else of a card (addresses, keys) leaves labhud."""
+    pages = []
+    for p in raw.get("page") or []:
+        pages.append({"id": p["id"], "title": p.get("title") or p["id"], "icon": p.get("icon") or "",
+                      "groups": [{"id": g["id"], "title": g.get("title") or g["id"],
+                                  "cards": [{"id": c["id"], "kind": c.get("kind") or "", "icon": c.get("icon") or "",
+                                             "size": c.get("size") or ("l" if c.get("large") else "")}
+                                            for c in g.get("card") or []]}
+                                 for g in p.get("group") or []]})
+    return {"format": FORMAT, "version": 1, "pages": pages}
+
+
+def adopt(raw, doc):
+    """(pages for apply, report) from an exported document laid over this labhud's cards. A card the
+    document names that is not here is dropped ("unknown"); a card here that the document leaves out
+    is kept, in a group "unplaced" on the last page ("unplaced"). Raises ValueError for a document
+    that is not one of ours."""
+    if not isinstance(doc, dict) or doc.get("format") != FORMAT or doc.get("version") != 1:
+        raise ValueError("not a labhud board document (format, version 1)")
+    pages = doc.get("pages")
+    if not isinstance(pages, list) or not pages:
+        raise ValueError("the document has no pages")
+    have = {c["id"] for p in raw.get("page") or [] for g in p.get("group") or [] for c in g.get("card") or []}
+    seen, unknown, out = set(), [], []
+    for p in pages:
+        if not isinstance(p, dict):
+            raise ValueError("a page must be an object")
+        groups = []
+        for g in p.get("groups") or []:
+            if not isinstance(g, dict):
+                raise ValueError("a group must be an object")
+            cards = []
+            for c in g.get("cards") or []:
+                c = c if isinstance(c, dict) else {"id": c}
+                cid = c.get("id")
+                if cid not in have:
+                    unknown.append(str(cid)[:64])
+                elif cid not in seen:
+                    seen.add(cid)
+                    cards.append(c)
+            groups.append({**g, "cards": cards})
+        out.append({**p, "groups": groups})
+    left = sorted(have - seen)
+    if left:
+        out[-1]["groups"].append({"id": "unplaced", "title": "Unplaced", "cards": [{"id": i} for i in left]})
+    return out, {"unknown": unknown, "unplaced": left}
