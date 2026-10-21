@@ -140,4 +140,6 @@ builds the image for linux/amd64 and linux/arm64; a `vX.Y.Z` tag publishes it, o
 ## License
 
 [MIT](LICENSE). The bundled Roboto fonts are under the
-[SIL Open Font License 1.1](static/fonts/OFL.txt).
+[SIL Open Font License 1.1](static/fonts/OFL.txt). The service icons come from
+[homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (Apache-2.0, see
+`static/icons/svc/LICENSE`).

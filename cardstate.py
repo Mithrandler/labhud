@@ -529,7 +529,8 @@ def containers(c, data):
                     "update": x.get("update") is True, "updating": x.get("updating") is True,
                     "card": one, "actions": useful_actions(one, data, True),
                     "project": x.get("project") or "", "usage": container_usage(x) if up else "",
-                    "last": container_last(data, c["agent"], n), "scan": scan_summary(x)})
+                    "last": container_last(data, c["agent"], n), "scan": scan_summary(x),
+                    "image": x.get("image") or "", "icon": cardtype.icon_for(n, image=x.get("image"))})
     return out
 
 
@@ -813,6 +814,7 @@ def game(sv, i, data, topology, actions_on=False, full=False):
            "uptime": round(sv.get("uptime_s") or 0), "map": q.get("map") if q else None,
            "version": q.get("version") if q else None,
            "actions": [_action(a, c, topology.get("actions") or {}) for a in useful_actions(c, data, actions_on)]}
+    out["icon"] = cardtype.icon_for(sv.get("game") or "", game=sv.get("game")) or cardtype.icon_for(sv.get("name") or "")
     if full:
         out["who"] = [n for n in (q.get("names") or []) if isinstance(n, str)] if q else []
     return out

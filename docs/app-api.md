@@ -151,7 +151,7 @@ A card:
   `percent1`, `celsius`, `used_of`, `bytes`, `rate`, `count`…). For `used_of` the history holds
   the percentage, not the pair.
 - `metrics[].pct` (0 to 100) is there for a percentage (`percent`, `percent1`, `used_of`): the length of its bar. `warn` and `crit` are where the bar turns orange and red, there only when a high value is bad (CPU, RAM, disk: `[display] warn`/`crit` in config.toml, 80 and 92 unless set; or the metric's own `warn`/`crit`).
-- `icon` names the card's icon: a file `/icons/svc/<icon>.png` (96 px; `.svg` for the web) when the server has one, else one of labhud's line icons (`server`, `nas`, `vm`, `pc`, `app`, and the others in design/tokens.json). Its own `icon` in config.toml or the `labhud.icon` label, else its source's, else its kind's; missing when none fits.
+- `icon` names the card's icon: a file `/icons/svc/<icon>.png` (96 px; `.svg` for the web) when the server has one (it carries about 340 and fetches the others from the dashboard-icons pack on the first request, then keeps them; `[display] icons_online = false` turns that off), else one of labhud's line icons (`server`, `nas`, `vm`, `pc`, `app`, and the others in design/tokens.json). Its own `icon` in config.toml or the `labhud.icon` label, else its source's, else its kind's; missing when none fits.
 - `size` is the card's place in the grid when the config sets one (`s` 1×1, `m` 2×1, `l` 2×2, `xl` 4×2 cells); missing means `s`.
 - `frozen`: the numbers are not live (host down or off, or the source kept its last answer); dim
   them. `note` says why, `note_kind` is `stale`, `off`, `not_configured`, `error` or `""`.
@@ -164,8 +164,9 @@ A card:
   (`{label, action, danger}`), each sent as its own action.
 - `sections` (only from `/api/v1/card/<id>`): the panel, `[{title, rows: [[name, value, bad]]}]`.
 - `containers` and `agent` (only from `/api/v1/card/<id>`, a card whose own agent has Docker):
-  `[{name, up, status, update, updating, actions}]`, stopped ones first, `actions` as above (UPDATE
-  only with `update`, none while `updating`). The admin reads one's last lines with
+  `[{name, up, status, update, updating, actions, image, icon}]`, stopped ones first, `actions` as above
+  (UPDATE only with `update`, none while `updating`); `image` is the image it runs and `icon` the logo
+  of its program (`/icons/svc/<icon>.png`), "" when none is known. The admin reads one's last lines with
   `POST /api/setup/logs {agent, target}` → `{ok, output}` (only ticked containers).
 - `charts` (a card with an agent of its own): its agent's numbers that have a history, for the
   host's charts beside `metrics` with `trend` (leave out a label the metrics already chart).
@@ -178,7 +179,8 @@ tiles show them (the same function, checked by a test): `{id, name, game, state,
 line, players, max, address, ram_mb, ram_max_mb, uptime, map, version, actions}`. `title` and
 `line` are the tile's two lines ("Minecraft", "3/20 players" or "stopped"); `actions` are like a
 card's, from the Pterodactyl agent when it has the server ticked; `players`, `max`, `map` and
-`version` are null when the game has no public query or did not answer.
+`version` are null when the game has no public query or did not answer. `icon` (labhud 0.1.x) is the
+game's logo, "" when none is known.
 
 Times in the texts (`note`, rows) are written in labhud's own time zone.
 

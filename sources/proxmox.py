@@ -80,6 +80,27 @@ _ONBOOT = {}
 _ONBOOT_TTL = 600
 
 
+_OSTYPE = {}
+_OSTYPE_TTL = 3600
+
+
+def _ostype(url, header, node, kind, vmid):
+    """The guest's OS as its config says it: an LXC's "debian", "alpine"…, a VM's "l26" (Linux),
+    "win11"…; "" when it cannot be read. An hour in the cache: it hardly ever changes."""
+    now = time.time()
+    cache = _OSTYPE.get((node, vmid))
+    if cache and now - cache[0] < _OSTYPE_TTL:
+        return cache[1]
+    try:
+        kind = "lxc" if kind == "lxc" else "qemu"
+        cfg = request(f"{url}/api2/json/nodes/{node}/{kind}/{vmid}/config", header, timeout=8).get("data") or {}
+        val = str(cfg.get("ostype") or "")
+    except (OSError, ValueError, TypeError, KeyError):
+        val = cache[1] if cache else ""
+    _OSTYPE[(node, vmid)] = (now, val)
+    return val
+
+
 def _onboot(url, header, node, kind, vmid):
     """True/False, or None if the config cannot be read (the token lacks VM.Audit)."""
     now = time.time()
@@ -144,6 +165,9 @@ def _node(node, url, header):
         }
         if r.get("template"):
             guests[str(vmid)]["template"] = True
+        os_type = _ostype(url, header, node, r.get("type"), vmid)
+        if os_type:
+            guests[str(vmid)]["os"] = os_type
         if not running:
             onboot = _onboot(url, header, node, r.get("type"), vmid)
             if onboot is not None:

@@ -6,7 +6,11 @@ accepts or changes.
     agents               {agent name: [what it found: "docker", "pve", ...]} (agents.listing())
 """
 
+import json
+import os
 import re
+
+from config import ICON_RE
 
 # in the order the groups are proposed
 KINDS = ("proxmox", "nas", "docker", "vm", "pc")
@@ -82,3 +86,91 @@ def icon(card, agents=None):
     if check and check[0] == "agent" and len(check) > 2 and check[2] == "docker":
         return "docker"
     return KIND_ICONS.get(kind(raw, agents), "")
+
+
+# --- the icon of a machine or a container from what is known about it ---
+
+_ALIASES = None
+# Proxmox's `ostype` of an LXC (the distribution) and of a VM (l26 is any Linux: the name decides)
+OS_ICONS = {"debian": "debian-linux", "ubuntu": "ubuntu-linux", "alpine": "alpine-linux", "archlinux": "arch-linux",
+            "fedora": "fedora", "centos": "centos", "nixos": "nixos", "opensuse": "opensuse",
+            "win11": "windows-11", "win10": "windows-10", "win8": "windows-10", "win7": "windows-10",
+            "w2k19": "windows-10", "w2k22": "windows-11", "w2k25": "windows-11", "wvista": "windows-10", "wxp": "windows-10",
+            "w2k": "windows-10", "w2k8": "windows-10"}
+# the last part of an image name that says nothing about the program ("goauthentik/server")
+_GENERIC = {"server", "app", "web", "api", "core", "main", "latest", "community", "release", "backend", "frontend", "ui", "service"}
+
+
+def aliases():
+    """{alternative name: icon slug}, from static/icons/aliases.json (the icons it names are shipped)."""
+    global _ALIASES
+    if _ALIASES is None:
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icons", "aliases.json"), encoding="utf-8") as f:
+                _ALIASES = {str(k): str(v) for k, v in json.load(f).items()}
+        except (OSError, ValueError):
+            _ALIASES = {}
+    return _ALIASES
+
+
+_SHIPPED = None
+
+
+def shipped():
+    """The icons labhud carries (static/icons/svc/*.svg), as slugs."""
+    global _SHIPPED
+    if _SHIPPED is None:
+        try:
+            names = os.listdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icons", "svc"))
+        except OSError:
+            names = []
+        _SHIPPED = {n[:-4] for n in names if n.endswith(".svg")}
+    return _SHIPPED
+
+
+def _slug(word):
+    """An icon name from a word: through the alias table, else the word itself if it could be one."""
+    word = re.sub(r"[^a-z0-9-]+", "-", str(word or "").lower()).strip("-")
+    word = aliases().get(word, word)
+    return word if ICON_RE.match(word) else ""
+
+
+def image_name(image):
+    """The program an image is: "lscr.io/linuxserver/sonarr:latest" -> "sonarr", "docker.io/library/postgres:16"
+    -> "postgres", "ghcr.io/goauthentik/server" -> "goauthentik"; "" when it says nothing."""
+    ref = str(image or "").lower().split("@")[0]
+    parts = ref.split("/")
+    if len(parts) > 1 and ("." in parts[0] or ":" in parts[0] or parts[0] == "localhost"):
+        parts = parts[1:]                    # the registry
+    parts = [p.split(":")[0] for p in parts if p]
+    parts = [p for p in parts if p not in ("library", "linuxserver", "lscr")] or parts
+    while len(parts) > 1 and parts[-1] in _GENERIC:
+        parts.pop()
+    return parts[-1] if parts else ""
+
+
+def icon_for(name="", *, os=None, image=None, game=None, tags=()):
+    """The icon of a machine, a container or a game, from the most to the least certain: a Proxmox
+    tag `icon-<slug>`, the guest's OS, the container's image, the game, then the words of its name
+    compared with the alias table. "" when nothing is known (the caller keeps its own fallback)."""
+    for t in tags or ():
+        if str(t).lower().startswith("icon-") and ICON_RE.match(str(t).lower()[5:]):
+            return str(t).lower()[5:]
+    if os and str(os).lower() in OS_ICONS:
+        return OS_ICONS[str(os).lower()]
+    if image:
+        slug = _slug(image_name(image))
+        if slug:
+            return slug
+    if game:
+        slug = _slug(game)
+        if slug in aliases().values():
+            return slug
+    words = re.split(r"[^a-z0-9]+", str(name or "").lower())
+    for cand in ["-".join(words[i:j]) for j in range(len(words), 0, -1) for i in range(0, len(words) - j + 1)]:
+        for c in (cand, cand.rstrip("0123456789-")):    # "pve2" and "pihole-2" are the second of their kind
+            if c in aliases():
+                return aliases()[c]
+            if c in shipped():
+                return c
+    return ""

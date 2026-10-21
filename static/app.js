@@ -1967,6 +1967,20 @@ function section(body, title, rows) {
 /** The containers of a card's own agent, stopped ones first, each with the buttons it gets:
     a card of its own (`card`) for the buttons' rules, the confirmation and the progress, so
     "starting…" watches that container and not the guest. cardstate.py `containers`. */
+let ICON_ALIASES = {};   // alternative name -> icon (static/icons/aliases.json), read once
+fetch("/icons/aliases.json").then((r) => r.json()).then((a) => { ICON_ALIASES = a || {}; }).catch(() => {});
+
+/** The program an image is, as an icon name ("lscr.io/linuxserver/sonarr:latest" -> "sonarr"); cardtype.image_name and icon_for. */
+function image_icon(image) {
+  let parts = String(image || "").toLowerCase().split("@")[0].split("/");
+  if (parts.length > 1 && (/[.:]/.test(parts[0]) || parts[0] === "localhost")) parts = parts.slice(1);
+  parts = parts.map((p) => p.split(":")[0]).filter(Boolean);
+  parts = parts.filter((p) => !["library", "linuxserver", "lscr"].includes(p)).length ? parts.filter((p) => !["library", "linuxserver", "lscr"].includes(p)) : parts;
+  while (parts.length > 1 && ["server", "app", "web", "api", "core", "main", "latest", "community", "release", "backend", "frontend", "ui", "service"].includes(parts[parts.length - 1])) parts.pop();
+  const word = (parts[parts.length - 1] || "").replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  return ICON_ALIASES[word] || word;
+}
+
 function container_rows(c) {
   const all = (c.agent && get(`agents.${c.agent}.containers`)) || {};
   const btns = (get(`agents.${c.agent}.buttons`) || {}).docker || {};
@@ -2042,7 +2056,9 @@ function agent_containers(body, c) {
       l.appendChild(stack_row(rows.filter((y) => y.project === x.project), x.project));
     }
     const r = el("div", "row" + (x.up ? "" : " bad"));
-    r.appendChild(el("span", "n", x.name));
+    const nm = el("span", "n");
+    nm.append(card_icon(image_icon((all[x.name] || {}).image), "docker"), document.createTextNode(x.name));
+    r.appendChild(nm);
     const v = el("span", "v", x.status);
     if (x.usage) v.appendChild(el("span", "sub", x.usage));
     if (x.last) v.appendChild(el("span", "sub", x.last));

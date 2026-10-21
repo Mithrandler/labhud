@@ -743,3 +743,6 @@ body.density-airy .card .row { padding: 3px 8px; line-height: 1.4; }
   .card { padding: 6px 8px; gap: var(--space-1); }
   .card .body, .bars { gap: 3px; }
 }
+
+/* a container's icon, before its name (card_icon: its logo, else the docker line icon) */
+.row .n .ic { display: inline-flex; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px; }

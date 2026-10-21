@@ -16,6 +16,7 @@ import builtins
 import collections
 import hashlib
 import hmac
+import iconcache
 import json
 import re
 import os
@@ -284,6 +285,21 @@ def derive(file_topology, previous=None):
     return with_icons(with_agents(t))
 
 
+def _icon_of(card, px, every):
+    """What is known of the machine or container behind a card (a Proxmox guest's OS and tags, a
+    container's image) and its name, as cardtype.icon_for reads it; "" when it says nothing."""
+    check = card.get("check") or []
+    os_type, tags, image = None, (), None
+    if len(check) >= 3 and check[0] == "proxmox":
+        g = (((px.get(check[1]) or {}).get("guests") or {}).get(str(check[2]))) or {}
+        os_type, tags = g.get("os"), g.get("tags") or ()
+    elif len(check) >= 4 and check[0] == "agent" and check[2] == "docker":
+        image = (((every.get(check[1]) or {}).get("containers") or {}).get(check[3]) or {}).get("image")
+    elif check and check[0] in ("proxmox", "agent") and not card.get("agent_target"):
+        return ""                      # a node or a host: its source's icon (cardtype.icon) is the right one
+    return cardtype.icon_for(card.get("name", ""), os=os_type, image=image, tags=tags)
+
+
 def with_icons(topology):
     """Every card with an `icon` (its own, its source's or its kind's: cardtype.icon), so the
     display and the app draw the same one without guessing twice."""
@@ -292,10 +308,12 @@ def with_icons(topology):
     except Exception:   # the agents' file not readable yet: the kinds are guessed without them
         found = {}
     cards = {}
+    px = (globals().get("_data") or {}).get("proxmox") or {}
+    every = (globals().get("_data") or {}).get("agents") or {}
     for gid, cs in topology["cards"].items():
         cards[gid] = []
         for c in cs:
-            name = c.get("icon") or cardtype.icon(c, found)
+            name = c.get("icon") or _icon_of(c, px, every) or cardtype.icon(c, found)
             cards[gid].append(dict(c, icon=name) if name and not c.get("icon") else c)
     return dict(topology, cards=cards)
 
@@ -2471,6 +2489,11 @@ class Handler(BaseHTTPRequestHandler):
         # `startswith(STATIC)` alone would accept a sibling called "static-other": compare on the
         # separator, not on a string prefix.
         if not (target == STATIC or target.startswith(STATIC + os.sep)) or not os.path.isfile(target):
+            icon = re.fullmatch(r"/icons/svc/([a-z0-9-]+)\.(svg|png)", path)
+            found = iconcache.get(icon[1], icon[2], (TOPOLOGY.get("display") or {}).get("icons_online", True)) if icon else None
+            if found:
+                self._headers(200, found[1], len(found[0]), "public, max-age=86400")
+                return self.wfile.write(found[0])
             return self._json({"error": "not found"}, 404)
         ext = os.path.splitext(target)[1]
         with open(target, "rb") as f:

@@ -52,7 +52,7 @@ METRIC_KEYS = {"key", "label", "format", "warn", "crit"}
 CARD_SIZES = ("s", "m", "l", "xl")
 # An icon's name: a file in static/icons/svc/ (dashboard-icons names: "proxmox", "home-assistant")
 ICON_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-DISPLAY_KEYS = {"warn", "crit"}
+DISPLAY_KEYS = {"warn", "crit", "icons_online"}
 # The marks where a resource (CPU, RAM, disk: a percentage) turns orange, then red
 DEFAULT_MARKS = (80, 92)
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
@@ -927,7 +927,7 @@ def _validate(raw, path):
             public_page = {"title": ck.opt("public", pb, "title", str, "a string") or "Status", "groups": groups}
 
     # [display] warn/crit: where CPU, RAM and disk turn orange and red (a metric's own warn/crit wins)
-    display = {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1]}
+    display = {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1], "icons_online": True}
     if "display" in raw:
         dp = raw["display"]
         if not isinstance(dp, dict):
@@ -939,7 +939,11 @@ def _validate(raw, path):
             if marks and not 0 < marks[0] < marks[1] <= 100:
                 ck.err("display", "warn and crit are percentages: 0 < warn < crit <= 100")
             elif marks:
-                display = {"warn": marks[0], "crit": marks[1]}
+                display = dict(display, warn=marks[0], crit=marks[1])
+            if not isinstance(dp.get("icons_online", True), bool):
+                ck.err("display", "icons_online must be true or false")
+            else:
+                display["icons_online"] = dp.get("icons_online", True)
 
     registries = _registries(ck, raw)
     alert_rules = _alert_rules(ck, raw, [c for cs in cards.values() for c in cs])
@@ -1011,7 +1015,7 @@ def public(topology):
     out["search"] = topology.get("search") or {}
     out["bookmarks"] = topology.get("bookmarks") or []
     out["calm"] = topology.get("calm")
-    out["display"] = topology.get("display") or {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1]}
+    out["display"] = topology.get("display") or {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1], "icons_online": True}
     out["marks"] = topology.get("marks") or {}
     out["maintenance_buttons"] = topology["maintenance"]["buttons"]
     out["city"] = (topology.get("weather") or {}).get("city", "")
