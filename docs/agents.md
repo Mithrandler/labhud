@@ -125,6 +125,7 @@ tooling, and ⚙ only shows which version each agent runs.
   empty keeps the host's). A compose file is checked before anything changes. A compose file can ask for
   what the Docker socket can, so *Stacks* is as strong as that; each action is in the audit log
   (`stack`). `labhud agent stack <agent> …` does the same from a terminal. A git source is not done yet.
+  A stack's compose file can also come from a git repository (repo, branch, path in the editor, or `labhud agent stack <agent> deploy-git <name> <repo> <path> [branch]`): labhud fetches that one file (GitHub, GitLab, Gitea/Forgejo raw address) and sends it sealed like a typed one; a token for a private repo is used for that request only.
 - **Update on their own**: under Docker in ⚙ > Devices > Agents, the ticked containers labhud
   updates by itself when their registry has a newer image, in a window the same for every agent
   (every day at 04:00 unless changed; labhud's local time, `TZ`), one after the other, as UPDATE

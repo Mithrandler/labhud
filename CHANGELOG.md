@@ -6,6 +6,23 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+
+- **Default board on the first run**: a config labhud keeps itself that has no card at all gets a page made from what the
+  sources found (Proxmox nodes and guests, an agent's containers, services the scan found, a games page). Made once; a
+  board with any card is never touched, and one emptied on purpose stays empty.
+- **Widgets in ⚙ > Dashboard**: a form for clock (timezone), calendar and frame (URL, height) cards, `POST /api/boards/widget`
+  (admin, checked like every save, audited).
+- **Containers in the search box**, with their buttons and LOGS for the admin; `/api/v1/state` carries `containers`,
+  `bookmarks` and `search` for the app's palette (an older app ignores them).
+- **Stacks from git**: a deploy can name `{repo, branch, path}` (⚙ > Containers, `labhud agent stack <agent> deploy-git`).
+  The server fetches the one compose file from the forge's raw address and seals it as before, so the agent needs no
+  git and no new version; a token for a private repository is used once, never stored, logged or sent back.
+
+### Fixed
+
+- ⚙ did not open and its icons were missing on the wall: `settings.js` read `CFG` before `app.js` declared it.
+
 ## [0.1.1] - 2026-10-22
 
 Needs labhud-agent 0.1.1 for the live log, the terminal, stacks and the host's Docker.
