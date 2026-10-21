@@ -851,7 +851,7 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
     {agent name: what it found} (agents.listing()), for each card's `type`. `role` (viewer /
     operator / admin): only the pages [roles.<role>] lists; the alerts (alerting.py) do not depend
     on it, so a card a role does not see still raises its alert."""
-    pages, cards, seen = [], [], set()
+    pages, cards, seen, hosts = [], [], set(), []
     titles = {}
     only = (topology.get("roles") or {}).get(role)
     for i, p in enumerate(topology["pages"]):
@@ -870,6 +870,7 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
                 ids.append(c["id"])
                 if c["id"] not in seen:
                     seen.add(c["id"])
+                    hosts.append(c)
                     cards.append(card(c, data, topology, actions_on, page=p["id"], group=g["id"], full=full, found=found))
             if ids or not every:   # a group whose cards are all hidden goes with them
                 groups.append({"id": g["id"], "title": g["title"], "cards": ids})
@@ -889,9 +890,23 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
     alerts += [{"id": _js(a.get("id")), "text": _js(a.get("text")), "card": a.get("card"), "since": a.get("since")}
                for a in rules if isinstance(a, dict)] if isinstance(rules, list) else []
     disp = topology.get("display") or {}
+    own = {(c.get("agent"), c["agent_target"][7:]) for cs in topology["cards"].values() for c in cs
+           if str(c.get("agent_target") or "").startswith("docker:")}
+    boxes = []   # the containers the hosts above list, for the app's palette (a container with a card of its own is that card)
+    for host in hosts:
+        if not host.get("agent") or host.get("agent_target") or host.get("game"):
+            continue
+        for r in containers(host, data):
+            key = (host["agent"], r["name"])
+            if key in own:
+                continue
+            own.add(key)
+            boxes.append({"card": host["id"], "name": r["name"], "up": r["up"],
+                          "actions": [_action(a, r["card"], topology.get("actions") or {}) for a in r["actions"]] if actions_on else []})
     return {"title": topology.get("title") or "LabHUD", "now": int(time.time()), "pages": pages,
             "cards": cards, "problems": problems, "alerts": alerts,
             "theme": {"base": disp.get("base", "oled"), "accent": disp.get("accent", "blue")},
+            "containers": boxes,
             "bookmarks": [{"group": b["group"], "name": b["name"], "url": b["url"]} for b in topology.get("bookmarks") or []],
             "search": (topology.get("search") or {}).get("url") or "",
             **({"role": role} if role else {})}
