@@ -5,7 +5,7 @@ cannot drift apart:
 - the colours (and, in app.css, the sizes: design:scale), as CSS variables, between the `design:colors` markers of every page that has them
   (static/app.css, static/setup/setup.css, static/status.html, static/public.html);
 - static/icons.js: the icons for the wall and ⚙ (thin lines, drawn with currentColor);
-- with --android <labhud-android checkout>: the app's Tokens.kt, the same colours (`Lab`) and the
+- with --android <labhud-android checkout>: the app's Tokens.kt, the same colours (`Hud`, the app's HUD theme) and the
   same icons as ImageVectors (`LabIcons`).
 
     python3 design/build.py                          # write the files in this repo
@@ -161,8 +161,8 @@ import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** The colours of the wall and ⚙. */
-object Lab {{
+/** The colours of the wall and ⚙: the HUD theme. The app's `Lab` (Theme.kt) is these or, in another theme, others. */
+object Hud {{
 {colors}
 }}
 
