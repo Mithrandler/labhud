@@ -8,6 +8,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Command palette**: the search box (🔍 or `/`) also finds pages, the sections of ⚙ and the cards'
+  buttons (`RESTART · web`), best match first; `>` looks only among the commands. The buttons and ⚙
+  appear only to who may act (signed in as the admin and unlocked; the admin hands that on with an
+  operator token or role), and a button asks as in the card's panel.
 - **Four more services**: Portainer, Paperless-ngx, Tautulli and Mealie are sources, with a form and a
   connection test in ⚙ > Integrations, a first card, and a place in the network scan. Read-only keys.
 - **Discovered, to approve**: ⚙ > Dashboard > Discovered lists the Proxmox guests and the containers
