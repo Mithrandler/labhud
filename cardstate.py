@@ -841,14 +841,21 @@ def state(topology, data, actions_on=False, full=False, found=None):
         groups = []
         for g in p["groups"]:
             titles[g["id"]] = g["title"]
+            if g.get("hidden"):
+                continue   # left off every screen; its cards' alerts (alerting.py) go on
             ids = []
-            for c in topology["cards"].get(g["id"], []):
+            every = topology["cards"].get(g["id"], [])
+            for c in every:
+                if c.get("hidden"):
+                    continue
                 ids.append(c["id"])
                 if c["id"] not in seen:
                     seen.add(c["id"])
                     cards.append(card(c, data, topology, actions_on, page=p["id"], group=g["id"], full=full, found=found))
-            groups.append({"id": g["id"], "title": g["title"], "cards": ids})
-        pages.append({"id": p["id"], "title": p["title"], "groups": groups, **({"games": True} if p.get("games") else {})})
+            if ids or not every:   # a group whose cards are all hidden goes with them
+                groups.append({"id": g["id"], "title": g["title"], "cards": ids})
+        pages.append({"id": p["id"], "title": p["title"], "groups": groups, **({"games": True} if p.get("games") else {}),
+                      **{k: p[k] for k in ("columns", "density") if p.get(k)}})
     every_game = games(topology, data, actions_on, full)
     for page in pages:
         if page.get("games"):

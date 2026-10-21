@@ -8,6 +8,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Hidden cards and groups, columns and density per page**: `hidden = true` on a card or a group
+  keeps it off every screen (it is not in `/api/v1/state`; its alerts stay active); a page takes
+  `columns` (1 to 6) and `density` (`compact` or `normal`), both in `/api/v1/state`. All three are
+  set from ⚙ > Dashboard (a card's, group's and page's ⋯ menu), kept by Export and Import.
 - **Boards as files**: ⚙ > Dashboard > Export and import (`POST /api/boards/export`, `/api/boards/import`)
   writes the pages, groups and the cards' places, kinds, icons and sizes to a JSON file and reads
   one back, showing first what it drops (cards this labhud does not have) and what it keeps in a

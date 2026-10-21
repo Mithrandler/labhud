@@ -269,5 +269,127 @@ class Organize(unittest.TestCase):
             layout.organize(tomllib.loads(LAB), "nope")
 
 
+class HiddenColumnsDensity(unittest.TestCase):
+    CFG = '''title = "Lab"
+
+[[page]]
+id = "main"
+title = "MAIN"
+
+  [[page.group]]
+  id = "g"
+  title = "G"
+
+    [[page.group.card]]
+    id = "a"
+    name = "A"
+    ping = "192.0.2.1"
+
+    [[page.group.card]]
+    id = "b"
+    name = "B"
+    ping = "192.0.2.2"
+    hidden = true
+
+  [[page.group]]
+  id = "h"
+  title = "H"
+  hidden = true
+
+    [[page.group.card]]
+    id = "c"
+    name = "C"
+    ping = "192.0.2.3"
+'''
+
+    def raw(self):
+        return tomllib.loads(self.CFG)
+
+    def pages(self, raw):
+        return layout.view(raw)["pages"]
+
+    def send(self, raw, mutate):
+        """apply() with the editor's own pages (as view gives them), changed by `mutate`."""
+        pages = [{"id": p["id"], "title": p["title"], "columns": p["columns"], "density": p["density"],
+                  "groups": [{"id": g["id"], "title": g["title"], "hidden": g["hidden"],
+                              "cards": [{"id": c["id"], "hidden": c["hidden"]} for c in g["cards"]]} for g in p["groups"]]}
+                 for p in layout.view(raw)["pages"]]
+        mutate(pages)
+        return layout.apply(raw, pages)
+
+    def test_view_shows_flags(self):
+        p = self.pages(self.raw())[0]
+        self.assertEqual([c["hidden"] for c in p["groups"][0]["cards"]], [False, True])
+        self.assertEqual([g["hidden"] for g in p["groups"]], [False, True])
+        self.assertEqual((p["columns"], p["density"]), (0, ""))
+
+    def test_untouched_keeps_everything(self):
+        raw = self.raw()
+        self.assertEqual(self.send(raw, lambda ps: None)["page"], raw["page"])
+
+    def test_hide_and_show(self):
+        def flip(ps):
+            ps[0]["groups"][0]["cards"][0]["hidden"] = True
+            ps[0]["groups"][0]["cards"][1]["hidden"] = False
+            ps[0]["groups"][1]["hidden"] = False
+        out = self.send(self.raw(), flip)["page"][0]["group"]
+        self.assertTrue(out[0]["card"][0]["hidden"])
+        self.assertNotIn("hidden", out[0]["card"][1])
+        self.assertNotIn("hidden", out[1])
+
+    def test_missing_leaves_it(self):
+        raw = self.raw()
+        out = layout.apply(raw, [{"id": "main", "title": "MAIN", "groups": [
+            {"id": "g", "title": "G", "cards": ["a", "b"]}, {"id": "h", "title": "H", "cards": ["c"]}]}])
+        self.assertTrue(out["page"][0]["group"][0]["card"][1]["hidden"])
+        self.assertTrue(out["page"][0]["group"][1]["hidden"])
+
+    def test_columns_and_density(self):
+        def look(ps):
+            ps[0]["columns"] = 4
+            ps[0]["density"] = "compact"
+        out = self.send(self.raw(), look)
+        self.assertEqual((out["page"][0]["columns"], out["page"][0]["density"]), (4, "compact"))
+        self.assertEqual(config.loads(tomlw.dumps(out))["pages"][0]["columns"], 4)
+        out = self.send(out, lambda ps: ps[0].update(columns=0, density=""))
+        self.assertNotIn("columns", out["page"][0])
+        self.assertNotIn("density", out["page"][0])
+
+    def test_bad_values_refused(self):
+        raw = self.raw()
+        for key, v in (("columns", 7), ("columns", -1), ("columns", True), ("columns", "3"), ("density", "airy"), ("density", 1)):
+            with self.subTest(key=key, v=v):
+                with self.assertRaises(ValueError):
+                    self.send(raw, lambda ps: ps[0].update({key: v}))
+        for where in ("group", "card"):
+            with self.subTest(where=where):
+                def bad(ps):
+                    (ps[0]["groups"][0] if where == "group" else ps[0]["groups"][0]["cards"][0])["hidden"] = "yes"
+                with self.assertRaises(ValueError):
+                    self.send(raw, bad)
+
+    def test_export_import_round_trip(self):
+        raw = self.send(self.raw(), lambda ps: ps[0].update(columns=2, density="compact"))
+        doc = layout.export(raw)
+        self.assertEqual((doc["pages"][0]["columns"], doc["pages"][0]["density"]), (2, "compact"))
+        self.assertTrue(doc["pages"][0]["groups"][1]["hidden"])
+        self.assertTrue(doc["pages"][0]["groups"][0]["cards"][1]["hidden"])
+        pages, report = layout.adopt(raw, doc)
+        self.assertEqual(report, {"unknown": [], "unplaced": []})
+        self.assertEqual(layout.apply(raw, pages)["page"], raw["page"])
+
+    def test_import_carries_hidden_to_another_labhud(self):
+        raw = self.raw()
+        doc = layout.export(raw)
+        doc["pages"][0]["groups"][0]["cards"][0]["hidden"] = True
+        pages, _ = layout.adopt(raw, doc)
+        self.assertTrue(layout.apply(raw, pages)["page"][0]["group"][0]["card"][0]["hidden"])
+
+    def test_organize_keeps_hidden(self):
+        v = layout.organize(self.raw(), "main")
+        cards = {c["id"]: c for g in v["pages"][0]["groups"] for c in g["cards"]}
+        self.assertTrue(cards["b"]["hidden"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -346,5 +346,42 @@ class IconSizeMarks(unittest.TestCase):
         self.assertIn("0 < warn < crit <= 100", "\n".join(cm.exception.problems))
 
 
+class HiddenColumnsDensity(unittest.TestCase):
+    def problems(self, text):
+        with self.assertRaises(config.ConfigError) as cm:
+            load_text(text)
+        return "\n".join(cm.exception.problems)
+
+    def test_hidden_card_and_group(self):
+        t = load_text(MINIMAL.replace('name = "NAS"', 'name = "NAS"\nhidden = true', 1)
+                      .replace('title = "Hosts"', 'title = "Hosts"\n  hidden = true', 1))
+        self.assertTrue(t["cards"]["hosts"][0]["hidden"])
+        self.assertTrue(t["pages"][0]["groups"][0]["hidden"])
+
+    def test_not_hidden_by_default(self):
+        t = load_text(MINIMAL)
+        self.assertNotIn("hidden", t["cards"]["hosts"][0])
+        self.assertNotIn("hidden", t["pages"][0]["groups"][0])
+
+    def test_hidden_must_be_a_bool(self):
+        self.assertIn("hidden", self.problems(MINIMAL.replace('name = "NAS"', 'name = "NAS"\nhidden = "yes"', 1)))
+        self.assertIn("hidden", self.problems(MINIMAL.replace('title = "Hosts"', 'title = "Hosts"\n  hidden = 1', 1)))
+
+    def test_page_columns_and_density(self):
+        t = load_text(MINIMAL.replace('title = "MAIN"', 'title = "MAIN"\ncolumns = 3\ndensity = "compact"', 1))
+        self.assertEqual((t["pages"][0]["columns"], t["pages"][0]["density"]), (3, "compact"))
+        t = load_text(MINIMAL)
+        self.assertNotIn("columns", t["pages"][0])
+        self.assertNotIn("density", t["pages"][0])
+
+    def test_bad_columns(self):
+        for v in ("0", "7", "-1", "2.5", '"3"', "true"):
+            with self.subTest(columns=v):
+                self.assertIn("columns must be", self.problems(MINIMAL.replace('title = "MAIN"', f'title = "MAIN"\ncolumns = {v}', 1)))
+
+    def test_bad_density(self):
+        self.assertIn("density must be one of", self.problems(MINIMAL.replace('title = "MAIN"', 'title = "MAIN"\ndensity = "airy"', 1)))
+
+
 if __name__ == "__main__":
     unittest.main()

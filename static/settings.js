@@ -91,13 +91,32 @@ function apply_look() {
   if (S.font === "roboto") root.removeProperty("--font"); else root.setProperty("--font", font[1]);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = base.vars["--bg"] || "#000000";
-  for (const d of ["compact", "airy"]) document.body.classList.toggle("density-" + d, S.density === d);
+  apply_density();
+}
+
+/** The spacing: this screen's (⚙ > Look), unless the page being shown sets its own (⚙ > Dashboard). */
+function apply_density() {
+  const own = CFG && CFG.pages[page] ? CFG.pages[page].density : "";
+  const d = own || S.density;
+  for (const k of ["compact", "airy"]) document.body.classList.toggle("density-" + k, d === k);
 }
 
 /** Left off this screen from ⚙: a whole group, or one card. mount() in app.js skips them, and a
     hidden card's new problem does not take the screen. */
 function is_hidden(groupId, cardId) {
+  if (config_hidden(groupId, cardId)) return true;
   return S.hidden.includes("g:" + groupId) || (cardId != null && S.hidden.includes("c:" + cardId));
+}
+
+/** Hidden for every screen, in the config (⚙ > Dashboard > Pages and groups): the group, or the card. */
+function config_hidden(groupId, cardId) {
+  for (const p of CFG.pages) {
+    const g = p.groups.find((x) => x.id === groupId);
+    if (!g) continue;
+    if (g.hidden) return true;
+    return cardId != null && !!(CFG.cards[groupId] || []).find((c) => c.id === cardId && c.hidden);
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------------------------

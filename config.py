@@ -37,11 +37,11 @@ PAGE_ID_RE = re.compile(r"^[a-z]+$")  # pages are addressed as #<id> in the URL
 HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$")
 CHECKS = ("ping", "tcp", "proxmox")
 
-PAGE_KEYS = {"id", "title", "group", "games", "icon"}
-GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag"}
+PAGE_KEYS = {"id", "title", "group", "games", "icon", "columns", "density"}
+GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag", "hidden"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
              "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links",
-             "agent", "agent_target", "wake", "kind", "bookmarks", "notes", "icon", "size"}
+             "agent", "agent_target", "wake", "kind", "bookmarks", "notes", "icon", "size", "hidden"}
 CARD_KINDS = ("proxmox", "nas", "docker", "vm", "pc")   # cardtype.KINDS: for ⚙ > Pages > Organize by type
 # agent_target = "<capability>:<target>": what a card controls through its agent (agents.py)
 AGENT_TARGET = {"docker": r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
@@ -50,6 +50,8 @@ AGENT_TARGET = {"docker": r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
 METRIC_KEYS = {"key", "label", "format", "warn", "crit"}
 # A card's size in the grid: s 1x1, m 2x1, l 2x2, xl 4x2 cells (large = true is l)
 CARD_SIZES = ("s", "m", "l", "xl")
+PAGE_DENSITIES = ("compact", "normal")   # a page's spacing, for the apps and the browser
+PAGE_COLUMNS = (1, 6)                    # a page's columns, from to (both included)
 # An icon's name: a file in static/icons/svc/ (dashboard-icons names: "proxmox", "home-assistant")
 ICON_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 DISPLAY_KEYS = {"warn", "crit", "icons_online"}
@@ -226,6 +228,9 @@ def _card(ck, where, c):
             out["size"] = size
     if (icon := _icon(ck, where, c)) is not None:
         out["icon"] = icon
+    # hidden: the card is not shown on any screen (the apps' state leaves it out); its alerts go on
+    if ck.opt(where, c, "hidden", bool, "true or false"):
+        out["hidden"] = True
     if ck.opt(where, c, "on_demand", bool, "true or false"):
         out["on_demand"] = True
     # bookmarks = true: the [[bookmark]] links (or only one group: bookmarks = "<group>");
@@ -682,6 +687,17 @@ def _validate(raw, path):
         page = {"id": pid, "title": ck.need(pw, p, "title", str, "a string"), "groups": []}
         if (icon := _icon(ck, pw, p)) is not None:
             page["icon"] = icon
+        # columns / density: how the apps and the browser lay this page out (⚙ > Dashboard)
+        if (cols := p.get("columns")) is not None:
+            if isinstance(cols, bool) or not isinstance(cols, int) or not PAGE_COLUMNS[0] <= cols <= PAGE_COLUMNS[1]:
+                ck.err(pw, f"columns must be a whole number from {PAGE_COLUMNS[0]} to {PAGE_COLUMNS[1]}, got {cols!r}")
+            else:
+                page["columns"] = cols
+        if (dens := ck.opt(pw, p, "density", str, "a string")) is not None:
+            if dens not in PAGE_DENSITIES:
+                ck.err(pw, f"density must be one of {', '.join(PAGE_DENSITIES)}, got {dens!r}")
+            else:
+                page["density"] = dens
         # A page with `games` has no fixed cards: its grid is the list of servers at that path.
         if (games := ck.opt(pw, p, "games", str, "a dotted path into the data")) is not None:
             page["games"] = games
@@ -708,6 +724,9 @@ def _validate(raw, path):
             # keep_together: no effect any more, when no group splits across columns;
             # still accepted so older configs load unchanged
             ck.opt(gw, g, "keep_together", bool, "true or false")
+            # hidden: the group is not shown on any screen; its cards' alerts go on
+            if ck.opt(gw, g, "hidden", bool, "true or false"):
+                group["hidden"] = True
             page["groups"].append(group)
             group_cards = cards.setdefault(gid, [])
             for k, c in enumerate(ck.tables(gw, g, "card")):

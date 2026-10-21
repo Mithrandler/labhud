@@ -646,6 +646,7 @@ function mount() {
   if (layoutWatch) layoutWatch.disconnect();
   pageGrid = el("div", "page");
   host.appendChild(pageGrid);
+  apply_density();   // the page's own spacing, if the config sets one
 
   if (CFG.pages[page].games) {
     const { sec, grid } = make_section("Servers", []);
@@ -790,7 +791,8 @@ function layout() {
   };
 
   const place = (zoom, ks, more = 0) => {
-    const cols = Math.max(1, Math.floor((W / zoom + gap) / (cell + gap))) + more;
+    // a page's `columns` (⚙ > Dashboard) caps how many cells wide it gets
+    const cols = Math.min(CFG.pages[page].columns || Infinity, Math.max(1, Math.floor((W / zoom + gap) / (cell + gap))) + more);
     pageGrid.style.zoom = zoom;
     pageGrid.style.setProperty("--cols", String(cols));
     items.forEach((it, j) => {

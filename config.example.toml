@@ -16,6 +16,8 @@ title = "LabHUD"        # browser tab title (optional, this is the default)
 id = "general"          # lowercase letters only
 title = "GENERAL"
 # icon = "server"       # optional: beside the page's name in the menu (see a card's icon)
+# columns = 3           # optional, 1 to 6: at most this many columns of cards on the page
+# density = "compact"   # optional, compact or normal: this page's spacing (else the screen's)
 
   [[page.group]]
   id = "pve"            # unique across all pages
@@ -23,6 +25,8 @@ title = "GENERAL"
   # guests = "pve"        # optional: labhud adds a card for every guest of node "pve" that has
                           # none elsewhere, and removes it when the guest is deleted
   # guests_tag = "labhud" # optional, with guests: only the guests with this Proxmox tag
+  # hidden = true         # optional: not shown on any screen (the apps' state leaves it out);
+                          # the alerts of its cards stay active
 
     [[page.group.card]]
     id = "host-pve"                 # unique across all pages
@@ -32,6 +36,7 @@ title = "GENERAL"
                                     #   ping    = "host"
                                     #   tcp     = "host:port"   (for hosts that drop ping)
                                     #   proxmox = "node/vmid"   (state from the Proxmox API)
+    # hidden = true                 # optional: not shown on any screen; its alerts stay active
     size = "l"                      # optional, its place in the grid: s 1x1, m 2x1, l 2x2,
                                     # xl 4x2 cells. Without it the wall sizes the card by what
                                     # it shows (a list or many numbers: m or l); the older

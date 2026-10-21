@@ -241,6 +241,8 @@
   background: var(--block); border: 1px solid var(--line); font-size: 12px; color: var(--text); cursor: grab;
   touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 #settings .lay-card.own { border-color: #3c5470; }
+#settings .lay-page-head .size, #settings .lay-group-head .size { font: 700 9px/1 var(--font); color: var(--title); border: 1px solid var(--border); border-radius: 4px; padding: 2px 3px; }
+#settings .lay-card.off { opacity: .5; }
 #settings .lay-card .node { font-size: 10px; color: var(--muted); }
 #settings .lay-card.drop-before { box-shadow: -3px 0 0 var(--title); }
 #settings .lay-card.drop-after { box-shadow: 3px 0 0 var(--title); }

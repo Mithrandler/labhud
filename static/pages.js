@@ -68,7 +68,7 @@ function draw_layout(host) {
   if (L.msg) host.appendChild(el("p", "hint " + L.kind, L.msg));
   if (L.preview) host.appendChild(draw_preview());
   host.appendChild(el("p", "hint", "Hold a card or a group's title, then drag it. ⋯ moves, renames and sets the kind. "
-    + "⋯ also sets a card's size and icon, and a page's icon. Nothing changes on the screens until Save; they take it when ⚙ closes."));
+    + "⋯ also sets a card's size and icon, hides a card or a group on every screen, and sets a page's icon, columns and spacing. Nothing changes on the screens until Save; they take it when ⚙ closes."));
 
   const cols = el("div", "lay-cols");
   L.pages.forEach((p, pi) => cols.appendChild(draw_page(p, pi)));
@@ -90,6 +90,8 @@ function draw_page(p, pi) {
   const head = el("div", "lay-page-head");
   if (p.icon) head.appendChild(lay_icon(p.icon));
   head.appendChild(el("span", "t", p.title));
+  if (p.columns) head.appendChild(el("span", "size", p.columns + " COL"));
+  if (p.density) head.appendChild(el("span", "size", p.density.toUpperCase()));
   head.appendChild(lay_more(() => page_menu(pi)));
   col.appendChild(head);
   if (p.games) col.appendChild(el("p", "hint", "Game servers, as the panel lists them."));
@@ -112,18 +114,20 @@ function draw_group(g, pi, gi) {
   const head = el("div", "lay-group-head");
   head.appendChild(el("span", "grip", "⠿"));
   head.appendChild(el("span", "t", g.title));
+  if (g.hidden) head.appendChild(el("span", "size", "HIDDEN"));
   head.appendChild(lay_more(() => group_menu(pi, gi)));
   hold_to_drag(head, { type: "group", pi, gi });
   box.appendChild(head);
   if (g.auto) box.appendChild(el("p", "hint", "Adds the node's guests by itself."));
   const list = el("div", "lay-cards");
   g.cards.forEach((c, ci) => {
-    const chip = el("div", "lay-card" + (c.kind ? " own" : ""));
+    const chip = el("div", "lay-card" + (c.kind ? " own" : "") + (c.hidden || g.hidden ? " off" : ""));
     chip.dataset.page = String(pi); chip.dataset.group = String(gi); chip.dataset.card = String(ci);
     if (c.icon) chip.appendChild(lay_icon(c.icon));
     chip.appendChild(el("span", "n", c.name));
     if (c.node) chip.appendChild(el("span", "node", c.node));
     if (c.size) chip.appendChild(el("span", "size", c.size.toUpperCase()));
+    if (c.hidden) chip.appendChild(el("span", "size", "HIDDEN"));
     chip.appendChild(lay_more(() => card_menu(pi, gi, ci)));
     hold_to_drag(chip, { type: "card", pi, gi, ci });
     list.appendChild(chip);
@@ -175,6 +179,7 @@ function card_menu(pi, gi, ci) {
       ...LAY_SIZES.map(([k, label]) => [label, () => { c.size = k; lay_changed(); }]),
     ])],
     ["ICON…", () => lay_pick_icon(c, `.lay-card[data-page="${pi}"][data-group="${gi}"][data-card="${ci}"] .n`)],
+    [c.hidden ? "SHOW ON ALL SCREENS" : "HIDE ON ALL SCREENS", () => { c.hidden = !c.hidden; lay_changed(); }],
   ]);
 }
 
@@ -183,6 +188,7 @@ function group_menu(pi, gi) {
   const g = p.groups[gi];
   const opts = [
     ["RENAME", () => lay_rename("group", pi, gi)],
+    [g.hidden ? "SHOW ON ALL SCREENS" : "HIDE ON ALL SCREENS", () => { g.hidden = !g.hidden; lay_changed(); }],
     ["UP", () => { if (move_in(p.groups, gi, -1)) lay_changed(); }],
     ["DOWN", () => { if (move_in(p.groups, gi, 1)) lay_changed(); }],
     ["TO PAGE…", () => lay_menu(`Move ${g.title} to:`, L.pages.map((q, qi) => [q.title, () => {
@@ -199,6 +205,15 @@ function page_menu(pi) {
   const opts = [
     ["RENAME", () => lay_rename("page", pi)],
     ["ICON…", () => lay_pick_icon(p, `.lay-page[data-page="${pi}"] .lay-page-head .t`)],
+    ["COLUMNS…", () => lay_menu(`${p.title}: how many columns of cards`, [
+      ["AUTO", () => { p.columns = 0; lay_changed(); }],
+      ...[1, 2, 3, 4, 5, 6].map((n) => [String(n), () => { p.columns = n; lay_changed(); }]),
+    ])],
+    ["DENSITY…", () => lay_menu(`${p.title}: spacing`, [
+      ["AUTO (this screen's)", () => { p.density = ""; lay_changed(); }],
+      ["COMPACT", () => { p.density = "compact"; lay_changed(); }],
+      ["NORMAL", () => { p.density = "normal"; lay_changed(); }],
+    ])],
     ["LEFT", () => { if (move_in(L.pages, pi, -1)) lay_changed(); }],
     ["RIGHT", () => { if (move_in(L.pages, pi, 1)) lay_changed(); }],
   ];
@@ -343,8 +358,9 @@ function draw_preview() {
 
 function save_layout() {
   const pages = L.pages.map((p) => ({ id: p.id, title: p.title, icon: p.icon || "",
-    groups: p.groups.map((g) => ({ id: g.id, title: g.title,
-      cards: g.cards.map((c) => ({ id: c.id, kind: c.kind || "", icon: c.icon || "", size: c.size || "" })) })) }));
+    columns: p.columns || 0, density: p.density || "",
+    groups: p.groups.map((g) => ({ id: g.id, title: g.title, hidden: !!g.hidden,
+      cards: g.cards.map((c) => ({ id: c.id, kind: c.kind || "", icon: c.icon || "", size: c.size || "", hidden: !!c.hidden })) })) }));
   lay_say("Saving…");
   redraw_layout();
   setup_post("layout-save", { pages }).then((r) => {

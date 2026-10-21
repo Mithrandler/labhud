@@ -13,7 +13,7 @@ import copy
 import re
 
 import cardtype
-from config import CARD_SIZES, ICON_RE
+from config import CARD_SIZES, ICON_RE, PAGE_COLUMNS, PAGE_DENSITIES
 
 PAGE_ID = re.compile(r"[a-z]{1,32}")
 GROUP_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
@@ -28,11 +28,13 @@ def view(raw, agents=None):
             cards = [{"id": c["id"], "name": c.get("name") or c["id"], "kind": c.get("kind") or "",
                       "guess": cardtype.kind({k: v for k, v in c.items() if k != "kind"}, agents),
                       "node": cardtype.node(c), "icon": c.get("icon") or "",
-                      "size": c.get("size") or ("l" if c.get("large") else "")} for c in g.get("card") or []]
+                      "size": c.get("size") or ("l" if c.get("large") else ""),
+                      "hidden": bool(c.get("hidden"))} for c in g.get("card") or []]
             groups.append({"id": g["id"], "title": g.get("title") or g["id"], "auto": bool(g.get("guests")),
-                           "cards": cards})
+                           "hidden": bool(g.get("hidden")), "cards": cards})
         out.append({"id": p["id"], "title": p.get("title") or p["id"], "icon": p.get("icon") or "",
-                    "games": bool(p.get("games")), "groups": groups})
+                    "games": bool(p.get("games")), "columns": p.get("columns") or 0,
+                    "density": p.get("density") or "", "groups": groups})
     return {"pages": out, "kinds": list(cardtype.KINDS), "titles": cardtype.TITLES}
 
 
@@ -54,10 +56,42 @@ def _set_icon(t, v, what):
         raise ValueError(f"{what}: icon must be a name like \"proxmox\"")
 
 
+def _set_flag(t, v, key, what):
+    """hidden (or another flag) from the editor: None leaves it, true sets it, false removes it."""
+    if v is None:
+        return
+    if not isinstance(v, bool):
+        raise ValueError(f"{what}: {key} must be true or false")
+    if v:
+        t[key] = True
+    else:
+        t.pop(key, None)
+
+
+def _set_page_look(page, p, what):
+    """columns (0 or "" removes, else 1 to 6) and density ("" removes, else compact / normal): None leaves them."""
+    cols = p.get("columns")
+    if cols is not None:
+        if cols in (0, ""):
+            page.pop("columns", None)
+        elif isinstance(cols, int) and not isinstance(cols, bool) and PAGE_COLUMNS[0] <= cols <= PAGE_COLUMNS[1]:
+            page["columns"] = cols
+        else:
+            raise ValueError(f"{what}: columns must be {PAGE_COLUMNS[0]} to {PAGE_COLUMNS[1]}")
+    dens = p.get("density")
+    if dens is not None:
+        if dens == "":
+            page.pop("density", None)
+        elif dens in PAGE_DENSITIES:
+            page["density"] = dens
+        else:
+            raise ValueError(f"{what}: density must be one of {', '.join(PAGE_DENSITIES)}")
+
+
 def apply(raw, pages):
     """A copy of raw laid out as `pages` ([{id, title, icon?, groups: [{id, title,
-    cards: [id or {id, kind?, icon?, size?}]}]}]). A missing kind/icon/size leaves the card's own,
-    "" removes it. Raises ValueError for a layout that loses, repeats or invents a card, or reuses an id."""
+    cards: [id or {id, kind?, icon?, size?, hidden?}], hidden?}], columns?, density?}]). A missing
+    kind/icon/size/hidden/columns/density leaves the one it has, "" (false, 0) removes it. Raises ValueError for a layout that loses, repeats or invents a card, or reuses an id."""
     if not isinstance(pages, list) or not pages:
         raise ValueError("no pages")
     raw = copy.deepcopy(raw)
@@ -81,6 +115,7 @@ def apply(raw, pages):
         page["id"] = pid
         page["title"] = _title(p.get("title"), f"page {pid}")
         _set_icon(page, p.get("icon"), f"page {pid}")
+        _set_page_look(page, p, f"page {pid}")
         groups = []
         for g in p.get("groups") or []:
             gid = g.get("id") if isinstance(g, dict) else None
@@ -90,6 +125,7 @@ def apply(raw, pages):
             group = {k: v for k, v in old_groups.get(gid, {}).items() if k != "card"}
             group["id"] = gid
             group["title"] = _title(g.get("title"), f"group {gid}")
+            _set_flag(group, g.get("hidden"), "hidden", f"group {gid}")
             cards = []
             for c in g.get("cards") or []:
                 c = c if isinstance(c, dict) else {"id": c} if isinstance(c, str) else {}
@@ -108,6 +144,7 @@ def apply(raw, pages):
                     else:
                         raise ValueError(f"card {cid}: kind must be one of {', '.join(cardtype.KINDS)}")
                 _set_icon(card, c.get("icon"), f"card {cid}")
+                _set_flag(card, c.get("hidden"), "hidden", f"card {cid}")
                 size = c.get("size")
                 if size is not None:
                     if size not in ("", *CARD_SIZES):
@@ -175,13 +212,15 @@ FORMAT = "labhud-board"
 
 def export(raw):
     """The pages as a document that import (adopt) takes back: order, titles, icons, groups, and per
-    card its id, kind, icon and size. Nothing else of a card (addresses, keys) leaves labhud."""
+    card its id, kind, icon, size and whether it is hidden; per page its columns and density. Nothing else of a card (addresses, keys) leaves labhud."""
     pages = []
     for p in raw.get("page") or []:
         pages.append({"id": p["id"], "title": p.get("title") or p["id"], "icon": p.get("icon") or "",
-                      "groups": [{"id": g["id"], "title": g.get("title") or g["id"],
+                      "columns": p.get("columns") or 0, "density": p.get("density") or "",
+                      "groups": [{"id": g["id"], "title": g.get("title") or g["id"], "hidden": bool(g.get("hidden")),
                                   "cards": [{"id": c["id"], "kind": c.get("kind") or "", "icon": c.get("icon") or "",
-                                             "size": c.get("size") or ("l" if c.get("large") else "")}
+                                             "size": c.get("size") or ("l" if c.get("large") else ""),
+                                             "hidden": bool(c.get("hidden"))}
                                             for c in g.get("card") or []]}
                                  for g in p.get("group") or []]})
     return {"format": FORMAT, "version": 1, "pages": pages}
