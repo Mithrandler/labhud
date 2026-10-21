@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-22
+
+Needs labhud-agent 0.1.1 or later for the Docker host, stacks, live log and terminal (unchanged). App 0.1.22 reads the palette's new keys.
+
 ### Added
 
 - **Default board on the first run**: a config labhud keeps itself that has no card at all gets a page made from what the
@@ -739,6 +743,7 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/Mithrandler/labhud/compare/v0.1.1...v0.1.11
 [0.1.1]: https://github.com/Mithrandler/labhud/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Mithrandler/labhud/releases/tag/v0.1.0
