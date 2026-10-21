@@ -1,0 +1,46 @@
+{
+ "/webapi/auth.cgi": {
+  "success": true,
+  "data": {
+   "sid": "fake-session"
+  }
+ },
+ "SYNO.Core.System.Utilization": {
+  "success": true,
+  "data": {
+   "cpu": {
+    "user_load": 3,
+    "system_load": 2
+   },
+   "memory": {
+    "real_usage": 41
+   },
+   "network": [
+    {
+     "device": "total",
+     "rx": 10,
+     "tx": 20
+    }
+   ]
+  }
+ },
+ "SYNO.Storage.CGI.Storage": {
+  "success": true,
+  "data": {
+   "volumes": [
+    {
+     "size": {
+      "total": "4000",
+      "used": "1000"
+     }
+    },
+    {
+     "size": {
+      "total": "6000",
+      "used": "3000"
+     }
+    }
+   ]
+  }
+ }
+}

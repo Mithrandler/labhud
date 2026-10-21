@@ -1,0 +1,745 @@
+/* The wall display — the theme. Kept 1:1 from homepage-wall: light neon on black.
+   The background is pure black, not grey: the screen is OLED and stays on non-stop.
+
+   Layout: one screen per page, no submenu. A page's groups are sections on a CSS grid, sized by
+   layout() in app.js; a card spans cells by its size (s/m/l/xl). On the wall everything must fit
+   WITHOUT scrolling (the page zooms out); at a desk (1200 px and wider) it scrolls.
+
+   The performance rule, already paid for once: no endless animation that does not depend on a
+   real event. What moves here: the status dot only when something is DOWN, and the link dot when
+   the stream is broken. Everything else is static — nothing moves against OLED burn-in either,
+   there is no drift. */
+
+@font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-ext-400-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Roboto"; font-weight: 500; font-display: swap; src: url("/fonts/roboto-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Roboto"; font-weight: 500; font-display: swap; src: url("/fonts/roboto-latin-ext-500-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-ext-700-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Roboto"; font-weight: 900; font-display: swap; src: url("/fonts/roboto-latin-900-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+/* Inter and JetBrains Mono, chosen in the settings (⚙). A browser downloads a face only when text
+   uses it, so the fonts nobody picks cost nothing. JetBrains Mono stops at 800: 900 uses it. */
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("/fonts/inter-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("/fonts/inter-latin-ext-400-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Inter"; font-weight: 500; font-display: swap; src: url("/fonts/inter-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 500; font-display: swap; src: url("/fonts/inter-latin-ext-500-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url("/fonts/inter-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url("/fonts/inter-latin-ext-700-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Inter"; font-weight: 900; font-display: swap; src: url("/fonts/inter-latin-900-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 900; font-display: swap; src: url("/fonts/inter-latin-ext-900-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url("/fonts/jetbrains-mono-latin-ext-400-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url("/fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url("/fonts/jetbrains-mono-latin-ext-500-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 700; font-display: swap; src: url("/fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 700; font-display: swap; src: url("/fonts/jetbrains-mono-latin-ext-700-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 900; font-display: swap; src: url("/fonts/jetbrains-mono-latin-800-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 900; font-display: swap; src: url("/fonts/jetbrains-mono-latin-ext-800-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+:root {
+  --topbar: 40px;
+  --strip: 32px;
+  /* design:colors (design/tokens.json, written by design/build.py: edit there) */
+  --bg: #000000;
+  --card: #121214;
+  --block: #1c1c1f;
+  --line: #2a2a2e;
+  --border: #3a3d44;
+  --text: #ffffff;
+  --sub: #b4b8bf;
+  --muted: #7d828a;
+  --accent: #8ab4f8;
+  --title: #7cc4ff;
+  --on-title: #000000;
+  --green: #34c759;
+  --warn: #ff9f0a;
+  --red: #ff453a;
+  --red-bg: #3a0d1c;
+  --red-text: #ffd9e2;
+  --info-bg: #0e1824;
+  /* design:end */
+  /* design:scale (design/tokens.json, written by design/build.py: edit there) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --radius-card: 10px;
+  --radius-inner: 6px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --bar: 6px;
+  --icon-card: 20px;
+  /* design:end */
+  --font: "Roboto", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+/* The `hidden` attribute only means `display: none` by default, so ANY `display` in our sheet
+   beats it — and rows, tiles and cards are all `flex`. Without this rule, the unused rows of a
+   list stay on screen as empty bars. Checked on a screenshot. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 12px;
+  -webkit-user-select: none; user-select: none;
+  overscroll-behavior: none;
+  /* Without this, the phone interprets a horizontal drag on its own (the browser's back/forward
+     swipe, usually) before it reaches the pointerup in app.js — the gesture is "stolen", the
+     page does not change. #panel-body asks for the vertical back, so the detail list can scroll. */
+  touch-action: none;
+}
+
+/* An explicit guarantee: with the screen off nothing moves. Browsers usually suspend the
+   animations of a hidden page, but "usually" is not enough for a screen that is on non-stop. */
+body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { animation-play-state: paused !important; }
+
+/* ======================= top bar ======================= */
+
+#topbar {
+  position: fixed; inset: 0 0 auto 0; height: var(--topbar); z-index: 30;
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+  gap: 8px; padding: 0 10px;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+
+#weather { display: flex; align-items: center; gap: 5px; color: var(--sub); font-size: 11px; }
+#weather.empty { visibility: hidden; }
+#weather .ic { font-size: 16px; line-height: 1; }
+#weather .t { font-size: 15px; font-weight: 700; color: var(--text); }
+#weather .city { color: var(--muted); }
+
+#clock { position: relative; justify-self: end; text-align: right; line-height: 1.05; }
+/* Left of the clock, in a row from the right: the account (account.js), the lock (lock.js, only
+   with a PIN set) and the health mark. A flex row, so each takes only the room it needs. */
+#tools { position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: row-reverse; align-items: center; gap: 6px; }
+/* A source that keeps failing (LABHUD_SOURCE_GRACE): a small mark. The card already shows the
+   error; this catches the sources no card shows, and points to /status. */
+#health {
+  appearance: none; border: 1px solid var(--warn); border-radius: 9px; background: transparent;
+  color: var(--warn); font: 700 11px/1 var(--font); padding: 3px 6px 3px 5px; white-space: nowrap;
+}
+#health::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); margin-right: 4px; vertical-align: 1px; }
+/* "Sign in", or the admin's name: faint, the wall must not draw the eye to it */
+#account {
+  appearance: none; display: flex; align-items: center; gap: 5px; white-space: nowrap; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 13px; background: transparent; color: var(--title);
+  font: 600 11px/1 var(--font); letter-spacing: .3px; padding: 5px 10px; opacity: .7; transition: opacity .2s;
+}
+#account.in { border-color: transparent; padding: 3px 4px; opacity: .55; }
+#account.in .who { max-width: 9ch; overflow: hidden; text-overflow: ellipsis; }
+#account svg { display: block; flex: none; }
+#account:hover, #account:active, #account[aria-expanded="true"] { opacity: 1; }
+/* The lock (lock.js): closed = only for looking. Open, the shackle lifts. */
+#lock-btn {
+  appearance: none; border: 0; background: transparent; color: var(--title); opacity: .55;
+  padding: 4px; line-height: 0; cursor: pointer;
+}
+#lock-btn svg { display: block; }
+#lock-btn .shackle { transition: transform .2s; }
+#lock-btn.open .shackle { transform: translate(5px, -2px); }
+#lock-btn.open { opacity: .35; }
+
+/* The admin's menu, under the corner */
+#account-menu { position: fixed; top: calc(var(--topbar) + 4px); right: 8px; z-index: 48; min-width: 200px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.6); display: flex; flex-direction: column; }
+#account-menu .head { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px 8px; }
+#account-menu .head b { font-size: 14px; color: var(--text); }
+#account-menu .head span { font-size: 11px; color: var(--muted); }
+#account-menu .item { appearance: none; border: 0; background: transparent; color: var(--text); text-align: left;
+  font: 500 14px/1 var(--font); padding: 11px 10px; border-radius: 6px; cursor: pointer; }
+#account-menu .item:hover, #account-menu .item:focus-visible { background: var(--block); }
+#account-menu .item.out { color: var(--red); }
+#account-menu .sep { height: 1px; background: var(--line); margin: 4px 6px; }
+
+/* Signing in: a dialog like the confirmation */
+#signin { position: fixed; inset: 0; z-index: 52; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.78); padding: 16px; }
+#signin .box { position: relative; width: min(100%, 340px); background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 18px 14px; }
+#signin h2 { margin: 0 0 14px; font-size: 16px; letter-spacing: .4px; color: var(--title); }
+#signin .x { position: absolute; top: 10px; right: 10px; appearance: none; border: 0; background: transparent;
+  color: var(--sub); font-size: 18px; padding: 4px 6px; cursor: pointer; }
+#signin form { display: flex; flex-direction: column; gap: 10px; }
+#signin label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--sub); letter-spacing: .3px; }
+#signin input { font: 15px var(--font); color: var(--text); background: var(--block); border: 1px solid var(--line);
+  border-radius: 6px; padding: 9px 10px; }
+#signin input:focus { outline: none; border-color: var(--title); }
+#signin .go { appearance: none; border: 0; border-radius: 6px; background: var(--title); color: var(--on-title);
+  font: 700 14px/1 var(--font); padding: 12px; cursor: pointer; }
+#signin .go:disabled { opacity: .5; }
+#signin .said { min-height: 1em; margin: 0; font-size: 12px; color: var(--red); }
+#signin p { font-size: 13px; line-height: 1.4; margin: 0 0 8px; }
+#signin .hint { font-size: 11px; color: var(--muted); margin: 0; }
+#signin .copy-line code { font-size: 12px; }
+#clock .time { display: block; font-size: 19px; font-weight: 700; letter-spacing: .5px; }
+#clock .date { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
+
+/* The project's name, in the free middle of the portrait top bar. Static, like everything else. */
+#brand { display: none; align-items: center; justify-content: center; }
+#brand img { display: block; height: 22px; width: auto; }
+/* The mark beside the weather (shown even while the weather is not known yet); at a desk, the
+   full name instead (the mark and Lab HUD). In portrait the name has the middle of the row. */
+#mark { visibility: visible; display: inline-flex; align-items: center; margin-right: 2px; }
+#mark img { display: block; height: 20px; width: auto; }
+#mark .w { display: none; height: 22px; }
+@media (min-width: 1200px) { #mark .m { display: none; } #mark .w { display: block; } }
+@media (orientation: portrait) { #mark { display: none; } }
+
+/* The pages, as pills: icon and name. The tools (bell, account…) sit over the menu's column, left
+   of the clock: the menu keeps clear of them (--tools-w, measured in search.js). When the pages do
+   not fit, the menu is `compact` (app.js fit_menu): only the open page keeps its name. */
+#menu { display: flex; justify-content: safe center; align-items: center; gap: var(--space-1); min-width: 0;
+  overflow-x: auto; scrollbar-width: none; margin-right: var(--tools-w, 0px); }
+#menu::-webkit-scrollbar { display: none; }
+#menu button {
+  appearance: none; flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  font: 700 var(--text-sm)/1 var(--font); letter-spacing: .5px;
+  padding: 6px 11px 6px 9px; border-radius: 999px; cursor: pointer;
+}
+#menu button .ic { width: 16px; height: 16px; }
+#menu button:hover { color: var(--sub); border-color: var(--line); }
+#menu button.active { color: var(--text); background: var(--block); border-color: var(--border); }
+#menu button.active .ic { color: var(--title); }
+#menu button.has-alert, #menu button.has-alert .ic { color: var(--red); }
+#menu button.active.has-alert { border-color: var(--red); }
+#menu.compact button:not(.active) { padding: 6px 8px; }
+#menu.compact button:not(.active) .lbl { display: none; }
+
+/* ======================= content: sections on a grid ======================= */
+
+/* The page is a CSS grid of `--cols` cells (layout() in app.js counts how many `--cell`s fit at
+   the zoom it settles on). A section spans `--k` of them and lays its cards on a grid of its own;
+   a card spans data-w × data-h cells (its size s/m/l/xl, never wider than its section). Rows grow
+   with what is in them, so nothing is cut inside a card; on the wall the zoom makes the page fit,
+   at a desk (desk_view) it scrolls. */
+#content {
+  --cell: 150px;   /* a cell's least width at zoom 1 */
+  --row: 54px;     /* a card row's least height */
+  --gap: var(--space-2);
+  position: fixed; left: 0; right: 0; top: var(--topbar); bottom: var(--strip);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  overflow: hidden;   /* the wall: nothing scrolls, everything must fit at a glance */
+}
+#content.scroll { overflow-y: auto; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.page {
+  display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  grid-auto-flow: row dense; align-items: start; gap: calc(var(--gap) * 1.5) var(--gap);
+}
+.sec { grid-column: span var(--k, 1); min-width: 0; }
+.sec > .grid {
+  display: grid; grid-template-columns: repeat(var(--k, 1), minmax(0, 1fr));
+  grid-auto-rows: minmax(var(--row), auto); grid-auto-flow: row dense; gap: var(--gap);
+}
+
+/* A section's title: small, upper case, its status dot, a line to the end, how many are up. */
+.sec-title {
+  display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 2px 6px;
+  font: 700 var(--text-xs)/1 var(--font); letter-spacing: .8px; text-transform: uppercase; color: var(--sub);
+}
+.sec-title .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sec-title .rule { flex: 1; height: 1px; background: var(--line); min-width: 12px; }
+.sec-title .count { color: var(--muted); font-weight: 500; letter-spacing: .3px; font-variant-numeric: tabular-nums; }
+.sec-title .count:empty { display: none; }
+.sec-title .dot { width: 6px; height: 6px; }
+.sec-title .dot.down { animation: none; }
+
+/* ======================= the card ======================= */
+
+/* The status dot. The pulse stays ONLY on what is down: otherwise there are dozens of layers
+   composited permanently, with no information in them. */
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.up { background: var(--green); }
+.dot.down { background: var(--red); animation: pulse 1.6s ease-in-out infinite; }
+/* Off on schedule: not an outage, so neither red nor pulsing. An empty ring, to show the state
+   is known and expected, not unknown. */
+.dot.scheduled { background: transparent; box-shadow: inset 0 0 0 2px var(--muted); animation: none; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* One flat card: no box inside a box. Its state is the dot, and a coloured left edge when a
+   number is past its mark (orange) or the host is down / a number critical (red). */
+.card {
+  position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-card);
+  padding: var(--space-2) 10px; overflow: hidden;
+}
+.card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: transparent; }
+.card.warn::before { background: var(--warn); }
+.card.crit::before, .card.down::before { background: var(--red); }
+.card.pressed { border-color: var(--title); background: var(--block); }
+
+.card .head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.ic { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--icon-card); height: var(--icon-card); color: var(--sub); }
+.ic svg, .ic img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.card .title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.card .name {
+  font-size: var(--text-md); font-weight: 700; color: var(--text); line-height: 1.15;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card .spec { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .head .dot { width: 8px; height: 8px; }
+.card .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.card.bare .body { display: none; }
+
+/* bar rows: label, bar, value */
+.bars { display: flex; flex-direction: column; gap: 5px; }
+.mrow { display: grid; grid-template-columns: minmax(2.6em, auto) 1fr auto; align-items: center; gap: var(--space-2); min-width: 0; }
+.mrow .lbl { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
+.mrow .bar { height: var(--bar); border-radius: 999px; background: var(--block); overflow: hidden; min-width: 24px; }
+.mrow .bar > i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .6s ease-out; }
+.mrow .vl { font-size: var(--text-sm); font-weight: 700; color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.mrow.warn .bar > i { background: var(--warn); }
+.mrow.warn .vl { color: var(--warn); }
+.mrow.crit .bar > i { background: var(--red); }
+.mrow.crit .vl { color: var(--red); }
+
+/* the other numbers, in pairs on two columns; one alone is the card's big number */
+.pairs { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px var(--space-2); }
+.pair { display: flex; flex-direction: column; min-width: 0; }
+.pair .lbl { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pair .vl { font-size: var(--text-lg); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.pair.warn .vl { color: var(--warn); }
+.pair.crit .vl { color: var(--red); }
+.pairs.hero { grid-template-columns: 1fr; }
+.pairs.hero .vl { font-size: var(--text-xl); }
+
+/* the foot: the sparkline, then the chips */
+.foot { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: auto; }
+.foot:not(:has(.spark-box)):not(:has(.chip:not([hidden]))) { display: none; }
+.spark-box { flex: 1; min-width: 40px; height: 18px; }
+.spark-box svg.spark { display: block; width: 100%; height: 100%; }
+.spark-box svg.spark polygon { fill: var(--accent); opacity: .22; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.spark-box + .chips { flex: none; max-width: 60%; }
+.chip { font-size: var(--text-xs); color: var(--muted); background: var(--block); border-radius: var(--radius-inner);
+  padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.chip.warn { color: var(--warn); }
+
+/* rows (a card's list, a panel's details): the text on the left, the value on the right */
+.row {
+  display: flex; align-items: baseline; gap: 6px; min-width: 0;
+  font-size: 12px; line-height: 1.25; padding: 1px 4px; border-radius: 3px; background: var(--block);
+}
+.row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }
+.row .v { color: var(--text); font-weight: 700; white-space: nowrap; }
+.row.bad .v { color: var(--red); }
+.row.quiet .v { color: var(--muted); font-weight: 500; }
+.row.more { background: transparent; }
+.row.more .n { color: var(--muted); font-style: italic; }
+
+/* list rows: name on the left, value on the right; a bad one gets a red mark and value */
+.list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.card .row {
+  position: relative; display: flex; align-items: baseline; gap: 6px; min-width: 0;
+  font-size: var(--text-sm); line-height: 1.3; padding: 2px 6px; border-radius: var(--radius-inner);
+}
+.card .row { background: transparent; }
+.card .row:nth-child(odd) { background: var(--block); }
+.card .row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }
+.card .row .v { color: var(--text); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.card .row.bad::before, .card .row.warn::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 2px; border-radius: 1px; background: var(--red); }
+.card .row.warn::before { background: var(--warn); }
+.card .row.bad .v { color: var(--red); }
+.card .row.warn .v { color: var(--warn); }
+.card .row.quiet .v { color: var(--muted); font-weight: 500; }
+.card .row.more { background: transparent; }
+.card .row.more .n { color: var(--muted); font-style: italic; }
+
+/* downloads: name, a bar, what is left */
+.torrent { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.torrent .t { font-size: var(--text-sm); color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.torrent .b { height: var(--bar); border-radius: 999px; background: var(--block); overflow: hidden; }
+.torrent .b > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.torrent .d { font-size: var(--text-xs); color: var(--muted); display: flex; justify-content: space-between; }
+
+/* numbers that are not live: the host is off/down or the source missed polls (see make_card) */
+.card.frozen .mrow .vl, .card.frozen .pair .vl { color: var(--muted); }
+.card.frozen .mrow .bar > i { background: var(--border); }
+.card.frozen .spark-box { opacity: .35; }
+
+/* ======================= the GAMES page ======================= */
+
+.card.game .line { font-size: var(--text-sm); color: var(--muted); }
+.card.game.on .line { color: var(--green); }
+
+/* ======================= the traffic strip ======================= */
+
+#strip {
+  position: fixed; left: 0; right: 0; bottom: 0; height: var(--strip); z-index: 28;
+  display: flex; align-items: center; justify-content: space-around; gap: var(--space-1);
+  padding: 0 var(--space-2); background: var(--bg); border-top: 1px solid var(--line); overflow: hidden;
+}
+.node { display: flex; flex-direction: column; align-items: center; line-height: 1.15; min-width: 0; }
+/* The node's name tells the state by colour: GREEN on, RED off. Grey stays only for "do not know
+   yet" (the first read, after a restart). The text never animates — the pulse exists only on the
+   card dots, and only where there really is a fault. */
+.node .nm { font-size: var(--text-xs); font-weight: 700; letter-spacing: .5px; color: var(--muted); }
+.node .nm.up { color: var(--green); }
+.node .nm.down { color: var(--red); }
+/* Off on schedule or by design (a NAS at night, a backup server, a desktop): grey, like the card's
+   hollow dot. Red is kept for what should be on and is not. */
+.node .nm.scheduled { color: var(--muted); }
+.node .rt { font-size: 10px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.node .rt.flowing { color: var(--green); }
+
+/* the node a guest is on (several nodes in one group) is its spec line */
+
+/* ======================= the detail panel ======================= */
+
+#panel { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: flex; flex-direction: column; }
+#panel-bar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px; flex: none;
+  border-bottom: 1px solid var(--line);
+}
+#panel-title { flex: 1; font-size: 15px; font-weight: 700; color: var(--title); }
+#panel-bar button { appearance: none; border: 0; background: transparent; color: var(--sub); font-size: 22px; line-height: 1; padding: 0 6px; }
+#panel-body { flex: 1; overflow-y: auto; padding: 8px 12px 12px; scrollbar-width: none; touch-action: pan-y; }
+#panel-body::-webkit-scrollbar { display: none; }
+#panel-body h3 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin: 8px 0 3px; }
+#panel-body h3:first-child { margin-top: 0; }
+#panel-body .hint { margin-top: 12px; font-size: 11px; color: var(--muted); }
+#panel-body .row { font-size: 12px; padding: 4px 6px; }
+
+/* The actions: big buttons, at the bottom. One tap on the card gets you here — the long press
+   was invisible, there was no way to know it existed. */
+#panel-actions {
+  display: flex; gap: 10px; padding: 9px 12px; flex: none;
+  border-top: 1px solid var(--line); background: var(--card);
+}
+#panel-actions button, #panel-actions a.open {
+  appearance: none; flex: 1; padding: 13px 8px; border-radius: 7px;
+  background: var(--block); border: 1px solid var(--border); color: var(--text);
+  font: 700 13px/1 var(--font); letter-spacing: .5px;
+}
+#panel-actions button.danger { border-color: var(--red); color: var(--red); }
+#panel-actions { flex-wrap: wrap; }
+#panel-actions .power-sep { flex: none; width: 1px; margin: 2px 4px; background: var(--border); }
+/* narrow: the red ones go on a row of their own, under a line */
+@media (max-width: 600px) {
+  #panel-actions .power-sep { flex-basis: 100%; width: auto; height: 1px; margin: 0; }
+  #panel-actions button, #panel-actions a.open { min-width: 30%; }
+}
+/* a container's own buttons, on its row in a guest's panel */
+#panel-body .row-actions { display: flex; gap: 4px; margin-left: 8px; flex: none; }
+#panel-body .row-actions button { font: inherit; font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 3px 7px;
+  border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
+#panel-body .row-actions button.danger { border-color: var(--red); color: var(--red); }
+#panel-body .row:has(.row-actions) { align-items: center; }
+#panel-body .row-actions button:disabled { opacity: .45; cursor: default; }
+#panel-body .row-actions button.on { border-color: var(--accent); color: var(--accent); }
+/* narrow: a container's buttons go under its name and state, on the right */
+@media (max-width: 600px) {
+  #panel-body .row:has(.row-actions) { flex-wrap: wrap; row-gap: 4px; }
+  #panel-body .row-actions { flex-basis: 100%; justify-content: flex-end; margin-left: 0; }
+}
+/* "update available" / "updating…" beside a container's state */
+#panel-body .v .badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+  font-weight: 700; letter-spacing: .03em; color: var(--accent); border: 1px solid var(--accent); vertical-align: 1px; }
+#panel-body .v .badge.bad { color: var(--red); border-color: var(--red); }   /* pachet H: critical CVEs */
+/* a container's usage and its latest update or crash, under its state; a compose project's title row */
+#panel-body .v .sub { display: block; font-size: 11px; color: var(--muted); }
+#panel-body .row.compose { margin-top: 6px; border-bottom: 1px solid var(--line); }
+#panel-body .row.compose .n { font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-size: 11px; color: var(--muted); }
+/* a container's details, under its row (the admin's DETAILS) */
+#panel-body .details-box { margin: 2px 0 8px 12px; border-left: 2px solid var(--line); padding-left: 8px; }
+#panel-body .details-box .v { white-space: normal; word-break: break-all; text-align: right; }
+/* a container's last lines, under its row (the admin's LOGS) */
+#panel-body .logs { margin: 2px 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+#panel-body .logs-text { margin: 0; padding: 6px 8px; max-height: 40vh; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  font: 11px/1.35 ui-monospace, "DejaVu Sans Mono", monospace; color: var(--text); }
+#panel-body .logs-bar { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-top: 1px solid var(--line); }
+#panel-body .logs-bar .hint { flex: 1; font-size: 11px; color: var(--muted); }
+#panel-body .logs-bar button { font: inherit; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 6px;
+  border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
+
+/* ======================= action confirmation ======================= */
+
+#confirm { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.78); }
+#confirm .box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; max-width: 320px; text-align: center; }
+#confirm p { font-size: 14px; margin-bottom: 16px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+#confirm .buttons { display: flex; gap: 10px; justify-content: center; }
+#confirm .buttons.many { flex-wrap: wrap; }
+#confirm .buttons.many button { padding: 11px 14px; }
+#confirm button { appearance: none; border: 1px solid var(--border); background: var(--block); color: var(--text); font: 700 13px/1 var(--font); padding: 11px 24px; border-radius: 6px; }
+#confirm button.danger { border-color: var(--red); color: var(--red); }
+
+/* the link to the aggregator: a discreet dot, red only while the stream is broken */
+/* [night]: everything dims under one sheet, so no colour or contrast rule has to change. */
+/* The first-run tour: one note at a time, over a dimmed screen. */
+#tour { position: fixed; inset: 0; z-index: 110; background: rgba(0, 0, 0, .72); display: flex; align-items: center; justify-content: center; }
+#tour .box { max-width: min(520px, 90vw); background: var(--card); border: 1px solid var(--title); border-radius: 12px; padding: 18px 20px; }
+#tour .text { font-size: 18px; line-height: 1.4; margin: 0 0 14px; }
+#tour .buttons { display: flex; justify-content: flex-end; gap: 10px; }
+#tour button { font: inherit; font-weight: 700; padding: 10px 18px; border-radius: 8px; border: 0; background: var(--title); color: var(--on-title); }
+#tour button.skip { background: transparent; color: var(--sub); border: 1px solid var(--border); font-weight: 400; }
+#tour .steps { color: var(--muted); font-size: 12px; margin-top: 10px; }
+
+/* [calm]: a big clock on black. It moves to another spot every few minutes (a jump, not an
+   animation): the same pixels lit for hours would burn into an OLED. */
+#calm { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; }
+#calm .box { position: absolute; text-align: center; transform: translate(-50%, -50%); width: max-content; max-width: 96vw; }
+#calm .time { font-size: min(28vw, 42vh); font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+#calm .date { color: var(--sub); font-size: min(5vw, 7vh); margin-top: .2em; }
+#calm .state { color: var(--green); font-weight: 700; letter-spacing: .3em; font-size: min(4vw, 6vh); margin-top: .8em; }
+#calm .facts { color: var(--muted); font-size: min(2.6vw, 4vh); margin-top: .4em; }
+/* the mark, small and faint under the words: it moves with the box, so it never burns in */
+#calm .mark { display: block; margin: 1.2em auto 0; height: min(5vw, 7vh); width: auto; opacity: .35; }
+#night-shade { position: fixed; inset: 0; z-index: 100; pointer-events: none; background: #000; opacity: 0; transition: opacity 2s; }
+body.night #night-shade { opacity: var(--shade, .7); }
+
+/* A card that has just turned red: the page came to it, and it pulses for a few minutes. */
+.card.focus { box-shadow: 0 0 0 2px var(--red); animation: focus-ring 1.4s ease-in-out infinite; }
+@keyframes focus-ring { 0%, 100% { box-shadow: 0 0 0 2px var(--red); } 50% { box-shadow: 0 0 0 2px transparent; } }
+
+/* ?view=list: the phone in your hand. One scrolling column; no menu, no strip, no rotation. */
+body.view-list { --topbar: 40px; --strip: 0px; }
+body.view-list #menu, body.view-list #strip, body.view-list #brand { display: none; }
+.lsearch { width: 100%; margin: 8px 0 4px; padding: 10px 12px; font: inherit; font-size: 16px; color: var(--text);
+           background: var(--block); border: 1px solid var(--border); border-radius: 8px; }
+.lsearch:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+body.view-list #topbar { grid-template-columns: auto 1fr auto; grid-template-rows: 40px; height: 40px; }
+body.view-list #topbar > * { grid-row: 1; }
+body.view-list #content { display: block; overflow-y: auto; touch-action: pan-y; padding: 4px 10px 20px; max-width: 720px; margin: 0 auto; color-scheme: dark; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.lsec h2 { font: 700 13px/1 var(--font); color: var(--title); letter-spacing: .5px; margin: 12px 2px 6px; }
+.lsec.problems h2 { color: var(--muted); }
+.lrow {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 9px 10px; margin-bottom: 4px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 7px; font-size: 14px;
+}
+.lrow.bad { border-color: var(--red); }
+.lrow .dot.none { visibility: hidden; }
+.lrow .name { font-weight: 700; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow .sum { flex: 1; min-width: 0; text-align: right; color: var(--sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow .ext { color: var(--accent); font-size: 13px; }
+#panel-actions a.open { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+#config-errors {
+  position: fixed; left: 0; right: 0; bottom: var(--strip); z-index: 44;
+  padding: 5px 10px; background: var(--red-bg); border-top: 1px solid var(--red);
+  font-size: 11px; line-height: 1.35; color: var(--red-text); white-space: pre-line;
+}
+#config-errors b { color: var(--text); }
+#stream-state { position: fixed; right: 3px; bottom: calc(var(--strip) + 3px); width: 5px; height: 5px; border-radius: 50%; background: transparent; z-index: 45; }
+body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s ease-in-out infinite; }
+
+/* ======================= portrait =======================
+   Two columns in portrait are about as wide as the four in landscape, so the text scale and the
+   cards still hold: only how many groups fit in a column changes.
+   Everything about portrait lives HERE, in a single block. Landscape stays untouched. */
+
+@media (orientation: portrait) and (max-width: 399px) {
+  #brand { visibility: hidden; }
+}
+@media (orientation: portrait) {
+  :root { --topbar: 74px; --strip: 52px; }
+
+  #topbar { grid-template-columns: 1fr auto 1fr; grid-template-rows: 40px 34px; row-gap: 0; }
+  #weather { grid-row: 1; grid-column: 1; }
+  #brand   { grid-row: 1; grid-column: 2; display: flex; }
+  /* the corner left of the clock (account, lock, health) needs the middle: the brand gives way */
+  #topbar:has(#lock-btn:not([hidden])) #brand, #topbar:has(#health:not([hidden])) #brand { visibility: hidden; }
+  #clock   { grid-row: 1; grid-column: 3; }
+  #menu    { grid-row: 2; grid-column: 1 / -1; margin-right: 0; }
+
+  /* The nine strip labels do not fit one row at 360 px: five on the first, four on the second.
+     The width must leave room for the gaps between them TOO: at a fixed 20%, the four gaps pushed
+     the fifth onto the next row and three rows came out, cut by the strip's height. */
+  #strip { flex-wrap: wrap; align-content: center; row-gap: 0; gap: 2px; }
+  .node { width: 19%; }
+  #strip .nm, #strip .rt { font-size: 9px; }
+}
+.panel-spec { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+
+/* ⚙ density: see the end of this file. */
+
+/* A new problem (⚙ "Flash red"): a red frame, three times, then gone. Started by that event only. */
+body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer-events: none;
+  box-shadow: inset 0 0 0 6px var(--red); animation: flash .25s ease-in-out 6 alternate both; }
+@keyframes flash { from { opacity: 0; } to { opacity: 1; } }
+#calm .extras { color: var(--sub); font-size: min(2.6vw, 4vh); margin-top: .8em; white-space: pre-line; line-height: 1.5; }
+#weather { cursor: pointer; }
+#clock .time, #clock .date { cursor: pointer; }
+
+/* Charts in a card's panel */
+.chart-head { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.chart-head h3 { margin: 0 auto 0 0; }
+.chart-head .range { appearance: none; font: 500 12px var(--font); color: var(--sub); background: var(--block);
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+.chart-head .range.on { color: var(--text); border-color: var(--title); }
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin-top: 6px; }
+.chart { background: var(--block); border-radius: 6px; padding: 6px 8px; }
+.chart-top { display: flex; justify-content: space-between; align-items: baseline; }
+.chart-top .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+.chart-top .now { font-weight: 700; font-size: 15px; }
+.uptime-bar { display: flex; gap: 2px; height: 10px; margin: 4px 0 10px; }
+.uptime-bar span { flex: 1; border-radius: 2px; background: var(--line); }
+.uptime-bar .up { background: var(--green); }
+.uptime-bar .part { background: var(--warn); }
+.uptime-bar .down { background: var(--red); }
+.uptime-bar .off { background: var(--muted); opacity: .45; }
+.uptime-pct { margin-left: 6px; color: var(--green); font-weight: 700; }
+.uptime-pct.low { color: var(--warn); }
+.uptime-cov { margin-left: 4px; color: var(--muted); font-size: var(--text-xs, 12px); }
+.chart svg { display: block; width: 100%; height: 70px; margin: 4px 0 2px; }
+.chart polyline { fill: none; stroke: var(--title); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.chart-foot { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+.chart-empty { color: var(--muted); font-size: 12px; padding: 18px 0; text-align: center; }
+/* with lines under it, the clock gives up some height so the whole box stays on screen */
+#calm.extras-on .time { font-size: min(22vw, 30vh); }
+#calm.extras-on .state { margin-top: .5em; }
+.panel-links { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.panel-links a { color: var(--title); text-decoration: none; font-size: 12px; font-weight: 500; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--block); }
+/* The bell (bell.js): beside the account, faint like it; the badge is what draws the eye. */
+/* in the weather's corner (its column has its own width; the right one is the menu's) */
+#search-btn { visibility: visible; margin-right: 4px; appearance: none; border: 0; background: transparent; color: var(--title); opacity: .55; padding: 4px; line-height: 0; cursor: pointer; }
+#search-btn:hover { opacity: 1; }
+#search-btn svg { display: block; }
+#bell { appearance: none; position: relative; border: 0; background: transparent; color: var(--title); opacity: .55;
+  padding: 4px; line-height: 0; cursor: pointer; }
+#bell svg { display: block; }
+#bell.busy, #bell.hot, #bell[aria-expanded="true"] { opacity: 1; }
+#bell .badge { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px;
+  background: var(--title); color: var(--on-title); font: 700 10px/15px var(--font); text-align: center; }
+#bell.hot .badge { background: var(--red); color: var(--text); }
+#bell.busy svg { animation: bell-ring 2s ease-in-out infinite; transform-origin: 50% 15%; }
+@keyframes bell-ring { 0%, 70%, 100% { transform: rotate(0); } 78% { transform: rotate(12deg); } 86% { transform: rotate(-10deg); } 94% { transform: rotate(5deg); } }
+#bell-menu { position: fixed; top: calc(var(--topbar) + 4px); right: 8px; z-index: 48; width: min(380px, calc(100vw - 16px));
+  max-height: calc(100vh - var(--topbar) - var(--strip) - 16px); overflow-y: auto;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+#bell-menu h4 { margin: 6px 2px 4px; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: var(--sub); }
+#bell-menu .empty { margin: 2px 2px 6px; font-size: 12px; color: var(--muted); }
+#bell-menu .row { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; padding: 8px;
+  border-radius: 7px; background: var(--block); margin-bottom: 4px; font-size: 13px; }
+#bell-menu .row > * { position: relative; z-index: 1; }
+#bell-menu .row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#bell-menu .row .txt b { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bell-menu .row .what { font-size: 11px; color: var(--sub); }
+#bell-menu .row .time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+#bell-menu .row .mark { width: 14px; text-align: center; color: var(--title); }
+#bell-menu .row.done .mark { color: var(--green); }
+#bell-menu .row.timeout .mark, #bell-menu .row.refused .mark { color: var(--red); }
+#bell-menu .row.timeout .what, #bell-menu .row.refused .what { color: var(--red-text); }
+#bell-menu .row i { position: absolute; z-index: 0; left: 0; top: 0; bottom: 0; background: var(--title); opacity: .16; transition: width 1s linear; }
+#bell-menu .row.alert { background: var(--red-bg); border: 1px solid var(--red); color: var(--red-text); }
+#bell-menu .row.alert .txt { display: block; white-space: normal; }
+#bell-menu button { appearance: none; flex: none; border: 1px solid var(--border); background: transparent; color: var(--text);
+  font: 700 11px/1 var(--font); padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+#bell-menu .row.alert button { border-color: var(--red); color: var(--red); }
+#bell-menu .row .x { border: 0; color: var(--muted); padding: 4px 6px; }
+#bell-menu .clear { display: block; margin: 6px 0 0 auto; }
+/* The toast: bottom centre, above the strip, one at a time, gone after 4 s (or ✕) */
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--strip) + 12px); z-index: 58;
+  max-width: calc(100vw - 24px); display: flex; align-items: center; gap: 10px; padding: 9px 8px 9px 14px;
+  background: var(--card); border: 1px solid var(--title); border-radius: 10px; color: var(--text);
+  font-size: 13px; font-weight: 500; box-shadow: 0 6px 20px rgba(0,0,0,.7); animation: toast-in .2s ease-out; }
+#toast.ok { border-color: var(--green); }
+#toast.bad { border-color: var(--red); color: var(--red-text); }
+#toast.warn { border-color: var(--warn); }
+#toast .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#toast .x { appearance: none; flex: none; border: 0; background: transparent; color: var(--muted); font-size: 14px; padding: 2px 6px; cursor: pointer; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { #bell.busy svg, #toast { animation: none; } }
+
+/* The lock's keypad (lock.js): over everything, big keys for a finger. */
+#lock { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .86); display: flex; align-items: center; justify-content: center; }
+#lock .box { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; }
+#lock .title { margin: 0; color: var(--title); font-weight: 700; letter-spacing: .5px; text-transform: uppercase; font-size: 14px; }
+#lock .dots { display: flex; gap: 14px; margin: 4px 0; }
+#lock .dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--title); }
+#lock .dots i.on { background: var(--title); }
+#lock .dots.shake { animation: lock-shake .35s; }
+@keyframes lock-shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+#lock .msg { margin: 0; min-height: 16px; color: var(--warn); font-size: 12px; text-align: center; }
+#lock .keys { display: grid; grid-template-columns: repeat(3, 68px); gap: 10px; }
+#lock .keys button { appearance: none; height: 58px; border-radius: 12px; border: 1px solid var(--line); background: var(--block);
+  color: var(--text); font: 500 24px var(--font); cursor: pointer; touch-action: manipulation; }
+#lock .keys button:active { background: var(--line); }
+#lock .keys .cancel, #lock .keys .back { color: var(--sub); font-size: 20px; }
+/* a phone on its side: the dots left of the keys, the keys a little lower */
+@media (max-height: 420px) {
+  #lock .box { display: grid; grid-template-columns: auto auto; column-gap: 32px; align-items: center; }
+  #lock .title, #lock .dots, #lock .msg { grid-column: 1; justify-self: center; }
+  #lock .keys { grid-column: 2; grid-row: 1 / span 3; grid-template-columns: repeat(3, 64px); gap: 6px; }
+  #lock .keys button { height: 46px; font-size: 20px; }
+}
+
+/* a command, a code or a link to copy, with its button (copy_line) */
+.copy-line { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0; padding: 8px; border-radius: 6px;
+  background: var(--block); border: 1px solid var(--line); }
+.copy-line code { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 11px; color: var(--text);
+  word-break: break-all; white-space: pre-wrap; user-select: all; }
+.copy-line button.copy { flex: none; font: inherit; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: transparent; color: var(--accent, var(--text)); cursor: pointer; }
+
+
+/* the search box (search.js): over the page, near the top */
+#search { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.6); display: flex; justify-content: center; align-items: flex-start; padding-top: 10vh; }
+#search[hidden] { display: none; }
+#search .search-box { width: min(520px, 92vw); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+#search .search-input { width: 100%; font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+#search .search-list { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow: auto; }
+#search .search-hit { display: flex; align-items: center; gap: 8px; text-align: left; font: inherit; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; }
+#search .search-hit.on, #search .search-hit:hover { background: var(--line); }
+#search .search-hit .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#search .search-hit .h { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* bookmarks = true: links as small buttons; notes = true: the text as written */
+.bookmarks { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.bookmarks .bm-group { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.bookmarks .bm-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.bookmarks .bm { font-size: 12px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); text-decoration: none; }
+.bookmarks .bm:hover { border-color: var(--accent); }
+.notes-text { white-space: pre-wrap; font-size: 13px; line-height: 1.35; margin-top: 4px; overflow-wrap: anywhere; }
+.notes-text.big { font-size: 15px; }
+#panel-body .notes-edit { width: 100%; font: inherit; font-size: 14px; padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); resize: vertical; }
+
+/* A card's place in its section's grid: data-w columns × data-h rows, set by layout() in app.js from its size (s 1×1, m 2×1, l 2×2, xl 4×2), never wider than the section. */
+.card[data-w="1"] { grid-column: span 1; }
+.card[data-w="2"] { grid-column: span 2; }
+.card[data-w="3"] { grid-column: span 3; }
+.card[data-w="4"] { grid-column: span 4; }
+.card[data-h="1"] { grid-row: span 1; }
+.card[data-h="2"] { grid-row: span 2; }
+
+/* Bigger cards, bigger type: the name and the numbers grow with the card. */
+.card[data-size="l"] .name, .card[data-size="xl"] .name { font-size: var(--text-lg); }
+.card[data-size="l"] .pair .vl, .card[data-size="xl"] .pair .vl { font-size: var(--text-xl); }
+.card[data-size="l"] .mrow .vl, .card[data-size="xl"] .mrow .vl { font-size: var(--text-md); }
+.card[data-size="l"] .bars, .card[data-size="xl"] .bars { gap: var(--space-2); }
+.card[data-size="xl"] .pairs { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.card[data-size="s"] .pairs.hero .vl { font-size: var(--text-lg); }
+
+/* ⚙ density: only the spacing changes; layout() refits the page. */
+body.density-compact #content { --gap: var(--space-1); --row: 44px; }
+body.density-compact .card { padding: 6px 8px; gap: var(--space-1); }
+body.density-compact .card .body, body.density-compact .bars { gap: 3px; }
+body.density-compact .sec-title { margin-bottom: var(--space-1); }
+body.density-compact .card .row { padding: 1px 5px; line-height: 1.2; }
+body.density-airy #content { --gap: var(--space-3); --row: 64px; }
+body.density-airy .card { padding: var(--space-3) 14px; gap: var(--space-2); }
+body.density-airy .card .body, body.density-airy .bars { gap: var(--space-2); }
+body.density-airy .sec-title { margin-bottom: var(--space-2); }
+body.density-airy .card .row { padding: 3px 8px; line-height: 1.4; }
+
+/* The wall on its side (a phone, ~360 px high): every pixel of height counts. A guest's disk and
+   an s card's spec line are in its panel; the section titles sit tighter. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .card[data-size="s"] .spec, .card[data-size="s"] .chips .chip:not(.warn):not(.age) { display: none; }
+  .card[data-size="s"] .foot:not(:has(.spark-box)):not(:has(.chip.warn:not([hidden]))) { display: none; }
+  .sec-title { margin-bottom: var(--space-1); }
+  .page { row-gap: var(--gap); }
+  .card { padding: 6px 8px; gap: var(--space-1); }
+  .card .body, .bars { gap: 3px; }
+}

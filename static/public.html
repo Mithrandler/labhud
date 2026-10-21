@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Status</title>
+<!-- labhud's public status page (LABHUD_PUBLIC_PORT): names and states only. -->
+<style>
+  @font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); }
+  :root {
+    color-scheme: dark;
+    /* design:colors (design/tokens.json, written by design/build.py: edit there) */
+    --bg: #000000;
+    --card: #121214;
+    --block: #1c1c1f;
+    --line: #2a2a2e;
+    --border: #3a3d44;
+    --text: #ffffff;
+    --sub: #b4b8bf;
+    --muted: #7d828a;
+    --accent: #8ab4f8;
+    --title: #7cc4ff;
+    --on-title: #000000;
+    --green: #34c759;
+    --warn: #ff9f0a;
+    --red: #ff453a;
+    --red-bg: #3a0d1c;
+    --red-text: #ffd9e2;
+    --info-bg: #0e1824;
+    /* design:end */
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 "Roboto", system-ui, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+  header { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; }
+  header img { flex: none; display: block; }
+  h1 { color: var(--title); margin: 0; letter-spacing: .04em; }
+  #summary { font-weight: 700; margin: 12px 0 20px; padding: 12px 14px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
+  #summary.up { color: var(--green); } #summary.down { color: var(--red); }
+  h2 { font-size: 14px; color: var(--sub); text-transform: uppercase; letter-spacing: .08em; margin: 20px 0 6px; }
+  ul { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  li { display: flex; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--line); }
+  li:first-child { border-top: 0; }
+  .st { font-weight: 700; } .up { color: var(--green); } .down { color: var(--red); }
+  .maintenance, .scheduled, .on-demand { color: var(--muted); }
+  footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <header><img src="/brand/mark.svg" alt="" width="34" height="34"><h1 id="title">Status</h1></header>
+  <div id="summary"></div>
+  <div id="groups"></div>
+  <footer id="updated"></footer>
+</main>
+<script src="/public.js"></script>
+</body>
+</html>

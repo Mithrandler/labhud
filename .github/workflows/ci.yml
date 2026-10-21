@@ -1,0 +1,130 @@
+# Tests on every push and pull request; the multi-arch image on every push, published only for
+# a version tag (vX.Y.Z). Gitea and Forgejo Actions read this file too (.github/workflows is
+# their fallback), so the same workflow runs on either forge.
+#
+# Publishing the image: on GitHub, to ghcr.io with the run's own token (nothing to set up).
+# Elsewhere, or to another registry, in the repository settings:
+#   variable REGISTRY        the registry host (no variable, off GitHub: built, not pushed)
+#   secrets  REGISTRY_USER, REGISTRY_TOKEN
+# and, to publish the same tags to a second registry as well:
+#   variable EXTRA_IMAGE     the full image name there, e.g. git.example.com/you/labhud
+#   secrets  EXTRA_REGISTRY_USER, EXTRA_REGISTRY_TOKEN
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]  # the oldest supported (tomllib) and the newest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile
+        run: python -m py_compile $(git ls-files '*.py')
+      - name: Frontend syntax
+        run: node --check static/app.js && node --check static/settings.js
+      - name: Shipped configs are valid
+        run: |
+          python config.py config.example.toml
+          python config.py demo/config.toml
+      - name: Unit and smoke tests
+        run: python -m unittest discover -s tests -t . -v
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Version and tags
+        id: meta
+        env:
+          REGISTRY: ${{ vars.REGISTRY }}
+          EXTRA_IMAGE: ${{ vars.EXTRA_IMAGE }}
+        run: |
+          # On GitHub the image goes to ghcr.io with the run's own token (nothing to set up).
+          # Elsewhere, or to another registry, in the repository settings.
+          [[ -n "$REGISTRY" || "$GITHUB_SERVER_URL" != "https://github.com" ]] || REGISTRY=ghcr.io
+          image="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::tag $GITHUB_REF_NAME is not vX.Y.Z"; exit 1; }
+            grep -q "^## \[$version\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no entry for $version"; exit 1; }
+            tags="$image:$version,$image:${version%.*},$image:latest"
+            # no registry configured (a fork, or GitHub without the variable): build, do not push
+            [[ -n "$REGISTRY" ]] || tags="labhud:$version"
+            if [[ -n "$REGISTRY" && -n "$EXTRA_IMAGE" ]]; then
+              extra="${EXTRA_IMAGE,,}"
+              tags="$tags,$extra:$version,$extra:${version%.*},$extra:latest"
+            fi
+            push=true
+          else
+            version="0.0.0-dev+${GITHUB_SHA::7}"
+            tags="labhud:ci"
+            push=false
+          fi
+          [[ -n "$REGISTRY" ]] || push=false
+          echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+          echo "version $version, push $push: $tags"
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+      - if: steps.meta.outputs.push == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ steps.meta.outputs.registry }}
+          username: ${{ secrets.REGISTRY_USER || github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || github.token }}
+      - if: steps.meta.outputs.push == 'true' && vars.EXTRA_IMAGE != ''
+        id: extra
+        run: echo "registry=${EXTRA_IMAGE%%/*}" >> "$GITHUB_OUTPUT"
+        env:
+          EXTRA_IMAGE: ${{ vars.EXTRA_IMAGE }}
+      - if: steps.meta.outputs.push == 'true' && vars.EXTRA_IMAGE != ''
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ steps.extra.outputs.registry }}
+          username: ${{ secrets.EXTRA_REGISTRY_USER }}
+          password: ${{ secrets.EXTRA_REGISTRY_TOKEN }}
+      # The image must keep running the way compose.example.yaml runs it: not as root, on a
+      # read-only filesystem, with no capability but NET_RAW. Started for real, in demo mode.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: labhud:check
+      - name: Hardened run
+        run: |
+          docker run -d --name hardened --read-only --cap-drop ALL --cap-add NET_RAW \
+            --security-opt no-new-privileges:true -e LABHUD_DEMO=1 labhud:check
+          trap 'docker logs hardened; docker rm -f hardened >/dev/null' EXIT
+          sleep 5
+          [ "$(docker inspect -f '{{.State.Running}}' hardened)" = true ] || { echo "::error::not running"; exit 1; }
+          uid=$(docker exec hardened id -u)
+          [ "$uid" != 0 ] || { echo "::error::runs as root"; exit 1; }
+          docker exec hardened python3 -c "import json, urllib.request as u; r = u.Request('http://127.0.0.1:8095/api/status', headers={'Host': '127.0.0.1:8095'}); print('status ok, demo', json.load(u.urlopen(r))['demo'])"
+          docker exec hardened ping -c 1 -W 2 127.0.0.1 >/dev/null || { echo "::error::ping needs root"; exit 1; }
+          echo "uid $uid, read-only, NET_RAW only: ok"
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          push: ${{ steps.meta.outputs.push == 'true' }}

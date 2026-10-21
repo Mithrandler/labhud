@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="104 128 304 256">
+  <!-- the mark in one colour, for 16 px and the notification icon: outlines, dots and bars -->
+  <g fill="none" stroke="#ffffff" stroke-width="16">
+    <rect x="116" y="140" width="280" height="56" rx="12"/>
+    <rect x="116" y="228" width="280" height="56" rx="12"/>
+    <rect x="116" y="316" width="280" height="56" rx="12"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="150" cy="168" r="14"/><circle cx="150" cy="256" r="14"/><circle cx="150" cy="344" r="14"/>
+    <rect x="182" y="160" width="146" height="16" rx="8"/><rect x="182" y="248" width="106" height="16" rx="8"/>
+    <rect x="182" y="336" width="126" height="16" rx="8"/>
+  </g>
+</svg>

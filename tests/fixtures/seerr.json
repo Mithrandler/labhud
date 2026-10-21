@@ -1,0 +1,32 @@
+{
+ "/api/v1/request/count": {
+  "total": 9,
+  "pending": 2,
+  "approved": 7
+ },
+ "/api/v1/request?": {
+  "results": [
+   {
+    "media": {
+     "mediaType": "tv",
+     "tmdbId": 11
+    },
+    "requestedBy": {
+     "displayName": "alice"
+    }
+   },
+   {
+    "media": {
+     "mediaType": "movie",
+     "tmdbId": 22
+    }
+   }
+  ]
+ },
+ "/api/v1/tv/11": {
+  "name": "Some Series"
+ },
+ "/api/v1/movie/22": {
+  "title": "Some Film"
+ }
+}

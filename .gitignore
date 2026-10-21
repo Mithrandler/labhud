@@ -1,0 +1,8 @@
+.env
+/config.toml
+!config.example.toml
+__pycache__/
+*.pyc
+/site/
+/docs/index.md
+.labhud-edit

@@ -1,0 +1,19 @@
+{
+ "/Items/Counts": {
+  "MovieCount": 120,
+  "SeriesCount": 30,
+  "EpisodeCount": 900
+ },
+ "/Sessions": [
+  {
+   "UserName": "alice",
+   "Client": "Web",
+   "NowPlayingItem": {
+    "Name": "Film 1"
+   }
+  },
+  {
+   "UserName": "bob"
+  }
+ ]
+}

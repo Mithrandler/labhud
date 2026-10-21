@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- labhud's icon: three cards with status dots on black. Full bleed, so it also works masked. -->
+  <rect width="512" height="512" fill="#000"/>
+  <g fill="#121214" stroke="#3a3d44" stroke-width="8">
+    <rect x="112" y="136" width="288" height="64" rx="14"/>
+    <rect x="112" y="224" width="288" height="64" rx="14"/>
+    <rect x="112" y="312" width="288" height="64" rx="14"/>
+  </g>
+  <circle cx="148" cy="168" r="13" fill="#34c759"/>
+  <circle cx="148" cy="256" r="13" fill="#34c759"/>
+  <circle cx="148" cy="344" r="13" fill="#ff9f0a"/>
+  <g fill="#7cc4ff"><rect x="178" y="160" width="150" height="16" rx="8"/>
+    <rect x="178" y="248" width="110" height="16" rx="8"/><rect x="178" y="336" width="130" height="16" rx="8"/></g>
+</svg>

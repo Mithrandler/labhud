@@ -1,0 +1,47 @@
+# The documentation site (GitHub Pages), built from README.md and docs/ with MkDocs Material.
+# Runs only on GitHub: Gitea and Forgejo read .github/workflows too, and have no Pages. Turn it on
+# once in the repository: Settings > Pages > Source: GitHub Actions.
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "README.md", "mkdocs.yml", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Build
+        run: |
+          pip install mkdocs-material
+          # The README is the home page; its links point into docs/, the site's root.
+          sed -e 's#](docs/#](#g' -e 's#src="docs/#src="#g' README.md > docs/index.md
+          mkdocs build
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,162 @@
+{
+ "/nodes/alpha/status": {
+  "data": {
+   "cpu": 0.123,
+   "uptime": 3600,
+   "memory": {
+    "used": 8589934592,
+    "total": 34359738368
+   }
+  }
+ },
+ "/cluster/resources?type=vm": {
+  "data": [
+   {
+    "vmid": 100,
+    "node": "alpha",
+    "type": "qemu",
+    "name": "web",
+    "status": "running",
+    "cpu": 0.05,
+    "mem": 2147483648,
+    "maxmem": 4294967296,
+    "maxdisk": 34359738368,
+    "uptime": 100
+   },
+   {
+    "vmid": 101,
+    "node": "alpha",
+    "type": "lxc",
+    "name": "dns",
+    "status": "running",
+    "cpu": 0.01,
+    "mem": 966367641,
+    "maxmem": 1073741824,
+    "disk": 2147483648,
+    "maxdisk": 8589934592,
+    "uptime": 50
+   },
+   {
+    "vmid": 102,
+    "node": "alpha",
+    "type": "qemu",
+    "name": "spare",
+    "status": "stopped",
+    "cpu": 0,
+    "mem": 0,
+    "maxmem": 2147483648,
+    "maxdisk": 17179869184
+   },
+   {
+    "vmid": 200,
+    "node": "beta",
+    "type": "qemu",
+    "name": "elsewhere",
+    "status": "running"
+   }
+  ]
+ },
+ "/qemu/100/agent/get-fsinfo": {
+  "data": {
+   "result": [
+    {
+     "name": "sda1",
+     "used-bytes": 5368709120,
+     "total-bytes": 21474836480
+    },
+    {
+     "name": "sda1",
+     "used-bytes": 5368709120,
+     "total-bytes": 21474836480
+    },
+    {
+     "name": "sdb1",
+     "used-bytes": 1073741824,
+     "total-bytes": 10737418240
+    },
+    {
+     "name": "tmpfs",
+     "used-bytes": 0,
+     "total-bytes": 0
+    }
+   ]
+  }
+ },
+ "/lxc/101/status/current": {
+  "data": {
+   "pressurememorysome": "1.5",
+   "pressurememoryfull": "0.25",
+   "freemem": 100
+  }
+ },
+ "/nodes/alpha/storage": {
+  "data": [
+   {
+    "storage": "local",
+    "type": "dir",
+    "active": 1,
+    "used": 10737418240,
+    "total": 107374182400
+   },
+   {
+    "storage": "local-lvm",
+    "type": "lvmthin",
+    "active": 1,
+    "used": 102005473280,
+    "total": 107374182400
+   },
+   {
+    "storage": "nas",
+    "type": "nfs",
+    "active": 1,
+    "used": 536870912000,
+    "total": 1073741824000
+   },
+   {
+    "storage": "backup",
+    "type": "pbs",
+    "active": 1,
+    "used": 1,
+    "total": 2
+   },
+   {
+    "storage": "offline",
+    "type": "dir",
+    "active": 0,
+    "used": 1,
+    "total": 2
+   }
+  ]
+ },
+ "/cluster/backup": {
+  "data": [
+   {
+    "enabled": 1,
+    "all": 1,
+    "exclude": "102"
+   }
+  ]
+ },
+ "/nodes/alpha/tasks?typefilter=vzdump": {
+  "data": [
+   {
+    "upid": "UPID:alpha:0001:vzdump::root@pam:",
+    "starttime": 1000,
+    "endtime": 2000
+   }
+  ]
+ },
+ "/tasks/UPID": {
+  "data": [
+   {
+    "t": "INFO: Starting Backup of VM 100 (qemu)"
+   },
+   {
+    "t": "INFO: Finished Backup of VM 100 (00:01:02)"
+   },
+   {
+    "t": "ERROR: Backup of VM 101 failed - unable to open lock file"
+   }
+  ]
+ }
+}

@@ -1,0 +1,2815 @@
+"use strict";
+// The wall display — the browser side.
+//
+// Layout: one page per config page, no submenu. All groups of a page sit on the same screen, as
+// sections on a CSS grid (layout); on the wall they must fit without scrolling, so the page zooms
+// out until they do; at a desk it scrolls. Every card is the same pattern (make_card).
+// The rotation changes page every 20 s and pauses for 60 s after a touch.
+//
+// Three rules that keep the phone cool (all paid for once, on the old version):
+//  1. ONLY the current page is in the DOM. The rest does not exist, so it is not rendered or measured.
+//  2. The structure is built once per page change; data only rewrites text, and only when it
+//     actually changed. No needless DOM write, so no needless relayout.
+//  3. No uncontrolled setInterval: everything goes through `tick()`, which skips while the page is
+//     not visible. With the screen off the phone does nothing.
+//
+// Data comes through a single SSE connection. The browser knows no API key and talks to no service
+// in the fleet; actions go to labhud too (`action_url` = /action/), which signs them for the agent.
+
+const $ = (s, r) => (r || document).querySelector(s);
+const PAUSE = 60000;    // how long the rotation holds after a touch
+// ?view=list: the phone in your hand, not the wall. One scrolling list, problems first, links out.
+const LIST_VIEW = new URLSearchParams(location.search).get("view") === "list";
+
+let CFG = null;           // the topology, from /api/config
+let CARD_BY_ID = {};      // every card, flattened: the bottom strip looks its state up here
+let D = {};               // the latest snapshot
+let page = 0;             // index of the current page
+let updaters = [];        // the functions that rewrite values in the mounted page
+let pausedUntil = 0;
+let turnedAt = 0;         // when the current page was shown (the rotation counts from there)
+
+// ---------------------------------------------------------------------------------------------
+// Tools
+// ---------------------------------------------------------------------------------------------
+
+/** setInterval that skips ticks while the page is not visible. */
+function tick(fn, ms) {
+  return setInterval(() => { if (!document.hidden) fn(); }, ms);
+}
+
+/** Reads a dotted path from the snapshot: "proxmox.pve.vms". */
+function get(path) {
+  let v = D;
+  for (const part of path.split(".")) {
+    if (v == null) return null;
+    v = v[part];
+  }
+  return v === undefined ? null : v;
+}
+
+const nf = new Intl.NumberFormat("en-US");
+const nf1 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+function bytes(n) {
+  if (n == null || isNaN(n)) return "—";
+  const u = ["B", "K", "M", "G", "T"];
+  let i = 0, v = Number(n);
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (v >= 100 || i === 0 ? Math.round(v) : nf1.format(v)) + u[i];
+}
+
+/** "14G / 60G", plus the percentage when asked: how much of the total is used. */
+function used_of(used, total, with_percent) {
+  if (used == null || !total) return "—";
+  const t = `${bytes(used)} / ${bytes(total)}`;
+  return with_percent ? `${t} · ${Math.round(100 * used / total)}%` : t;
+}
+
+function rate(n) {
+  if (n == null || isNaN(n)) return "—";
+  const v = Number(n);
+  if (v < 1024) return "0";
+  if (v < 1024 * 1024) return Math.round(v / 1024) + "K";
+  return nf1.format(v / 1048576) + "M";
+}
+
+function duration(s) {
+  if (!s) return "—";
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.round(s / 60) + "m";
+  if (s < 86400) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
+}
+
+function format(v, fmt) {
+  if (v == null || v === "") return "—";
+  switch (fmt) {
+    case "percent": return (typeof v === "number" ? Math.round(v) : v) + "%";
+    case "percent1": return (typeof v === "number" ? nf1.format(v) : v) + "%";
+    case "bytes": return bytes(v);
+    case "used_of": return Array.isArray(v) && v[1] ? `${bytes(v[0])} / ${bytes(v[1])}` : "—";
+    case "rate": return rate(v);
+    case "celsius": return (typeof v === "number" ? Math.round(v) : v) + "°";
+    case "count": return typeof v === "number" ? nf.format(v) : String(v);
+    default: return String(v);
+  }
+}
+
+/** Is memory really a problem? PSI, not the percentage. `some` = how long at least one process
+    waited for memory, `full` = how long ALL of them did. Any sustained `full` is serious. */
+function bad_pressure(g) {
+  if (!g) return false;
+  if (g.pressure_full > 1) return true;
+  return (g.pressure || 0) > 10;
+}
+
+/** Colour thresholds with hysteresis: a number past a mark keeps its colour until it is clearly
+    back under it (5 points for percentages, 3 °C), so a disk hovering at 80% does not blink
+    between two colours on every poll. thresholds.py does the same on the server for notifications. */
+const LAST_SEV = {};
+const SEV_RANK = { "": 0, warn: 1, crit: 2 };
+function severity(path, fmt, v) {
+  const now = raw_severity(path, fmt, v);
+  const was = LAST_SEV[path] || "";
+  let out = now;
+  if (SEV_RANK[now] < SEV_RANK[was] && ["percent", "used_of", "celsius"].includes(fmt)) {
+    const margin = fmt === "celsius" ? 3 : 5;
+    const bumped = fmt === "used_of" ? (Array.isArray(v) && v[1] ? [(v[0] || 0) + margin / 100 * v[1], v[1]] : v)
+      : typeof v === "number" ? v + margin : v;
+    const near = raw_severity(path, fmt, bumped);
+    if (SEV_RANK[near] > SEV_RANK[now]) out = SEV_RANK[near] >= SEV_RANK[was] ? was : near;
+  }
+  LAST_SEV[path] = out;
+  return out;
+}
+
+/* The marks for CPU, RAM and disk ([display] warn/crit in config.toml) and a metric's own warn/crit:
+   the same ones cardstate.py uses (MARKS, marks_for, pct). */
+function default_marks() {
+  const d = (typeof CFG !== "undefined" && CFG && CFG.display) || {};
+  return [d.warn ?? 80, d.crit ?? 92];
+}
+function own_marks(path) {
+  const m = (typeof CFG !== "undefined" && CFG && CFG.marks) || {};
+  return m[path] || null;
+}
+function past(v, marks) { return v >= marks[1] ? "crit" : v >= marks[0] ? "warn" : ""; }
+
+/** [warn, crit] where this metric's bar turns orange and red, or null when high is not bad. */
+function marks_for(path, fmt) {
+  const own = own_marks(path);
+  if (own) return own;
+  if ((fmt === "used_of" && /\.(mem_used_of|disk_used_of)$/.test(path))
+      || (fmt === "percent" && /\.(cpu|mem|used_percent|disk\.percent)$/.test(path))) return default_marks();
+  return null;
+}
+
+/** A percentage 0..100 for a bar, from a percent or used_of value, else null. */
+function pct(fmt, v) {
+  const r1 = x => Math.round(x * 10) / 10;
+  if (fmt === "used_of") return Array.isArray(v) && v.length > 1 && typeof v[0] === "number" && typeof v[1] === "number" && v[1] ? r1(100 * v[0] / v[1]) : null;
+  if ((fmt === "percent" || fmt === "percent1") && typeof v === "number") return r1(Math.max(0, Math.min(100, v)));
+  return null;
+}
+
+/** Colour thresholds: only for the quantities where "high" really means "bad". */
+function raw_severity(path, fmt, v) {
+  const own = own_marks(path);
+  if (fmt === "used_of" && Array.isArray(v) && v[1] && (own || /\.(mem_used_of|disk_used_of)$/.test(path))) {
+    return past(100 * (v[0] || 0) / v[1], own || default_marks());
+  }
+  if (typeof v !== "number") return "";
+  if (own) return past(v, own);
+  if (fmt === "celsius") return v >= 85 ? "crit" : v >= 75 ? "warn" : "";
+  if (fmt === "percent" && /\.(cpu|mem|used_percent|disk\.percent)$/.test(path)) {
+    return past(v, default_marks());
+  }
+  // the HEALTH page and the INTERNET card (1 Oct 2026): any value above zero is already a problem
+  if (/\.latency\.loss$/.test(path)) return v >= 5 ? "crit" : v > 0 ? "warn" : "";
+  if (/\.cert_min_days$/.test(path)) return v < 7 ? "crit" : v < 14 ? "warn" : "";
+  if (/\.(cert_under_14|problems|stale)$/.test(path)) return v > 0 ? "crit" : "";
+  if (/\.security$/.test(path)) return v > 0 ? "warn" : "";   // pending security updates: a look, not a problem
+  return "";
+}
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+/** Puts text on the clipboard. navigator.clipboard exists only over HTTPS (or on localhost), and a
+    display is often on plain http://host:8095, so a hidden textarea and execCommand stand in. */
+function copy_text(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => false);
+  const t = el("textarea");
+  t.value = text;
+  t.setAttribute("readonly", "");
+  t.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+  document.body.appendChild(t);
+  t.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  t.remove();
+  return Promise.resolve(ok);
+}
+
+/** A line to copy (a command, a code, a link) with a Copy button beside it. */
+function copy_line(text, cls) {
+  const box = el("div", "copy-line" + (cls ? " " + cls : ""));
+  const t = el("code", null, text);
+  const b = el("button", "copy", "Copy");
+  b.type = "button";
+  b.addEventListener("click", () => copy_text(text).then((ok) => {
+    put(b, ok ? "Copied ✓" : "Select it");
+    if (!ok) { const r = document.createRange(); r.selectNodeContents(t); getSelection().removeAllRanges(); getSelection().addRange(r); }
+    setTimeout(() => put(b, "Copy"), 2000);
+  }));
+  box.append(t, b);
+  return box;
+}
+
+/** Writes to the DOM only when the value actually changed. */
+function put(node, text) {
+  if (node.textContent !== text) node.textContent = text;
+}
+function cls(node, name, on) {
+  if (node.classList.contains(name) !== !!on) node.classList.toggle(name, !!on);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The SSE stream
+// ---------------------------------------------------------------------------------------------
+
+let streamWait = 2000;   // ms before a closed stream is opened again
+
+function start_stream() {
+  // `?static` fetches the data once and opens no stream. It is for check screenshots: with an
+  // open EventSource the page never becomes "idle", so headless Chrome waits until the timeout
+  // and dies with "Unexpected renderer destruction", without writing the picture.
+  if (location.search.includes("static")) {
+    fetch("/api/snapshot").then((r) => r.json()).then((d) => {
+      D = d; update();
+      // Layout diagnostic, only in check mode: how much space the page asks for versus how much
+      // it has. Above 1.0 means something is cut — groups must fit WITHOUT scrolling, and that
+      // does not show on a screenshot if you only look at what stayed visible.
+      // setTimeout, not requestAnimationFrame: under `--virtual-time-budget` Chrome produces no
+      // frames, so a rAF scheduled at the end never runs and the measurement stays empty.
+      // `&panel=<id>` opens a card's panel, so it can be checked on a screenshot: otherwise
+      // there is no way to see it without touching the screen.
+      const asked = new URLSearchParams(location.search).get("panel");
+      if (asked && CARD_BY_ID[asked]) open_panel(CARD_BY_ID[asked]);
+      // `&settings=<tab>` opens ⚙ on that tab, for the same reason (agents, phones, security…)
+      const tab = new URLSearchParams(location.search).get("settings");
+      if (tab && settings_known(tab)) { S.tab = settings_known(tab); check_admin().then(open_settings); }
+      setTimeout(() => {
+        const c = $("#content");
+        const groups = [...c.querySelectorAll(".sec")].map((g) =>
+          g.querySelector(".sec-title .t").textContent + ":" + Math.round(g.getBoundingClientRect().height));
+        // A page taller than the content box is cut at the bottom (on the wall; at a desk it scrolls);
+        // wider than it, only if the zoom could not narrow it enough (see layout).
+        const bottom = c.getBoundingClientRect().bottom - parseFloat(getComputedStyle(c).paddingBottom);
+        const cut = !desk_view() && pageGrid && pageGrid.getBoundingClientRect().bottom > bottom + 1;
+        const width = c.scrollWidth > c.clientWidth + 1 ? " CUT-SIDEWAYS" : "";
+        document.body.dataset.measure =
+          `h=${c.scrollHeight}/${c.clientHeight} w=${c.scrollWidth}/${c.clientWidth}${width}${cut ? " CUT-BOTTOM" : ""}` +
+          ` | ${groups.join(" ")}`;
+      }, 400);
+    });
+    return;
+  }
+  const s = new EventSource("/api/stream");
+  s.addEventListener("full", (e) => { D = JSON.parse(e.data); document.body.classList.remove("disconnected"); update(); });
+  s.addEventListener("delta", (e) => { Object.assign(D, JSON.parse(e.data)); update(); });
+  // config.toml changed: a good file reloads the page (pages, cards and strip may all differ),
+  // a broken one shows its problems while the server keeps the last good one.
+  s.addEventListener("config", (e) => {
+    const c = JSON.parse(e.data);
+    if (c.reload) reload_when_free();
+    else show_config_errors(c.errors || []);
+  });
+  // the PIN was set or removed (here, on another screen, or by init.py pin): see lock.js
+  s.addEventListener("lock", (e) => lock_state(JSON.parse(e.data)));
+  s.onopen = () => { streamWait = 2000; document.body.classList.remove("disconnected"); };
+  s.onerror = () => {
+    document.body.classList.add("disconnected");
+    // EventSource reconnects by itself after a dropped connection, but not after an answer that is
+    // not a stream (a proxy's 502 while labhud restarts, 503 with too many screens): then it is
+    // closed for good, and the wall would stay frozen. Start again, waiting longer each time.
+    if (s.readyState !== EventSource.CLOSED) return;
+    setTimeout(start_stream, streamWait);
+    streamWait = Math.min(streamWait * 2, 60000);
+  };
+}
+
+/** Something open under someone's hands: ⚙, a card's panel, a confirmation, signing in. */
+function overlay_open() {
+  return ["#settings", "#panel", "#confirm", "#signin"].some((id) => { const n = $(id); return n && !n.hidden; });
+}
+
+/** The reload a good config.toml asks for, or a tick in ⚙ that changed the cards' buttons. Not
+ * while something is open: a tick in ⚙ > Hosts & agents would close ⚙ and drop you on the first page.
+ * It waits until that is closed, then reloads once. */
+let reloadPending = false;
+function reload_when_free() {
+  if (!overlay_open()) { location.reload(); return; }
+  if (reloadPending) return;
+  reloadPending = true;
+  const wait = setInterval(() => {
+    if (overlay_open()) return;
+    clearInterval(wait);
+    location.reload();
+  }, 500);
+}
+
+function show_config_errors(problems) {
+  const n = $("#config-errors");
+  n.hidden = !problems.length;
+  n.textContent = "";
+  if (!problems.length) return;
+  n.appendChild(el("b", null, `config.toml not applied, ${problems.length} problem(s); still showing the last good version:`));
+  const shown = problems.slice(0, 4).map((p) => "\n· " + p).join("");
+  n.appendChild(document.createTextNode(shown + (problems.length > 4 ? `\n· and ${problems.length - 4} more (see the log)` : "")));
+}
+
+/** A single entry point for any new data, deferred to the next frame. */
+let deferred = false;
+let dataVersion = 0;      // bumped once per redraw: caches derived from D key on it
+function update() {
+  if (deferred) return;
+  deferred = true;
+  requestAnimationFrame(() => {
+    deferred = false;
+    dataVersion++;
+    for (const fn of updaters) fn();
+    render_strip();
+    render_alerts();
+    render_weather();
+    mark_menu_alerts();
+    if (panelCard) fill_panel();   // an open panel refreshes with the new data
+    if (TRACKS.length) check_tracks();
+    watch_problems();
+    render_calm();
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The page menu
+// ---------------------------------------------------------------------------------------------
+
+/** A page's icon: its own `icon` (a line icon, or a service's), else one guessed from its id or title. */
+const PAGE_ICONS = [["general", "home"], ["home", "home"], ["overview", "home"], ["network", "network"], ["net", "network"],
+  ["dns", "network"], ["security", "security"], ["media", "media"], ["games", "games"], ["game", "games"],
+  ["discover", "discover"], ["health", "activity"], ["status", "activity"], ["storage", "nas"], ["nas", "nas"],
+  ["docker", "docker"], ["server", "server"], ["vm", "vm"], ["update", "update"], ["proxmox", "proxmox"]];
+function page_icon(p) {
+  if (p.icon) return p.icon;
+  const words = norm(p.id + " " + p.title);
+  const hit = PAGE_ICONS.find(([w]) => words.includes(w));
+  return hit ? hit[1] : (p.games ? "games" : "pages");
+}
+
+/** The pages as pills: icon and name. When they do not all fit (a phone on its side, a narrow
+    window) the menu turns `compact`: only the open page keeps its name, the others show their icon
+    (the name is in their tooltip and for screen readers). */
+function render_menu() {
+  const m = $("#menu");
+  m.textContent = "";
+  CFG.pages.forEach((p, i) => {
+    const b = el("button", i === page ? "active" : "");
+    b.dataset.page = String(i);
+    b.type = "button";
+    b.title = p.title;
+    b.setAttribute("aria-label", p.title);
+    b.append(card_icon(page_icon(p), "pages"), el("span", "lbl", p.title));
+    b.addEventListener("click", () => { touched(); go(i); });
+    m.appendChild(b);
+  });
+  fit_menu();
+  if (!m.dataset.watched) {
+    m.dataset.watched = "1";
+    new ResizeObserver(() => setTimeout(fit_menu, 0)).observe(m);
+  }
+}
+
+function fit_menu() {
+  const m = $("#menu");
+  m.classList.remove("compact");
+  if (m.scrollWidth > m.clientWidth + 1) m.classList.add("compact");
+}
+
+function go(i) {
+  page = (i + CFG.pages.length) % CFG.pages.length;
+  turnedAt = Date.now();
+  document.body.className = document.body.className.replace(/\bp-\w+\b/g, "").trim();
+  document.body.classList.add("p-" + CFG.pages[page].id);
+  for (const b of $("#menu").children) cls(b, "active", Number(b.dataset.page) === page);
+  fit_menu();
+  // more pages than the menu's width: the open one is scrolled into sight
+  const on = $("#menu .active");
+  if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+  mount();
+  apply_focus();
+  history.replaceState(null, "", "#" + CFG.pages[page].id);
+}
+
+// ---------------------------------------------------------------------------------------------
+// A new problem takes the screen; the night dims it
+// ---------------------------------------------------------------------------------------------
+
+const FOCUS = 180000;    // how long a new problem holds its page (and keeps a dimmed screen lit)
+const WARMUP = Date.now() + 60000;   // the first minute only learns what is already wrong
+let PAGE_OF_CARD = {};   // card id -> page index
+let GROUP_OF_CARD = {};  // card id -> group id
+let lastBad = {};         // card id -> true (red) / false (fine), last time its state was known
+let focusCard = null, focusUntil = 0, wakeUntil = 0;
+
+/** Red on the screen: the card's host is down, or one of its numbers is past the critical mark.
+    null when nothing about the card is known (its source has not answered, or missed a poll). */
+function card_bad(c) {
+  if (maintenance_until(c)) return false;   // down on purpose: not a problem, whatever it shows
+  const st = card_status(c);
+  if (st === false) return true;
+  const vals = (c.metrics || []).map(([path, , fmt]) => [path, fmt, get(path)]);
+  if (vals.some(([path, fmt, v]) => severity(path, fmt, v) === "crit")) return true;
+  if (st === null && vals.every(([, , v]) => v === undefined || v === null)) return null;
+  return false;
+}
+
+/** Only a card SEEN fine and then red while the screen watches moves the page: what was already
+    red at start (a VM stopped on purpose, say) would otherwise hold one page forever, and a source
+    that misses one poll, or answers late, must not make an old problem look new. */
+function watch_problems() {
+  const warm = Date.now() < WARMUP;
+  let fresh = null;
+  for (const c of Object.values(CARD_BY_ID)) {
+    const bad = card_bad(c);
+    if (bad === null) continue;   // unknown: keep what was last known
+    if (bad && lastBad[c.id] === false && !warm && !fresh && PAGE_OF_CARD[c.id] !== undefined && !hidden_card(c.id)) fresh = c.id;
+    lastBad[c.id] = bad;
+  }
+  if (fresh) focus_on(fresh);
+  else if (focusCard && Date.now() >= focusUntil) { focusCard = null; apply_focus(); render_night(); }
+}
+
+/** A card this screen hides (⚙): its new problem neither takes the screen nor signals. */
+function hidden_card(id) {
+  const g = GROUP_OF_CARD[id];
+  return g !== undefined && is_hidden(g, id);
+}
+
+function focus_on(id) {
+  if (LIST_VIEW) return;   // the list already puts problems first
+  if (!location.search.includes("static")) signal_problem();
+  focusCard = id;
+  focusUntil = Date.now() + FOCUS;
+  pausedUntil = Math.max(pausedUntil, focusUntil);
+  // someone reading a panel keeps it; the card still gets its ring when they close it
+  if ($("#panel").hidden && PAGE_OF_CARD[id] !== page) go(PAGE_OF_CARD[id]);
+  apply_focus();
+  render_night();
+}
+
+function apply_focus() {
+  for (const n of document.querySelectorAll("#content .focus")) n.classList.remove("focus");
+  if (!focusCard) return;
+  const n = document.querySelector(`#content [data-id="${CSS.escape(focusCard)}"]`);
+  if (n) n.classList.add("focus");
+}
+
+/** [calm] (or this screen's ⚙ setting): after calm.after seconds with nothing red and no alert, only the clock shows.
+    Anything red, an alert, a focus, a touch or an open panel brings the cards back at once. */
+let calmSince = Date.now();
+let calmSpot = 0;
+function render_calm() {
+  const calm = CFG && calm_cfg();
+  if (!calm || LIST_VIEW) { if (!$("#calm").hidden) $("#calm").hidden = true; return; }
+  const now = Date.now();
+  const anyBad = Object.values(CARD_BY_ID).some((c) => card_bad(c) === true);
+  const alerting = alerts_now().length > 0;
+  const busy = anyBad || alerting || focusCard || now < pausedUntil || !$("#panel").hidden || !$("#confirm").hidden;
+  if (busy) calmSince = now;
+  const on = location.search.includes("calm") || now - calmSince >= calm.after * 1000;
+  const box = $("#calm");
+  if (box.hidden === !on) {
+    if (on) render_calm_text();
+    return;
+  }
+  box.hidden = !on;
+  if (on) render_calm_text();
+}
+
+function render_calm_text() {
+  const box = $("#calm");
+  const d = new Date();
+  put($(".time", box), String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"));
+  put($(".date", box), DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()]);
+  const cards = Object.values(CARD_BY_ID).filter((c) => card_bad(c) === false);
+  put($(".facts", box), cards.length + " checked, none red");
+  render_calm_extras($(".extras", box));
+  // a new spot every 5 minutes, inside the middle of the screen — but never so near an edge that
+  // the box (taller with lines under the clock) leaves the screen
+  const spot = Math.floor(Date.now() / 300000);
+  const b = $(".box", box), r = (n) => 35 + ((spot * n) % 31);   // 35..65 %, deterministic, no Math.random
+  const fit = (pct, size, room) => Math.min(Math.max(pct * room / 100, size / 2 + 4), room - size / 2 - 4);
+  const rect = b.getBoundingClientRect();
+  if (spot !== calmSpot || rect.top < 0 || rect.bottom > innerHeight) {
+    calmSpot = spot;
+    b.style.left = fit(r(7), rect.width, innerWidth) + "px";
+    b.style.top = fit(r(13), rect.height, innerHeight) + "px";
+  }
+}
+
+/** The lines under the calm clock, chosen per screen in ⚙: the forecast, and the first row of
+    any card's list (the next film, the latest download, who is playing...). */
+function render_calm_extras(host) {
+  const lines = [];
+  for (const id of S.calm_show || []) {
+    if (id === "weather") {
+      const days = (get("weather.days") || []).slice(1, 3);
+      if (days.length) lines.push(days.map((d) => `${day_name(d.date)} ${icon(d.code)} ${Math.round(d.min)}°/${Math.round(d.max)}°`).join("   "));
+      continue;
+    }
+    const c = CARD_BY_ID[id];
+    const first = c && c.list && (get(c.list) || [])[0];
+    if (first) lines.push(`${c.name}: ${detail_row(first).slice(0, 2).filter(Boolean).join(" · ")}`);
+  }
+  const text = lines.join("\n");
+  if (host.textContent !== text) host.textContent = text;
+  cls($("#calm"), "extras-on", lines.length > 0);
+}
+
+/** The day's timeline behind the clock: every change the server kept (/api/events), since midnight
+    on this screen's clock. Fetched on opening, not streamed: up to 400 rows nobody needs every 5 s. */
+let TODAY_EVENTS = null;
+function open_today() {
+  fetch("/api/events").then((r) => r.json()).then((d) => {
+    TODAY_EVENTS = d.events || [];
+    open_panel({ id: "_today", name: "TODAY", panel: "today" });
+  }).catch(() => show_message("could not read the events"));
+}
+
+/** Outages per host over the last `span` seconds, from the kept events that carry a card and a
+    state (down / up / off / maintenance): how many times it went down, for how long in total, and
+    the uptime of the part of the window the history covers. A host still down counts until now. */
+function outages(events, span) {
+  const now = Date.now() / 1000, from = now - span;
+  const rows = [...events].filter((e) => e.card).sort((a, b) => a.t - b.t);
+  const since = events.length ? Math.max(from, Math.min(...events.map((e) => e.t))) : null;
+  const per = {};
+  for (const e of rows) {
+    const p = per[e.card] = per[e.card] || { n: 0, down: 0, at: null };
+    if (e.state === "down") { if (p.at === null) { p.at = e.t; if (e.t >= from) p.n++; } }
+    else if (p.at !== null) { p.down += Math.max(0, e.t - Math.max(p.at, from)); p.at = null; }
+  }
+  const out = [];
+  for (const [cid, p] of Object.entries(per)) {
+    if (p.at !== null) p.down += now - Math.max(p.at, from);
+    if (!p.n && !p.down) continue;
+    const covered = Math.max(1, now - (since || from));
+    const up = Math.max(0, 100 * (1 - p.down / covered));
+    const name = (CARD_BY_ID[cid] && CARD_BY_ID[cid].name) || cid;
+    out.push({ d: p.down, row: [name, `${p.n}× · ${duration(Math.round(p.down))} down · ${up.toFixed(up >= 99.9 ? 2 : 1)}%`, p.at !== null] });
+  }
+  out.sort((a, b) => b.d - a.d);
+  return { since, rows: out.map((x) => x.row) };
+}
+
+/** "14 Oct" for a Unix time. */
+function day_month(t) {
+  const d = new Date(t * 1000);
+  return d.getDate() + " " + MONTHS[d.getMonth()];
+}
+
+/** "Thu" for "2026-10-15" (noon, so no time zone moves it to another day). */
+function day_name(date) {
+  return DAYS[new Date(date + "T12:00:00").getDay()].slice(0, 3);
+}
+
+function night_now() {
+  const n = night_cfg();
+  if (!n) return false;
+  if (location.search.includes("night")) return true;   // check screenshots: ?static&night
+  const h = new Date().getHours();
+  return n.from < n.to ? h >= n.from && h < n.to : h >= n.from || h < n.to;
+}
+
+function render_night() {
+  const now = Date.now();
+  // ⚙ "stays dim": a new problem still takes the screen, but does not light it up
+  cls(document.body, "night", night_now() && now >= wakeUntil && (now >= focusUntil || !S.wake));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Mounting the current page: its groups as sections, each a grid of cards
+// ---------------------------------------------------------------------------------------------
+
+let pageSections = [];     // the mounted page's sections, in config order
+let pageGrid = null;       // the page's own grid (.page), the one the sections are placed on
+let layoutSign = "";       // what the last layout was computed for (see relayout_if_needed)
+let layoutWatch = null;    // a ResizeObserver: the content box or the page changed size
+
+/** A card's place in the grid: [columns, rows] in cells. */
+const SIZES = { s: [1, 1], m: [2, 1], l: [2, 2], xl: [4, 2] };
+
+/** The card's size: the config's `size` (or a container's `labhud.size`), else one guessed from
+    what it shows. `large = true` is an older word for "big": it gets the size its numbers need
+    (a host with seven numbers 2×2, a router with four 2×1, a backup server with two 1×1), not
+    2×2 for everything, which left most big cards half empty. */
+function card_size(c) {
+  if (c.size && SIZES[c.size] && !(c.large && c.size === "l")) return c.size;
+  if (is_guest(c)) return "s";
+  const n = (c.metrics || []).length;
+  const more = !!(c.list || c.torrents);
+  if (c.large) return n >= 5 || (n && more) ? "l" : n >= 3 || more ? "m" : "s";
+  return more || c.bookmarks ? "m" : "s";
+}
+
+/** A section: a small title with its status dot and a line, then the grid of its cards. The dot is
+    the group's worst state (red: something down or past its critical mark), the count how many of
+    its checked cards are up. */
+function make_section(title, cards) {
+  const sec = el("section", "sec");
+  const h = el("h2", "sec-title");
+  const dot = el("span", "dot");
+  const count = el("span", "count");
+  h.append(dot, el("span", "t", title), el("span", "rule"), count);
+  const grid = el("div", "grid");
+  sec.append(h, grid);
+  const checked = cards.filter((c) => c.check);
+  updaters.push(() => {
+    let bad = false, known = false, up = 0, quiet = 0;
+    for (const c of cards) {
+      const b = card_bad(c);
+      if (b === true) bad = true;
+      if (b !== null) known = true;
+    }
+    for (const c of checked) {
+      const st = card_status(c);
+      if (st === true) up++;
+      else if (quiet_off(st)) quiet++;
+    }
+    cls(dot, "down", bad);
+    cls(dot, "up", known && !bad);
+    put(count, checked.length > 1 ? `${up}/${checked.length - quiet}` : "");
+  });
+  return { sec, grid };
+}
+
+function mount() {
+  const host = $("#content");
+  host.textContent = "";
+  updaters = [];
+  pageSections = [];
+  if (layoutWatch) layoutWatch.disconnect();
+  pageGrid = el("div", "page");
+  host.appendChild(pageGrid);
+
+  if (CFG.pages[page].games) {
+    const { sec, grid } = make_section("Servers", []);
+    mount_games(grid, CFG.pages[page].games);
+    pageGrid.appendChild(sec);
+    pageSections.push(sec);
+  } else {
+    for (const g of CFG.pages[page].groups) {
+      // left off this screen from ⚙ (settings.js): the group, or some of its cards
+      const cards = (CFG.cards[g.id] || []).filter((c) => !is_hidden(g.id, c.id));
+      if (!cards.length) continue;
+      const { sec, grid } = make_section(g.title, cards);
+      // guests of more than one node in the group: each says which node it is on
+      const nodes = new Set(cards.filter(is_guest).map((c) => c.check[1]));
+      for (const c of cards) grid.appendChild(make_card(c, nodes.size > 1));
+      pageGrid.appendChild(sec);
+      pageSections.push(sec);
+    }
+  }
+  update();
+  layout();
+  // a timer, not requestAnimationFrame: headless screenshots (and a phone with the screen off)
+  // give no frames; and not inside the callback itself, where moving cards trips the
+  // "ResizeObserver loop" warning
+  layoutWatch = new ResizeObserver(() => setTimeout(relayout_if_needed, 0));
+  layoutWatch.observe(host);
+  layoutWatch.observe(pageGrid);
+}
+
+function norm(text) { return String(text || "").trim().toLowerCase(); }
+
+/** The shown cards of a section (a games page hides the tiles it has no server for). */
+function section_cards(sec) {
+  return [...sec.querySelectorAll(":scope > .grid > .card")].filter((c) => !c.hidden);
+}
+
+/** What a layout depends on: the content box, the page's height and the cards shown. */
+function layout_sign() {
+  const host = $("#content");
+  const shown = pageSections.map((s) => section_cards(s).length).join(",");
+  return `${host.clientWidth}x${host.clientHeight}|${pageGrid ? pageGrid.offsetHeight : 0}|${shown}`;
+}
+
+/** Lists grow when data arrives, the alert banner shrinks the box, the phone rotates: lay out
+    again, but only if something really changed — placing the cards fires the observer too, with
+    the same sizes, and that must not loop. */
+function relayout_if_needed() {
+  if (pageSections.length && layout_sign() !== layoutSign) layout();
+}
+
+/** A big screen at a desk: it scrolls, at this screen's text size, with more columns. The wall
+    (a phone, a tablet, a TV on its side) never scrolls: it zooms out until the page fits. */
+function desk_view() {
+  return innerWidth >= 1200;
+}
+
+/** Places the page on a CSS grid. The page is `--cols` cells wide (as many `--cell`s as fit the
+    width at the zoom tried); each section spans `--k` of them and lays its cards on its own grid
+    of `k` columns (`dense`: a small card fills the hole a big one left).
+    The sections are split, in config order, into page rows; in a row each gets a share of the
+    columns by its cards' area (the rows their content really takes, see weigh). Every split is
+    estimated, the few lowest are measured. On the wall the largest zoom (from this screen's text
+    size down, zoom_steps) at which one fits wins; at a desk the zoom stays and the page may scroll. */
+function layout() {
+  const host = $("#content");
+  if (!pageSections.length || !pageGrid) return;
+  const cs = getComputedStyle(host);
+  const cell = parseFloat(cs.getPropertyValue("--cell")) || 150;
+  const gap = parseFloat(cs.getPropertyValue("--gap")) || 8;
+  const rowH = parseFloat(cs.getPropertyValue("--row")) || 54;
+  const W = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const H = host.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const desk = desk_view();
+  cls(host, "scroll", desk);
+
+  const items = pageSections.map((s) => {
+    const cards = section_cards(s);
+    const dims = cards.map((c) => SIZES[c.dataset.size] || SIZES.s);
+    return { s, cards, dims, area: 1, tall: 1, maxW: Math.max(1, ...dims.map(([w]) => w)),
+      sumW: Math.max(1, dims.reduce((n, [w]) => n + w, 0)) };
+  });
+
+  // A card's area counts the rows its content really takes (a list of six rows is taller than its
+  // size says), measured where it stands now: a section of tall cards gets more width.
+  const weigh = () => {
+    for (const it of items) {
+      let area = 0, tall = 1;
+      it.cards.forEach((c, i) => {
+        const [w, h] = it.dims[i];
+        const rows = Math.max(h, Math.min(6, Math.ceil((c.offsetHeight + gap) / (rowH + gap))));
+        area += w * rows;
+        tall = Math.max(tall, rows);
+      });
+      it.area = area || 1;
+      it.tall = tall;
+    }
+  };
+
+  // the columns of one page row shared by area, each section at least as wide as its widest card
+  const share = (row, cols) => {
+    const need = row.reduce((n, it) => n + it.maxW, 0);
+    if (need > cols) return null;
+    const sum = row.reduce((n, it) => n + it.area, 0);
+    // never wider than all its cards side by side: the rest of the row stays free
+    const ks = row.map((it) => Math.min(it.sumW, Math.max(it.maxW, Math.floor(cols * it.area / sum))));
+    let left = cols - ks.reduce((n, k) => n + k, 0);
+    // what is left goes to the sections that would be tallest
+    while (left > 0) {
+      let i = -1;
+      ks.forEach((k, j) => { if (k < row[j].sumW && (i < 0 || row[j].area / k > row[i].area / ks[i])) i = j; });
+      if (i < 0) break;
+      ks[i]++; left--;
+    }
+    while (left < 0) {   // rounding up past the width: take back from the widest that can give
+      const i = ks.reduce((b, k, j) => (k > row[j].maxW && (b < 0 || k > ks[b]) ? j : b), -1);
+      if (i < 0) return null;
+      ks[i]--; left++;
+    }
+    return ks;
+  };
+  // how tall a split would be, in card rows (a title counts as half a row)
+  const estimate = (cols) => {
+    const n = items.length, out = [];
+    for (let mask = 0; mask < 1 << (n - 1); mask++) {
+      const ks = [];
+      let rows = 0, start = 0, ok = true;
+      for (let i = 0; i < n && ok; i++) {
+        if (i === n - 1 || mask & (1 << i)) {
+          const row = items.slice(start, i + 1);
+          const got = share(row, cols);
+          if (!got) { ok = false; break; }
+          ks.push(...got);
+          rows += 0.5 + Math.max(...row.map((it, j) => Math.max(it.tall, Math.ceil(it.area / got[j]))));
+          start = i + 1;
+        }
+      }
+      if (ok) out.push({ ks, rows });
+    }
+    // too many sections to try every split: one per row, full width
+    if (!out.length) out.push({ ks: items.map(() => cols), rows: Infinity });
+    return out.sort((x, y) => x.rows - y.rows).slice(0, 4);
+  };
+
+  const place = (zoom, ks, more = 0) => {
+    const cols = Math.max(1, Math.floor((W / zoom + gap) / (cell + gap))) + more;
+    pageGrid.style.zoom = zoom;
+    pageGrid.style.setProperty("--cols", String(cols));
+    items.forEach((it, j) => {
+      const k = Math.min(cols, ks ? ks[j] : cols);
+      it.s.style.setProperty("--k", String(k));
+      it.cards.forEach((c, i) => {
+        const w = String(Math.min(it.dims[i][0], k));
+        if (c.dataset.w !== w) c.dataset.w = w;
+        if (c.dataset.h !== String(it.dims[i][1])) c.dataset.h = String(it.dims[i][1]);
+      });
+    });
+    // measured on screen (getBoundingClientRect), so the zoom is already in it
+    const r = pageGrid.getBoundingClientRect();
+    return { zoom, ks, more, cols, h: r.height, fits: r.height <= H + 1 && pageGrid.scrollWidth * zoom <= W + 1 };
+  };
+
+  let best = null;
+  // at each zoom, the cells as wide as --cell, then one column more (cells ~1/cols narrower):
+  // more sections side by side, for a page that is short of height rather than of width
+  for (const zoom of desk ? [ui_scale()] : zoom_steps()) {
+    for (const more of [0, 1]) {
+      const first = place(zoom, null, more);
+      weigh();
+      // more than 10 sections: 512 splits is enough, the rest go one per row
+      const plans = items.length <= 10 ? estimate(first.cols) : [{ ks: null }];
+      for (const plan of plans) {
+        const p = place(zoom, plan.ks, more);
+        if (!best || (p.fits && !best.fits) || (p.fits === best.fits && p.h < best.h - 1)) best = p;
+      }
+      if (best.fits && !desk) break;
+    }
+    if (best.fits && !desk) break;
+  }
+  place(best.zoom, best.ks, best.more);   // the last one tried may not be the best
+  layoutSign = layout_sign();
+}
+
+/** The zooms layout() tries, largest first: from this screen's text size (⚙, settings.js) down in
+    ~8% steps to 60%, so a bigger text is used where the page has room and shrinks where it has not. */
+function zoom_steps() {
+  const steps = [];
+  for (let z = ui_scale(); z > 0.6; z *= 0.92) steps.push(Math.round(z * 1000) / 1000);
+  steps.push(0.6);
+  return steps;
+}
+
+/** Until when (Unix seconds) the card is in maintenance, or 0. */
+function maintenance_until(c) {
+  const until = c ? get("maintenance." + c.id) : 0;
+  return typeof until === "number" && until * 1000 > Date.now() ? until : 0;
+}
+
+/** Off, but not news: on schedule, on demand, or in maintenance. Grey, never red. */
+function quiet_off(st) { return st === "scheduled" || st === "on-demand" || st === "maintenance"; }
+
+function off_label(c, st) {
+  if (st === "scheduled") return "off on schedule";
+  if (st === "maintenance") return "maintenance until " + clock(maintenance_until(c));
+  return "off · started on demand";
+}
+
+function clock(t) {
+  return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** true/false/"scheduled"/"on-demand"/"maintenance"/null for a card's status. */
+function card_status(c) {
+  const st = raw_status(c);
+  return st === false && maintenance_until(c) ? "maintenance" : st;
+}
+
+function raw_status(c) {
+  if (!c || !c.check) return null;
+  if (c.check[0] === "proxmox") {
+    const g = get("proxmox." + c.check[1] + ".guests." + c.check[2]);
+    if (!g) return null;
+    // Stopped and not started at boot: off on purpose (started when needed), not an outage.
+    if (!g.running && (g.onboot === false || c.on_demand)) return "on-demand";
+    return !!g.running;
+  }
+  if (c.check[0] === "known") return c.check[1];   // game servers know their own state
+  if (c.check[0] === "agent") return agent_status(get("agents." + c.check[1]), c.check[2], c.check[3]);
+  const v = get("status." + c.id);
+  if (v === "scheduled") return "scheduled";       // off on schedule, not down
+  // Off by design (PBS is woken by WoL when needed): not an outage, so neither red nor pulsing —
+  // a dot pulsing non-stop on the strip is noise, and an endless animation tied to no real event.
+  if (v === false && c.on_demand) return "on-demand";
+  return typeof v === "boolean" ? v : null;
+}
+
+// The same as cardstate.agent_status: unknown (not down) while the agent is offline.
+const AGENT_UP = {
+  docker: ["containers", "state", ["running"], ["exited", "dead", "created"]],
+  systemd: ["units", "active", ["active"], ["failed", "inactive"]],
+  ptero: ["servers", "state", ["running"], ["offline"]],
+};
+function agent_status(a, cap, target) {
+  if (!a || !a.online) return null;
+  if (!cap) return true;
+  if (cap === "pve") { const g = (a.guests || {})[target]; return g ? !!g.running : null; }
+  const rule = AGENT_UP[cap];
+  if (!rule) return null;
+  const v = (((a[rule[0]] || {})[target]) || {})[rule[1]];
+  return rule[2].includes(v) ? true : rule[3].includes(v) ? false : null;
+}
+
+function add_dot(head, c) {
+  const dot = el("span", "dot");
+  head.appendChild(dot);
+  updaters.push(() => {
+    const alive = card_status(c);
+    cls(dot, "up", alive === true);
+    cls(dot, "down", alive === false);
+    cls(dot, "scheduled", quiet_off(alive));
+  });
+}
+
+/** A Proxmox guest card: a small tile, two per row. */
+function is_guest(c) {
+  return !c.large && !c.list && !c.torrents && c.check && c.check[0] === "proxmox";
+}
+
+/** Does the card actually have anything to show in a panel? Without this, a tap on a card that has
+    nothing beyond what its face already shows (the status dot, the spec) looks like a broken
+    press: it lights up "pressed" and nothing happens. Better not make it tappable at all.
+    `c.subtitle` alone does NOT count: it is already on the card's face, so repeating it in the
+    panel is not detail (see mikrotik/openwrt — only spec + status, nothing more). */
+function has_details(c) {
+  return !!(c.metrics || c.list || c.torrents || c.panel || c.notes || (c.links && c.links.length) ||
+    (c.actions && c.actions.length) || (c.check && c.check[0] === "proxmox"));
+}
+
+/** `bookmarks = true` (or a group's name): the [[bookmark]] links, by group, each opening in a new tab. */
+function make_bookmarks(c) {
+  const box = el("div", "bookmarks");
+  const all = (CFG.bookmarks || []).filter((b) => c.bookmarks === true || b.group === c.bookmarks);
+  const groups = [...new Set(all.map((b) => b.group))];
+  for (const g of groups) {
+    if (groups.length > 1) box.appendChild(el("div", "bm-group", g));
+    const row = el("div", "bm-row");
+    for (const b of all.filter((x) => x.group === g)) {
+      const a = el("a", "bm", b.name);
+      a.href = b.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.addEventListener("click", (ev) => ev.stopPropagation());   // the link, not the card's panel
+      row.appendChild(a);
+    }
+    box.appendChild(row);
+  }
+  if (!all.length) box.appendChild(el("div", "spec", "No [[bookmark]] in the config."));
+  return box;
+}
+
+/** `notes = true`: the text written in the card's panel (the admin) or in the app. */
+function make_notes() {
+  const t = el("div", "notes-text");
+  updaters.push(() => put(t, (get("notes") || {}).text || "—"));
+  return t;
+}
+
+/** The notes card's panel: the text, and for the admin a box to change it. */
+function notes_panel(body) {
+  const n = get("notes") || {};
+  if (!signed_in()) {
+    body.appendChild(el("div", "notes-text big", n.text || "—"));
+  } else {
+    const ta = el("textarea", "notes-edit");
+    ta.value = n.text || "";
+    ta.maxLength = 4000;
+    ta.rows = 8;
+    const save = el("button", "choice", "Save");
+    save.type = "button";
+    const say = el("span", "hint", n.t ? `changed ${when(n.t)}${n.by ? " by " + n.by : ""}` : "");
+    save.addEventListener("click", () => setup_post("notes", { text: ta.value }).then((r) => {
+      put(say, r.ok ? "✓ saved" : "✕ " + (r.error === "forbidden" ? "sign in as the admin" : r.error || "failed"));
+    }));
+    const bar = el("div", "logs-bar");
+    bar.append(say, save);
+    body.append(ta, bar);
+  }
+}
+
+/** The card's service icon: a line icon (icons.js) when it is one of those, else the service's own
+    from /icons/svc/ (design/icons.txt); a name the server does not have falls back to a plain box. */
+function card_icon(name, fallback) {
+  const box = el("span", "ic");
+  name = name || fallback || "app";
+  if (ICONS[name]) { box.appendChild(icon_svg(name)); return box; }
+  const img = el("img");
+  img.alt = "";
+  img.decoding = "async";
+  img.addEventListener("error", () => { img.remove(); box.appendChild(icon_svg(fallback || "app")); }, { once: true });
+  img.src = "/icons/svc/" + encodeURIComponent(name) + ".svg";
+  box.appendChild(img);
+  return box;
+}
+
+/** A metric shown as a bar: a percentage, or "used of" a total. */
+function is_bar(fmt) { return fmt === "percent" || fmt === "percent1" || fmt === "used_of"; }
+
+/** One card, one pattern. The head: icon, name and spec, the status dot (the only status signal;
+    a card past a mark also gets a coloured left edge). The body: a bar row for every number that
+    is a share of something, the other numbers in pairs, a list. The foot: the sparkline of its
+    first number with a trend, and the chips (off on schedule, not updated, as of...). */
+function make_card(c, node = false) {
+  const guest = is_guest(c);
+  const n = el("div", "card");
+  n.dataset.id = c.id;
+  n.dataset.size = card_size(c);
+  const head = el("div", "head");
+  head.appendChild(card_icon(c.icon, guest ? "vm" : "app"));
+  const title = el("div", "title");
+  title.appendChild(el("span", "name", c.name));
+  if (c.subtitle) title.appendChild(el("span", "spec", c.subtitle));
+  else if (guest && node) title.appendChild(el("span", "spec", c.check[1]));
+  head.appendChild(title);
+  if (c.check) add_dot(head, c);
+  n.appendChild(head);
+
+  const body = el("div", "body");
+  n.appendChild(body);
+  const foot = el("div", "foot");
+  const chips = el("div", "chips");
+  foot.appendChild(chips);
+
+  let sevs = [];   // functions that say each number's severity, for the card's edge
+  if (guest) sevs = guest_rows(c, body, chips);
+  if (c.metrics) sevs = make_metrics(c.metrics, body, foot);
+  if (c.list) body.appendChild(make_list(c.list, c.limit || 6));
+  if (c.torrents) body.appendChild(make_torrents(c.torrents));
+  if (c.bookmarks) body.appendChild(make_bookmarks(c));
+  if (c.notes) body.appendChild(make_notes());
+  if (!body.children.length) n.classList.add("bare");
+  n.appendChild(foot);
+
+  const chip = el("span", "chip");
+  chip.hidden = true;
+  chips.appendChild(chip);
+  const age = c.age ? el("span", "chip age") : null;
+  if (age) chips.appendChild(age);
+  const say = (text, kind) => {
+    chip.hidden = !text;
+    if (text) put(chip, text);
+    cls(chip, "warn", kind === "warn");
+  };
+  // "live.X.y" is a sub-source of the live agent (X fails on its own, with its own "unavailable") — the rest
+  // ("synology.y", "pbs.y" ...) are single-level sources, named by everything before the dot.
+  const path0 = c.metrics ? c.metrics[0][0] : null;
+  const source = !path0 ? null : /^(live|agents)\./.test(path0) ? path0.split(".").slice(0, 2).join(".") : path0.split(".")[0];
+  updaters.push(() => {
+    const st = card_status(c);
+    const worst = sevs.reduce((w, f) => { const s = f(); return SEV_RANK[s] > SEV_RANK[w] ? s : w; }, "");
+    cls(n, "down", st === false);
+    cls(n, "crit", st !== false && worst === "crit");
+    cls(n, "warn", st !== false && worst === "warn");
+    if (age) {
+      const t = get(c.age);
+      put(age, typeof t === "number" ? "as of " + duration(Math.max(1, Math.round(Date.now() / 1000 - t))) + " ago" : "");
+      age.hidden = typeof t !== "number";
+    }
+    if (guest) { cls(n, "frozen", st !== true); if (quiet_off(st)) say(off_label(c, st)); return; }
+    if (!source) { cls(n, "frozen", st === false || quiet_off(st)); say(quiet_off(st) ? off_label(c, st) : ""); return; }
+    // numbers that are not live any more — the host is off or down, or the source kept its last
+    // answer after a failed poll — are dimmed, so an old value never passes for a current one
+    // ("live.x" is part of the live agent: when the whole agent is kept stale, so is x; an agent of
+    // labhud's own, "agents.x", is stale while it is offline: its last numbers are kept)
+    const root = source.split(".")[0];
+    const kept = get(source + ".stale") || (root !== source && get(root + ".stale"));
+    cls(n, "frozen", st === false || quiet_off(st) || !!kept);
+    if (kept && st !== false && !quiet_off(st)) {
+      const since = get(source + "._t") || get(root + "._t");
+      // short on the card; the why is in the panel of the mark next to the clock
+      say("not updated" + (since ? " since " + clock(since) : ""), "warn");
+      return;
+    }
+    // If the host is visibly down (or off on schedule), the source's error adds nothing:
+    // it is the consequence, not a second problem. PBS, for example, is normally off.
+    if (st === false) { say(""); return; }
+    if (quiet_off(st)) { say(off_label(c, st)); return; }
+    // A source left out of the settings is not a fault: grey, like "off on schedule".
+    if (get(root + ".not_configured")) { say("not configured"); return; }
+    const why = get(source + ".unavailable");
+    say(why ? String(why) : "", "warn");
+  });
+  if (has_details(c)) bind_touch(n, c);
+  return n;
+}
+
+/** A bar row: label, bar, value. `fill(pct, sev)` and `value(text)` rewrite it. */
+function bar_row(label) {
+  const r = el("div", "mrow");
+  const bar = el("div", "bar"), fill = el("i");
+  bar.appendChild(fill);
+  const vl = el("span", "vl", "—");
+  r.append(el("span", "lbl", label), bar, vl);
+  return {
+    r, vl,
+    fill(p, sev) {
+      const w = p == null ? "0%" : Math.max(0, Math.min(100, p)) + "%";
+      if (fill.style.width !== w) fill.style.width = w;
+      cls(r, "warn", sev === "warn");
+      cls(r, "crit", sev === "crit");
+    },
+  };
+}
+
+/** A Proxmox guest: CPU and RAM as bars, its disk as a chip. RAM is NOT coloured by percentage:
+    Proxmox computes it as `total - MemFree`, page cache included, and any Linux machine that ran
+    for a day reaches ~95% without any problem. The only signal that means something is PSI: how
+    long processes actually stalled on memory (bad_pressure). */
+function guest_rows(c, body, chips) {
+  const cpu = bar_row("CPU"), mem = bar_row("RAM");
+  body.append(cpu.r, mem.r);
+  const disk = el("span", "chip");
+  disk.hidden = true;
+  chips.appendChild(disk);
+  const base = `proxmox.${c.check[1]}.guests.${c.check[2]}`;
+  let sev = "";
+  updaters.push(() => {
+    const g = get(base);
+    const running = !!(g && g.running);
+    if (!running) {
+      put(cpu.vl, "—"); put(mem.vl, "—"); cpu.fill(null, ""); mem.fill(null, "");
+      disk.hidden = true; sev = ""; return;
+    }
+    put(cpu.vl, `${Math.round(g.cpu || 0)}%`);
+    // the balloon can report a little over the maximum (101%): a percentage of a whole stops at 100
+    const m = Math.min(100, Math.round(g.mem || 0));
+    put(mem.vl, `${m}%`);
+    sev = bad_pressure(g) ? "crit" : "";
+    cpu.fill(g.cpu || 0, "");
+    mem.fill(m, sev);
+    disk.hidden = g.disk_used == null;
+    if (g.disk_used != null) put(disk, "Disk " + used_of(g.disk_used, g.disk_total, false));
+  });
+  return [() => sev];
+}
+
+/** A card's numbers: shares as bar rows, the rest in pairs (one alone is the card's big number).
+    The first number with a trend draws its last hours as a sparkline in the foot. */
+function make_metrics(specs, body, foot) {
+  const bars = specs.filter(([, , fmt]) => is_bar(fmt));
+  const rest = specs.filter(([, , fmt]) => !is_bar(fmt));
+  const sevs = [];
+  if (bars.length) {
+    const box = el("div", "bars");
+    for (const [path, label, fmt] of bars) {
+      const row = bar_row(label);
+      box.appendChild(row.r);
+      let sev = "";
+      updaters.push(() => {
+        const v = get(path);
+        put(row.vl, format(v, fmt));
+        sev = severity(path, fmt, v);
+        row.fill(pct(fmt, v), sev);
+      });
+      sevs.push(() => sev);
+    }
+    body.appendChild(box);
+  }
+  if (rest.length) {
+    const box = el("div", "pairs" + (rest.length === 1 && !bars.length ? " hero" : ""));
+    for (const [path, label, fmt] of rest) {
+      const b = el("div", "pair");
+      const vl = el("span", "vl", "—");
+      b.append(el("span", "lbl", label), vl);
+      box.appendChild(b);
+      let sev = "";
+      updaters.push(() => {
+        const v = get(path);
+        put(vl, format(v, fmt));
+        sev = severity(path, fmt, v);
+        cls(b, "warn", sev === "warn");
+        cls(b, "crit", sev === "crit");
+      });
+      sevs.push(() => sev);
+    }
+    body.appendChild(box);
+  }
+  const trend = CFG.trends ? (bars.find(([p]) => CFG.trends.includes(p)) || specs.find(([p]) => CFG.trends.includes(p))) : null;
+  if (trend) {
+    const [path, label, fmt] = trend;
+    const sp = el("div", "spark-box");
+    sp.title = label + ", the last hours";
+    foot.prepend(sp);
+    let drawn = -1;   // the HIST version this box last drew
+    updaters.push(() => {
+      if (drawn === histVersion) return;
+      drawn = histVersion;
+      sparkline(sp, HIST[path], fmt);
+    });
+  }
+  return sevs;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The list view (?view=list): every card as one row, problems first
+// ---------------------------------------------------------------------------------------------
+
+/** "CPU 12% · RAM 40%": a card's first numbers, or its first list row, in one line. */
+function summary(c) {
+  if (is_guest(c)) {
+    const g = get(`proxmox.${c.check[1]}.guests.${c.check[2]}`);
+    return g && g.running ? `CPU ${Math.round(g.cpu)}% · RAM ${Math.min(100, Math.round(g.mem))}%` : "";
+  }
+  if (c.metrics) {
+    return c.metrics.slice(0, 3).map(([path, label, fmt]) => `${label} ${format(get(path), fmt)}`).join(" · ");
+  }
+  const first = c.list && (get(c.list) || [])[0];
+  return first ? detail_row(first).slice(0, 2).filter(Boolean).join(" ") : "";
+}
+
+function list_row(c) {
+  const r = el("div", "lrow");
+  r.appendChild(card_icon(c.icon, is_guest(c) ? "vm" : "app"));
+  r.appendChild(el("span", "name", c.name));
+  const sum = el("span", "sum");
+  r.appendChild(sum);
+  if (c.url) r.appendChild(el("span", "ext", "↗"));
+  if (c.check) add_dot(r, c); else r.appendChild(el("span", "dot none"));
+  updaters.push(() => { put(sum, summary(c)); cls(r, "bad", card_bad(c)); });
+  if (has_details(c)) r.addEventListener("click", () => { touched(); open_panel(c); });
+  else if (c.url) r.addEventListener("click", () => window.open(c.url, "_blank", "noopener"));
+  return r;
+}
+
+function mount_list() {
+  const host = $("#content");
+  host.textContent = "";
+  updaters = [];
+  // Problems: rebuilt only when the set of red cards changes
+  const probs = el("section", "lsec problems");
+  host.appendChild(probs);
+  let shown = null, rowFns = [];
+  updaters.push(() => {
+    const bad = Object.values(CARD_BY_ID).filter(card_bad);
+    const sign = bad.map((c) => c.id).join(",");
+    if (sign !== shown) {
+      shown = sign;
+      probs.textContent = "";
+      probs.appendChild(el("h2", null, bad.length ? `PROBLEMS · ${bad.length}` : "NO PROBLEMS"));
+      // the rows' own updaters live here, so a rebuild drops the old ones with the old rows
+      const page = updaters;
+      updaters = [];
+      for (const c of bad) probs.appendChild(list_row(c));
+      rowFns = updaters;
+      updaters = page;
+    }
+    for (const fn of rowFns) fn();
+  });
+  // Quick search: type part of a name; Enter opens the only match's page (its `url`) or panel.
+  const search = el("input", "lsearch");
+  search.type = "search";
+  search.placeholder = "Search";
+  search.setAttribute("aria-label", "Search the cards");
+  host.insertBefore(search, probs);
+  const rows = [];
+  for (const p of CFG.pages) {
+    if (p.games) continue;
+    const sec = el("section", "lsec");
+    sec.appendChild(el("h2", null, p.title));
+    for (const g of p.groups) {
+      for (const c of CFG.cards[g.id] || []) {
+        const r = list_row(c);
+        rows.push([r, c, sec, norm(c.name + " " + (c.subtitle || "") + " " + g.title)]);
+        sec.appendChild(r);
+      }
+    }
+    host.appendChild(sec);
+  }
+  const filter = () => {
+    const q = norm(search.value);
+    const hits = rows.filter(([r, , , text]) => { const on = !q || text.includes(q); r.hidden = !on; return on; });
+    for (const sec of host.querySelectorAll(".lsec:not(.problems)")) {
+      sec.hidden = !!q && ![...sec.querySelectorAll(".lrow")].some((r) => !r.hidden);
+    }
+    probs.hidden = !!q;
+    return hits;
+  };
+  search.addEventListener("input", filter);
+  search.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { search.value = ""; filter(); }
+    if (ev.key !== "Enter") return;
+    const hits = filter();
+    if (hits.length !== 1) return;
+    const c = hits[0][1];
+    if (c.url) window.open(c.url, "_blank", "noopener");
+    else if (has_details(c)) open_panel(c);
+  });
+  update();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sparklines: the last hours of a number, as a faint line behind it (/api/history)
+// ---------------------------------------------------------------------------------------------
+
+let HIST = {};
+let histVersion = 0;
+
+function load_history() {
+  fetch("/api/history").then((r) => r.json()).then((h) => {
+    HIST = h.series || {};
+    histVersion++;
+    update();
+  }).catch(() => {});
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+
+/** Draws (or clears) the line in a metric box. The scale is the series' own range, but never
+    narrower than a few units, so a flat 21-22° does not look like a storm. */
+function sparkline(box, series, fmt) {
+  // averaged in buckets of a few minutes: one point a minute in 60 px is noise, not a trend
+  const BUCKETS = 60, raw = series || [], size = Math.max(1, Math.ceil(raw.length / BUCKETS));
+  const avg = [];
+  for (let i = 0; i < raw.length; i += size) {
+    const nums = raw.slice(i, i + size).filter((v) => typeof v === "number");
+    avg.push(nums.length ? nums.reduce((a, v) => a + v, 0) / nums.length : null);
+  }
+  series = avg;
+  const pts = series.map((v, i) => [i, v]).filter(([, v]) => typeof v === "number");
+  let svg = box.querySelector("svg.spark");
+  if (pts.length < 2) { if (svg) svg.remove(); return; }
+  if (!svg) {
+    svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("class", "spark");
+    svg.setAttribute("viewBox", "0 0 100 20");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.appendChild(document.createElementNS(SVG, "polygon"));
+    box.prepend(svg);
+  }
+  const values = pts.map(([, v]) => v);
+  let lo = Math.min(...values), hi = Math.max(...values);
+  const least = fmt === "rate" ? Math.max(hi * 0.2, 1) : 10;
+  if (hi - lo < least) { const mid = (hi + lo) / 2; lo = mid - least / 2; hi = mid + least / 2; }
+  const n = series.length - 1;
+  const x = (i) => (100 * i / n).toFixed(1);
+  // a filled area, closed along the bottom: under the digits it reads as a shade, not a stroke
+  svg.firstChild.setAttribute("points", pts.map(([i, v]) =>
+    `${x(i)},${(20 - 19 * (v - lo) / (hi - lo)).toFixed(1)}`).join(" ")
+    + ` ${x(pts[pts.length - 1][0])},20 ${x(pts[0][0])},20`);
+}
+
+function make_list(path, limit) {
+  const host = el("div", "list");
+  // Rows are reused: `limit` rows are created once and only rewritten/hidden. Without this, every
+  // update would throw away and rebuild the DOM, which is exactly what we set out to avoid.
+  const rows = [];
+  for (let i = 0; i < limit; i++) {
+    const r = el("div", "row");
+    const name = el("span", "n"), val = el("span", "v");
+    r.appendChild(name); r.appendChild(val);
+    r.hidden = true;
+    host.appendChild(r);
+    rows.push({ r, name, val });
+  }
+  // A problem that does not fit must not vanish without a trace (the Pangolin card showed 2 of its 8
+  // failures): then the last row says how many more there are and how many are bad. A top-N list
+  // that simply ends (top blocked domains, the latest logins) stays as it is — "+85 more" under
+  // every list was noise. The whole list is in the card's panel.
+  const more = el("div", "row more");
+  const moreName = el("span", "n"), moreVal = el("span", "v");
+  more.append(moreName, moreVal);
+  more.hidden = true;
+  host.appendChild(more);
+  updaters.push(() => {
+    const data = get(path);
+    const items = Array.isArray(data) ? data.map(quiet_row) : [];
+    const cut = items.length > limit && items.slice(limit - 1).some(row_bad);
+    const shown = cut ? limit - 1 : limit;
+    rows.forEach((x, i) => {
+      const d = i < shown ? items[i] : null;
+      if (!d) { if (!x.r.hidden) x.r.hidden = true; return; }
+      if (x.r.hidden) x.r.hidden = false;
+      put(x.name, String(d.name ?? d.text ?? ""));
+      put(x.val, String(d.value ?? d.label ?? (d.t ? when(d.t) : "")));
+      cls(x.r, "bad", row_bad(d));
+      // a source may mark a row as a warning (`warn: true`): orange, not red
+      cls(x.r, "warn", !row_bad(d) && d.warn === true && !d.quiet);
+      cls(x.r, "quiet", d.quiet === true);
+    });
+    more.hidden = !cut;
+    if (cut) {
+      const rest = items.slice(shown);
+      const bad = rest.filter(row_bad).length;
+      put(moreName, `+${rest.length} more`);
+      put(moreVal, bad ? `${bad} bad` : "");
+      cls(more, "bad", bad > 0);
+    }
+  });
+  return host;
+}
+
+/** `bad: true` comes explicitly from the source; the words remain for lists that do not set it yet. */
+function row_bad(d) {
+  return !d.quiet && (d.bad === true ||
+    (d.bad !== false && /failed|\bdown\b|missing|expired/i.test(String(d.value ?? ""))));
+}
+
+/** A list row "down" for a machine that is off on purpose (a stopped guest that does not start at
+    boot, or an on_demand card) is not a fault: shown grey as "off". Beszel lists such a host as
+    down, while the guest card next to it already says it is simply off. */
+function quiet_row(d) {
+  if (!d || !row_bad(d) || !quiet_names().has(norm(d.name))) return d;
+  return { ...d, value: "off", bad: false, quiet: true };
+}
+
+let quietCache = null, quietFor = -1;
+function quiet_names() {
+  if (quietFor === dataVersion) return quietCache;
+  const names = new Set();
+  for (const node of Object.values(get("proxmox") || {})) {
+    for (const g of Object.values((node && node.guests) || {})) {
+      if (g && !g.running && g.onboot === false && g.name) names.add(norm(g.name));
+    }
+  }
+  for (const c of Object.values(CARD_BY_ID)) {
+    if (c.on_demand && quiet_off(card_status(c))) names.add(norm(c.name));
+  }
+  quietFor = dataVersion; quietCache = names;
+  return names;
+}
+
+function make_torrents(path) {
+  const host = el("div", "list");
+  const rows = [];
+  for (let i = 0; i < 4; i++) {
+    const t = el("div", "torrent");
+    const title = el("div", "t");
+    const bar = el("div", "b"), fill = el("i");
+    bar.appendChild(fill);
+    const foot = el("div", "d");
+    const remaining = el("span"), eta = el("span");
+    foot.appendChild(remaining); foot.appendChild(eta);
+    t.appendChild(title); t.appendChild(bar); t.appendChild(foot);
+    t.hidden = true;
+    host.appendChild(t);
+    rows.push({ t, title, fill, remaining, eta });
+  }
+  updaters.push(() => {
+    const items = get(path) || [];
+    rows.forEach((x, i) => {
+      const d = items[i];
+      if (!d) { if (!x.t.hidden) x.t.hidden = true; return; }
+      if (x.t.hidden) x.t.hidden = false;
+      put(x.title, d.name || "");
+      const width = Math.max(0, Math.min(100, d.progress || 0)) + "%";
+      if (x.fill.style.width !== width) x.fill.style.width = width;
+      put(x.remaining, bytes(d.remaining) + " left");
+      put(x.eta, d.eta && d.eta < 8640000 ? duration(d.eta) : "—");
+    });
+  });
+  return host;
+}
+
+/** A game server's buttons from an agent that has it ticked (Pterodactyl), else null: the
+    config's own game-* actions then, when the action agent is set up. */
+function game_buttons(id) {
+  for (const a of Object.values(get("agents") || {})) {
+    const b = ((a && a.buttons) || {}).ptero;
+    if (b && b[id]) return b[id];
+  }
+  return null;
+}
+
+/** One game server as a tile shows it: its two lines, and the card behind it (state, buttons).
+    cardstate.py `game()` says the same for the app (tests/js/cardstate_parity.mjs). */
+function game_card(sv, i) {
+  const running = sv.state === "running";
+  // The numbers are in `query` (null when the game has no public query or did not answer), not on the server.
+  const q = sv.query || null;
+  const id = sv.id || "";
+  return {
+    id: "game" + i, name: sv.game || sv.name || "server", panel: "game", game: sv, ident: id,
+    check: ["known", running],
+    actions: id ? (game_buttons(id) || ["game-start-" + id, "game-stop-" + id, "game-restart-" + id]) : [],
+    title: sv.game || sv.name || "?",
+    line: running ? (q && q.players != null ? q.players + (q.max ? "/" + q.max : "") + " players" : "running") : "stopped",
+  };
+}
+
+/** A game's icon: the service icons have a few games; the rest get the line icon. */
+function game_icon(sv) {
+  const name = norm(sv.game || sv.name);
+  for (const g of ["minecraft", "rust"]) if (name.includes(g)) return g;
+  return "games";
+}
+
+/** A games page: the cards come live from the server list at `path` (Pterodactyl), so it has no
+    fixed cards in the topology. 15 cards are made once and shown as servers appear. */
+function mount_games(grid, path) {
+  const tiles = [];
+  for (let i = 0; i < 15; i++) {
+    const d = el("div", "card game");
+    d.dataset.size = "s";
+    d.hidden = true;
+    const head = el("div", "head");
+    const ic = el("span", "ic");
+    const title = el("div", "title");
+    const g = el("span", "name");
+    title.appendChild(g);
+    const dot = el("span", "dot");
+    head.append(ic, title, dot);
+    const s = el("div", "line");
+    d.append(head, s);
+    grid.appendChild(d);
+    // The tile keeps one card object (bind_touch holds it); each update refreshes what is in it.
+    const card = { id: "game" + i, name: "server", panel: "game", game: null, check: ["known", false], actions: [] };
+    bind_touch(d, card);
+    tiles.push({ d, g, s, ic, dot, card, icon: "" });
+  }
+  updaters.push(() => {
+    const servers = get(path) || [];
+    tiles.forEach((x, i) => {
+      const sv = servers[i];
+      if (!sv) { if (!x.d.hidden) x.d.hidden = true; return; }
+      if (x.d.hidden) x.d.hidden = false;
+      const gc = game_card(sv, i);
+      put(x.g, gc.title);
+      put(x.s, gc.line);
+      const icn = game_icon(sv);
+      if (icn !== x.icon) { x.icon = icn; x.ic.replaceWith(x.ic = card_icon(icn, "games")); }
+      cls(x.d, "on", gc.check[1]);
+      cls(x.dot, "up", gc.check[1]);
+      Object.assign(x.card, { name: gc.name, game: sv, check: gc.check, actions: gc.actions });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The traffic strip
+// ---------------------------------------------------------------------------------------------
+
+let stripNodes = null;
+
+function build_strip() {
+  const b = $("#strip");
+  b.textContent = "";
+  stripNodes = {};
+  for (const [code, info] of Object.entries(CFG.strip)) {
+    const n = el("div", "node");
+    const nm = el("div", "nm", code), rt = el("div", "rt", "—");
+    n.appendChild(nm); n.appendChild(rt);
+    b.appendChild(n);
+    stripNodes[code] = { nm, rt, info };
+  }
+}
+
+function render_strip() {
+  if (!stripNodes) return;
+  const perIp = traffic_map();
+  for (const [code, x] of Object.entries(stripNodes)) {
+    // The state is not measured here: it is taken from the node's card, whatever its source.
+    const alive = card_status(CARD_BY_ID[x.info.card]);
+    cls(x.nm, "up", alive === true);
+    cls(x.nm, "down", alive === false);
+    cls(x.nm, "scheduled", quiet_off(alive));
+    let dn = null, up = null;
+    if (x.info.wan) { dn = get("opnsense.wan_dn"); up = get("opnsense.wan_up"); }
+    else if (x.info.ip && perIp[x.info.ip]) { dn = perIp[x.info.ip].dn; up = perIp[x.info.ip].up; }
+    put(x.rt, dn == null && up == null ? "—" : "↓" + rate(dn) + " ↑" + rate(up));
+    // Green only when something actually flows: a permanent colour would say nothing.
+    cls(x.rt, "flowing", (dn || 0) + (up || 0) > 64 * 1024);
+  }
+}
+
+/** iftop on the router's LAN: IP -> {dn, up}. What only crosses the switch never gets here. */
+function traffic_map() {
+  const top = get("opnsense.top_lan");
+  const out = {};
+  const rows = (top && (top.records || top.rows || (top.lan && top.lan.records))) || [];
+  for (const r of rows) {
+    const ip = r.address || r.ip;
+    if (!ip) continue;
+    out[ip] = { dn: Number(r.rate_bits_in || r.in || 0) / 8, up: Number(r.rate_bits_out || r.out || 0) / 8 };
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The alert banner
+// ---------------------------------------------------------------------------------------------
+
+const DISMISSED_KEY = "dismissed-alerts";
+
+function dismissed() {
+  try {
+    // "alerte-ascunse": the key's name before 8 Oct 2026, read once so nothing dismissed comes back
+    return JSON.parse(localStorage.getItem(DISMISSED_KEY) || localStorage.getItem("alerte-ascunse") || "{}");
+  } catch (e) { return {}; }
+}
+
+function mark_menu_alerts() {
+  const dis = dismissed();
+  const any = (CFG.alerts && get(CFG.alerts.path) || []).some((a) => !dis[a.id]);
+  for (const b of $("#menu").children) {
+    cls(b, "has-alert", any && CFG.pages[Number(b.dataset.page)].id === CFG.alerts.page);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Clock and weather
+// ---------------------------------------------------------------------------------------------
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// ---------------------------------------------------------------------------------------------
+// Sources that keep failing (/api/status)
+// ---------------------------------------------------------------------------------------------
+
+let HEALTH = null;
+
+function check_health() {
+  fetch("/api/status").then((r) => r.json()).then((h) => {
+    HEALTH = h;
+    show_config_errors(h.config_errors || []);
+    const n = $("#health");
+    n.hidden = !h.problems.length;
+    put(n, String(h.problems.length));
+    // the check screenshots' `?static&panel=health`, like `&panel=<card id>` in start_stream
+    if (location.search.includes("static") && new URLSearchParams(location.search).get("panel") === "health") open_health_panel();
+  }).catch(() => {});  // the stream's own mark already says when the server is gone
+}
+
+/** The error in words: "Host is unreachable" -> "the machine does not answer on the network". */
+function plain_error(err) {
+  const e = String(err || "").toLowerCase();
+  for (const [needle, words] of [
+    ["timed out", "no answer in time (overloaded, or the machine is off)"],
+    ["unreachable", "the machine does not answer on the network (off, or a cable/route problem)"],
+    ["refused", "the machine is up but the service is not running (connection refused)"],
+    ["name or service", "the name does not resolve (DNS)"], ["certificate", "its HTTPS certificate is not accepted"],
+    ["401", "the key was refused (401): wrong or expired"], ["403", "the key may not read this (403)"],
+    ["404", "the address is wrong (404)"], ["502", "a proxy in front of it gets no answer (502)"],
+    ["503", "the service says it is unavailable (503), usually for a short while"],
+    ["500", "the service fails on its side (500)"], ["reset", "the connection was cut"]]) {
+    if (e.includes(needle)) return words;
+  }
+  return err || "unknown";
+}
+
+/** The panel for the mark: which sources, since when, and what they answered. Opened here and
+    not as /status, so the wall never navigates away from itself. */
+function open_health_panel() {
+  if (!HEALTH || !HEALTH.problems.length) return;
+  panelCard = null;
+  const body = $("#panel-body");
+  body.textContent = "";
+  const now = HEALTH.now;
+  for (const name of HEALTH.problems) {
+    const h = HEALTH.sources[name];
+    const w = (HEALTH.where || {})[name] || {};
+    const rows = [["what", `${w.title || name} (${name})`]];
+    for (const s of w.shown || []) rows.push(["shown in", s]);
+    if (!(w.shown || []).length) rows.push(["shown in", "no card (only /status)"]);
+    if (w.host) rows.push([`host ${w.host}`, w.host_state, w.host_state === "down"]);
+    rows.push(["problem", plain_error(h.error), true]);
+    rows.push(["failing for", duration(now - h.failing_since)]);
+    rows.push(["last good answer", h.last_ok ? clock(h.last_ok) + " · " + duration(now - h.last_ok) + " ago" : "never since LabHUD started"]);
+    if (h.next_at) rows.push(["next try", h.next_at > now ? "in " + duration(h.next_at - now) : "now"]);
+    rows.push(["raw error", h.error]);
+    section(body, w.title || name, rows);
+  }
+  body.appendChild(el("p", "hint", "Every source, with details: " + location.origin + "/status"));
+  $("#panel-actions").textContent = "";
+  put($("#panel-title"), "SOURCES NOT ANSWERING");
+  $("#panel").hidden = false;
+  touched();
+}
+
+function render_clock() {
+  const d = new Date();
+  put($("#clock .time"), String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"));
+  put($("#clock .date"), DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()]);
+}
+
+// WMO codes, grouped: a 360 px screen does not need all 28 variants.
+function icon(code) {
+  if (code == null) return "";
+  if (code === 0) return "☀";
+  if (code <= 2) return "⛅";
+  if (code === 3) return "☁";
+  if (code <= 48) return "🌫";
+  if (code <= 67) return "🌧";
+  if (code <= 77) return "❄";
+  if (code <= 82) return "🌦";
+  if (code <= 86) return "🌨";
+  return "⛈";
+}
+
+function render_weather() {
+  const w = get("weather");
+  const host = $("#weather");
+  if (!w || w.temp == null) { cls(host, "empty", true); return; }
+  cls(host, "empty", false);
+  put($(".ic", host), icon(w.code));
+  put($(".t", host), Math.round(w.temp) + "°");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Touch: rotation, swipe, opening the panel
+// ---------------------------------------------------------------------------------------------
+
+function touched() {
+  pausedUntil = Math.max(pausedUntil, Date.now() + PAUSE);
+  calmSince = Date.now();
+  if (CFG && !$("#calm").hidden) { $("#calm").hidden = true; }
+  wakeUntil = Date.now() + PAUSE;   // a touch lights a dimmed screen up for the same minute
+  if (CFG) render_night();
+}
+
+/** A short tap on any card opens its panel. Actions are in the panel, not here: the long press
+    was invisible — there was no way to know it existed. */
+function bind_touch(node, c) {
+  let started = 0, moved = false;
+  node.addEventListener("pointerdown", () => { touched(); moved = false; started = Date.now(); cls(node, "pressed", true); });
+  node.addEventListener("pointerup", () => {
+    cls(node, "pressed", false);
+    if (!moved && Date.now() - started < 900) open_panel(c);
+  });
+  node.addEventListener("pointercancel", () => { moved = true; cls(node, "pressed", false); });
+  node.addEventListener("pointermove", (e) => {
+    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 6) { moved = true; cls(node, "pressed", false); }
+  });
+}
+
+/** The button label: from [action.<name>] in the config, or else from the name itself. */
+function action_label(name) {
+  const own = (CFG.actions || {})[name];
+  if (own && own.label) return own.label;
+  if (/^wol-/.test(name)) return "START";
+  if (/^shutdown-/.test(name)) return "SHUT DOWN";
+  let m = /^vm-[A-Za-z0-9]+-\d+-(start|shutdown|reboot)$/.exec(name);
+  if (m) return { start: "START", shutdown: "SHUT DOWN", reboot: "REBOOT" }[m[1]];
+  m = /^game-(start|stop|restart)-/.exec(name);
+  if (m) return { start: "START", stop: "STOP", restart: "RESTART" }[m[1]];
+  m = /^agent-.+-(start|stop|restart|shutdown|reboot|update|wake)$/.exec(name);
+  if (m) return AGENT_VERBS[m[1]];
+  return name;
+}
+const AGENT_VERBS = { start: "START", stop: "STOP", restart: "RESTART", shutdown: "SHUT DOWN", reboot: "REBOOT", update: "UPDATE", wake: "WAKE" };
+
+/** Hides the actions that make no sense right now: we do not stop what is already stopped. */
+function useful_actions(c) {
+  // no action agent: only the agents' own buttons
+  let all = (c.actions || []).filter((a) => CFG.action_url || /^agent-/.test(a));
+  // a container: UPDATE only when its registry has a newer image, nothing while it is updated
+  const x = card_container(c);
+  if (x) all = x.updating === true ? [] : all.filter((a) => action_verb(a) !== "update" || x.update === true);
+  const alive = card_status(c);
+  const starts = (a) => /-start$/.test(a) || /^wol-/.test(a) || /^game-start-/.test(a) || /^agent-.+-wake$/.test(a);
+  const stops = (a) => /-(shutdown|reboot)$/.test(a) || /^shutdown-/.test(a) || /^game-(stop|restart)-/.test(a) ||
+    /^agent-.+-(stop|restart)$/.test(a);
+  const keep = alive === true ? all.filter((a) => !starts(a))
+    : all.filter((a) => !stops(a));   // what is not a stop (a report, an update) works either way
+  return order_actions(keep);
+}
+
+/** The container a card with agent_target = "docker:<name>" is, as its agent reports it ({} when
+    not reported); null for any other card. cardstate.py `_container`. */
+function card_container(c) {
+  const t = /^docker:(.+)$/.exec(c.agent_target || "");
+  if (!t || !c.agent) return null;
+  const x = (get(`agents.${c.agent}.containers`) || {})[t[1]];
+  return x && typeof x === "object" ? x : {};
+}
+
+/** The verb an action's name ends in ("" for the config's own, like "report"). Taken from the
+    name's shape, so a container called "stopwatch" is not a stop. cardstate.py `action_verb`. */
+function action_verb(a) {
+  let m = /^agent-.+-([a-z]+)$/.exec(a) || /^vm-[A-Za-z0-9]+-\d+-(start|shutdown|reboot)$/.exec(a) || /^game-(start|stop|restart)-/.exec(a);
+  if (m) return m[1];
+  if (/^wol-/.test(a)) return "wake";
+  if (/^shutdown-/.test(a)) return "shutdown";
+  return "";
+}
+// the same order on every card: what brings something up first, then the rest, then (red, after
+// a line) what takes it down
+const ACTION_RANK = { start: 0, wake: 0, update: 1, "": 2, restart: 3, reboot: 3, stop: 4, shutdown: 4 };
+function action_rank(a) { return ACTION_RANK[action_verb(a)] ?? 2; }
+function action_danger(a) { return action_rank(a) >= 3; }
+function order_actions(list) {
+  return list.map((a, i) => [a, i]).sort((x, y) => action_rank(x[0]) - action_rank(y[0]) || x[1] - y[1]).map((x) => x[0]);
+}
+
+function ask_confirmation(c, action) {
+  // A full text from the config, where the generic template (label + card name) is not enough.
+  const own = (CFG.actions || {})[action];
+  put($("#confirm-text"), (own && own.confirm) || `${action_label(action)} ${c.name}?`);
+  const choices = own && own.choices;
+  ask(choices ? choices.map((ch) => [ch.label, () => send_action(ch.action, c), action_danger(ch.action)])
+    : [["YES", () => send_action(action, c), action_danger(action)]]);
+}
+
+/** The dialog's buttons: [[label, run, danger?]], plus NO/CANCEL first. The text is set by the caller. */
+function ask(options) {
+  const box = $("#confirm");
+  const buttons = $("#confirm .buttons");
+  buttons.textContent = "";
+  const no = el("button", null, options.length > 1 ? "CANCEL" : "NO");
+  no.type = "button";
+  no.addEventListener("click", () => { box.hidden = true; });
+  buttons.appendChild(no);
+  for (const [label, run, danger] of options) {
+    const b = el("button", danger ? "danger" : "", label);
+    b.type = "button";
+    b.addEventListener("click", () => { box.hidden = true; run(); });
+    buttons.appendChild(b);
+  }
+  cls(buttons, "many", options.length > 1);
+  box.hidden = false;
+  touched();
+}
+
+/** [maintenance] buttons: the card is down on purpose for a while (not red, no notification). */
+function ask_maintenance(c) {
+  const until = maintenance_until(c);
+  put($("#confirm-text"), until ? `${c.name}: maintenance until ${clock(until)}.` : `Put ${c.name} in maintenance for:`);
+  const set = (minutes) => () => fetch("/api/maintenance/" + encodeURIComponent(c.id), {
+    method: "POST", headers: lock_headers({ "Content-Type": "application/json" }), body: JSON.stringify({ minutes }),
+  }).then((r) => { lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
+    .then((r) => show_message(r.ok ? (minutes ? "✓ maintenance until " + clock(r.until) : "✓ maintenance over") : "✕ " + (r.error || "failed")))
+    .catch(() => show_message("✕ could not reach LabHUD"));
+  ask([["1 HOUR", set(60)], ["4 HOURS", set(240)], ["1 DAY", set(1440)]].concat(until ? [["END", set(0)]] : []));
+}
+
+// ---------------------------------------------------------------------------------------------
+// An action, followed to the end: a bar under the top bar, on every page, until the thing really
+// changed state (or 5 minutes passed). Each step also goes to the day's timeline (TODAY).
+// ---------------------------------------------------------------------------------------------
+
+const ACTION_TIMEOUT = 300;   // seconds: past this, "no change" is reported in red
+let TRACKS = [];               // [{name, label, verb, want(), started, phase, end, took, error}]
+let trackTimer = null;
+
+function send_action(name, c) {
+  const t = { name, label: track_label(name, c), started: Date.now(), phase: "sending", ...track_goal(name, c) };
+  TRACKS = [t, ...TRACKS.filter((x) => x.name !== name)].slice(0, 10);
+  render_tracks();
+  fetch("/action/" + encodeURIComponent(name), { method: "POST", headers: lock_headers() })
+    .then((r) => { lock_refused(r.status); return r.json().catch(() => ({ ok: r.ok })); })
+    .then((r) => {
+      if (!r.ok) return finish(t, "refused", r.error || "refused");
+      log_action(name, "accepted");
+      t.phase = t.want ? "waiting" : "done";
+      if (!t.want) finish(t, "done");
+      render_tracks();
+    })
+    .catch(() => finish(t, "refused", "could not reach the action agent"));
+}
+
+/** "Valheim", "web01": what the action is about, as the screen names it. */
+function track_label(name, c) {
+  if (c && c.game) return c.game.game || c.game.name || c.name;
+  const m = /^vm-([A-Za-z0-9]+)-(\d+)-/.exec(name);
+  if (m) { const g = get(`proxmox.${m[1]}.guests.${m[2]}`); if (g && g.name) return g.name; }
+  return (c && c.name) || name;
+}
+
+/** What "done" looks like for an action: {verb, want()} — want() is true once it really happened.
+    A report or an update has no state to watch: done when the agent accepts it. */
+function track_goal(name, c) {
+  let m = /^game-(start|stop|restart)-(.+)$/.exec(name);
+  if (m) return game_goal(m[1], m[2]);
+  // a game server's buttons from its agent (Pterodactyl): followed by the server's id, not by the
+  // tile, whose slot shows another server once the list is sorted again (running ones first)
+  m = /^agent-.+-(start|stop|restart)$/.exec(name);
+  if (m && c && c.game && c.game.id) return game_goal(m[1], String(c.game.id));
+  m = /^vm-([A-Za-z0-9]+)-(\d+)-(start|shutdown|reboot)$/.exec(name);
+  if (m) {
+    const g = () => get(`proxmox.${m[1]}.guests.${m[2]}`) || {};
+    const since = Date.now() / 1000;
+    if (m[3] === "start") return { verb: "starting", doneText: "running", want: () => g().running === true };
+    if (m[3] === "shutdown") return { verb: "shutting down", doneText: "off", want: () => g().running === false };
+    return { verb: "rebooting", doneText: "back up", want: () => g().running === true && (g().uptime || 1e9) < Date.now() / 1000 - since };
+  }
+  // a container's update runs on its agent: done or failed is the agent's event about it
+  m = /^agent-.+-docker-.+-update$/.exec(name);
+  if (m && c && c.agent_target) return update_goal(c);
+  m = /^agent-.+-(start|wake|stop|shutdown)$/.exec(name);
+  if (m && c) {
+    if (m[1] === "start" || m[1] === "wake") return { verb: m[1] === "wake" ? "waking up" : "starting", doneText: "up", want: () => card_status(c) === true };
+    return { verb: m[1] === "stop" ? "stopping" : "shutting down", doneText: "off", want: () => card_status(c) === false || quiet_off(card_status(c)) };
+  }
+  if (/^wol-/.test(name) && c) return { verb: "waking up", doneText: "up", want: () => card_status(c) === true };
+  if (/^shutdown-/.test(name) && c) return { verb: "shutting down", doneText: "off", want: () => card_status(c) === false || quiet_off(card_status(c)) };
+  return { verb: "", doneText: "accepted", want: null };
+}
+
+/** A container's UPDATE: the agent answers at once and says how it ended in an event
+    ("<agent>: jellyfin updated (…)", "… update failed: …"), which comes with the events. */
+function update_goal(c) {
+  const target = c.agent_target.slice("docker:".length);
+  const since = Date.now() / 1000 - 5;
+  const head = `${c.agent}: ${target} `;
+  const ended = () => ((get("events.recent") || []).find((e) => e.t >= since && typeof e.name === "string" &&
+    (e.name.startsWith(head) || e.name.startsWith(`${c.agent}: ${target}:`)) && /updated|update failed|newest image/.test(e.name)));
+  // the agent gives a pull 10 minutes, then up to a minute to start the new one
+  return { verb: "updating", doneText: "updated", timeout: 12 * 60, want: () => { const e = ended(); return !!e && !e.bad; },
+    failed: () => { const e = ended(); return e && e.bad ? e.name.slice(c.agent.length + 2) : ""; } };
+}
+
+/** What "done" looks like for a game server, found by its id in the live list. */
+function game_goal(verb, id) {
+  const server = () => { const p = CFG.pages.find((x) => x.games); return ((p && get(p.games)) || []).find((sv) => String(sv.id) === id); };
+  const since = Date.now() / 1000;
+  if (verb === "start") return { verb: "starting", doneText: "running", want: () => (server() || {}).state === "running" };
+  if (verb === "stop") return { verb: "stopping", doneText: "stopped", want: () => { const sv = server(); return !!sv && sv.state !== "running" && sv.state !== "starting"; } };
+  return { verb: "restarting", doneText: "running again", want: () => { const sv = server(); return !!sv && sv.state === "running" && (sv.uptime_s || 0) < Date.now() / 1000 - since; } };
+}
+
+function finish(t, how, error) {
+  if (t.end) return;
+  t.end = Date.now();
+  t.phase = how;
+  t.error = error || "";
+  t.took = Math.round((t.end - t.started) / 1000);
+  log_action(t.name, how === "done" ? "done" : how === "timeout" ? "failed" : "refused", t.took);
+  render_tracks();
+}
+
+/** The step, for the timeline on the server (it writes the text itself; see /api/action-log). */
+function log_action(name, result, took) {
+  fetch("/api/action-log/" + encodeURIComponent(name), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result, took: took || 0 }),
+  }).catch(() => {});
+}
+
+/** Checked on every data update and every second while something is followed. */
+function check_tracks() {
+  for (const t of TRACKS) {
+    if (t.end || t.phase !== "waiting") continue;
+    const failed = t.failed && t.failed();
+    if (failed) finish(t, "refused", failed);
+    else if (t.want()) finish(t, "done");
+    else if (Date.now() - t.started > (t.timeout || ACTION_TIMEOUT) * 1000) finish(t, "timeout");
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The detail panel
+// ---------------------------------------------------------------------------------------------
+
+let panelCard = null;
+
+function open_panel(c) {
+  panelCard = c;
+  // fill_panel has already written everything it has to show: if nothing real came out, the card
+  // has no panel to open — do not show an empty one (or one with just "status: running") on a tap.
+  if (!fill_panel()) {
+    panelCard = null;
+    return;
+  }
+  put($("#panel-title"), c.name || "");
+  $("#panel").hidden = false;
+  touched();
+}
+
+function close_panel() { panelCard = null; LOGS = {}; $("#panel").hidden = true; }
+
+function section(body, title, rows) {
+  if (!rows.length) return;
+  body.appendChild(el("h3", null, title));
+  const l = el("div", "list");
+  for (const [n, v, bad] of rows) {
+    const r = el("div", "row" + (bad ? " bad" : ""));
+    r.appendChild(el("span", "n", String(n)));
+    r.appendChild(el("span", "v", String(v)));
+    l.appendChild(r);
+  }
+  body.appendChild(l);
+}
+
+/** The containers of a card's own agent, stopped ones first, each with the buttons it gets:
+    a card of its own (`card`) for the buttons' rules, the confirmation and the progress, so
+    "starting…" watches that container and not the guest. cardstate.py `containers`. */
+function container_rows(c) {
+  const all = (c.agent && get(`agents.${c.agent}.containers`)) || {};
+  const btns = (get(`agents.${c.agent}.buttons`) || {}).docker || {};
+  return Object.keys(all).sort((a, b) =>
+    (all[a].state === "running") - (all[b].state === "running") || a.localeCompare(b)).map((n) => {
+    const x = all[n] || {};
+    const up = x.state === "running";
+    const one = { id: `${c.id}:${n}`, name: n, agent: c.agent, agent_target: "docker:" + n,
+      check: ["agent", c.agent, "docker", n], actions: btns[n] || [] };
+    return { name: n, up, status: up ? (x.status || "running") : "STOPPED", update: x.update === true,
+      updating: x.updating === true, card: one, actions: useful_actions(one), scan: scan_summary(x) };
+  });
+}
+
+/** "3% CPU · 42 MB": a running container's usage, from its agent (ticked ones). */
+function container_usage(x) {
+  if (typeof x.cpu !== "number") return "";
+  return `${nf1.format(x.cpu)}% CPU · ${bytes(x.mem)}` + (x.restarts ? ` · ${x.restarts} restarts` : "");
+}
+
+/** What happened to a container lately (agents.<name>.history, newest last): its updates and its
+    crashes, as [{t, kind, ok, text, from, to}]. */
+function container_history(agent, name) {
+  return (get(`agents.${agent}.history`) || {})["docker:" + name] || [];
+}
+
+const HIST_TEXT = { crash: "stopped by itself", oom: "out of memory", loop: "keeps stopping",
+  held: "update held: new critical CVEs" };
+
+/** A container's last image scan (agent with `scan`): {critical, high, t}, else null. cardstate.scan_summary. */
+function scan_summary(x) {
+  const s = x && x.scan;
+  if (!s || !Number.isInteger(s.critical) || !Number.isInteger(s.high)) return null;
+  return { critical: s.critical, high: s.high, t: Number.isInteger(s.t) ? s.t : 0 };
+}
+
+/** "2 critical · 5 high", for a row and a panel. cardstate.scan_text. */
+function scan_text(s) {
+  if (!s) return "";
+  if (!s.critical && !s.high) return "no critical or high CVEs";
+  return [s.critical ? `${s.critical} critical` : "", s.high ? `${s.high} high` : ""].filter(Boolean).join(" · ");
+}
+
+/** One line for an entry: "updated 1.2 → 1.3", "update failed", "stopped by itself". */
+function history_text(h) {
+  if (h.kind === "update") return h.ok ? (h.from && h.to ? `updated ${h.from} → ${h.to}` : "updated") : "update failed";
+  return HIST_TEXT[h.kind] || h.kind;
+}
+
+/** The newest entry of the last 7 days, as a short line with its age, or "". */
+function container_last(agent, name) {
+  const h = container_history(agent, name).slice(-1)[0];
+  const age = h && Date.now() / 1000 - h.t;
+  return h && age < 7 * 86400 ? `${history_text(h)} · ${duration(Math.max(60, Math.round(age)))} ago` : "";
+}
+
+/** The containers the guest's own agent reports. A container ticked in ⚙ > Hosts & agents has
+    its buttons on its row (signed in); the admin also gets LOGS, its last lines under the row. */
+function agent_containers(body, c) {
+  const all = get(`agents.${c.agent}.containers`) || {};
+  // grouped by compose project (stable: stopped first within each), with its usage and its last news
+  const rows = container_rows(c).map((x) => Object.assign(x, { project: (all[x.name] || {}).project || "",
+    usage: x.up ? container_usage(all[x.name] || {}) : "", last: container_last(c.agent, x.name) }))
+    .sort((a, b) => (a.project || "\uffff").localeCompare(b.project || "\uffff"));
+  if (!rows.length) return;
+  body.appendChild(el("h3", null, `docker containers (${rows.filter((r) => r.up).length}/${rows.length})`));
+  const l = el("div", "list");
+  const stacks = new Set(rows.map((x) => x.project)).size > 1 || rows.some((x) => x.project);
+  let shownStack = null;
+  for (const x of rows) {
+    if (stacks && x.project !== shownStack) {
+      shownStack = x.project;
+      l.appendChild(stack_row(rows.filter((y) => y.project === x.project), x.project));
+    }
+    const r = el("div", "row" + (x.up ? "" : " bad"));
+    r.appendChild(el("span", "n", x.name));
+    const v = el("span", "v", x.status);
+    if (x.usage) v.appendChild(el("span", "sub", x.usage));
+    if (x.last) v.appendChild(el("span", "sub", x.last));
+    if (x.updating && !(may_act() && x.card.actions.length)) v.appendChild(el("span", "badge", "updating…"));
+    else if (x.update && !x.updating) v.appendChild(el("span", "badge", "update available"));
+    if (x.scan && (x.scan.critical || x.scan.high)) v.appendChild(el("span", "badge" + (x.scan.critical ? " bad" : ""), scan_text(x.scan)));
+    r.appendChild(v);
+    const box = el("span", "row-actions");
+    if (signed_in() && x.card.actions.length) box.append(details_button(c.agent, x.name), logs_button(c.agent, x.name));
+    // while it is updated the row keeps its shape: the same buttons, greyed, UPDATE as UPDATING…
+    const key = `${c.agent}/${x.name}`;
+    if (!x.updating) ROW_ACTS[key] = x.actions;
+    const shown = x.updating ? (ROW_ACTS[key] || []) : x.actions;
+    const upd = x.card.actions.find((a) => action_verb(a) === "update");
+    if (x.updating && upd && !shown.includes(upd)) shown.unshift(upd);
+    for (const a of may_act() && x.card.actions.length ? shown : []) {
+      const updating = x.updating && action_verb(a) === "update";
+      const b = el("button", action_danger(a) ? "danger" : "", updating ? "UPDATING…" : action_label(a));
+      b.type = "button";
+      if (x.updating) b.disabled = true;
+      else b.addEventListener("click", () => ask_confirmation(x.card, a));
+      box.appendChild(b);
+    }
+    if (box.children.length) r.appendChild(box);
+    l.appendChild(r);
+    details_box(l, c.agent, x.name);
+    logs_box(l, c.agent, x.name);
+  }
+  body.appendChild(l);
+}
+
+// A container's details (ports, volumes, networks, the names of its environment), open under its
+// row like its logs: read from the agent (POST /api/setup/inspect, the admin only).
+let DETAILS = {};   // "agent/container" -> {data, error, loading}
+
+function details_button(agent, name) {
+  const key = `${agent}/${name}`;
+  const b = el("button", DETAILS[key] ? "on" : "", "DETAILS");
+  b.type = "button";
+  b.addEventListener("click", () => {
+    if (DETAILS[key]) delete DETAILS[key];
+    else {
+      DETAILS[key] = { loading: true };
+      setup_post("inspect", { agent, target: name }).then((r) => {
+        if (!DETAILS[key]) return;
+        let data = null;
+        try { data = r.ok ? JSON.parse(r.output || "{}") : null; } catch (e) { data = null; }
+        DETAILS[key] = data ? { data } : { error: r.ok ? "an older agent: update it" : r.error === "forbidden" ? "sign in as the admin" : r.error || "failed" };
+        fill_panel();
+      });
+    }
+    fill_panel();
+  });
+  return b;
+}
+
+function details_box(list, agent, name) {
+  const st = DETAILS[`${agent}/${name}`];
+  if (!st) return;
+  const box = el("div", "details-box");
+  if (st.loading || st.error) {
+    box.appendChild(el("p", "panel-spec", st.error ? "✕ " + st.error : "reading…"));
+  } else {
+    const d = st.data;
+    const rows = [["image", d.image], ["restart", `${d.restart}${d.restarts ? ` · ${d.restarts} restarts` : ""}`],
+      ["started", d.started ? d.started.replace("T", " ").slice(0, 16) : "—"],
+      ["ports", (d.ports || []).join(", ") || "none"], ["networks", (d.networks || []).join(", ") || "—"],
+      ...(d.health ? [["health", d.health]] : []), ...(d.command ? [["command", d.command]] : [])];
+    for (const m of d.mounts || []) rows.push(["volume", m]);
+    if ((d.env || []).length) rows.push(["environment", d.env.join(", ") + " (values not shown)"]);
+    for (const [k, v] of Object.entries(d.labels || {})) rows.push([k, v]);
+    const l = el("div", "list");
+    for (const [k, v] of rows) {
+      const r = el("div", "row");
+      r.append(el("span", "n", k), el("span", "v", String(v)));
+      l.appendChild(r);
+    }
+    box.appendChild(l);
+  }
+  list.appendChild(box);
+}
+
+/** `list = "fleet.updates"`: every container with a newer image, on every host, with its UPDATE
+    when it is ticked, and UPDATE ALL for those (one after the other is the agents' business: each
+    keeps the old container until the new one runs). */
+function fleet_updates_panel(body) {
+  const rows = get("fleet.updates") || [];
+  if (!rows.length) { section(body, "updates", [["all containers", "up to date"]]); return; }
+  const cards = rows.map((x) => ({ x, card: { id: `fleet:${x.host}:${x.name}`, name: x.name, agent: x.host,
+    agent_target: "docker:" + x.name, check: ["agent", x.host, "docker", x.name], actions: x.action ? [x.action] : [] } }));
+  const ready = cards.filter(({ x }) => x.action && !x.updating);
+  body.appendChild(el("h3", null, `updates (${rows.length})`));
+  const l = el("div", "list");
+  if (may_act() && ready.length > 1) {
+    const r = el("div", "row compose");
+    r.append(el("span", "n", "every ticked one"), el("span", "v", `${ready.length} containers`));
+    const box = el("span", "row-actions");
+    const b = el("button", null, "UPDATE ALL");
+    b.type = "button";
+    b.addEventListener("click", () => {
+      put($("#confirm-text"), `Update ${ready.length} containers on ${new Set(ready.map(({ x }) => x.host)).size} hosts?`);
+      ask([["YES", () => ready.forEach(({ x, card }) => send_action(x.action, card))]]);
+    });
+    box.appendChild(b);
+    r.appendChild(box);
+    l.appendChild(r);
+  }
+  for (const { x, card } of cards) {
+    const r = el("div", "row");
+    r.appendChild(el("span", "n", x.name));
+    const v = el("span", "v", x.host);
+    v.appendChild(el("span", "sub", x.image));
+    if (x.scan) v.appendChild(el("span", "sub", scan_text(x.scan)));
+    if (x.updating) v.appendChild(el("span", "badge", "updating…"));
+    r.appendChild(v);
+    if (may_act() && x.action) {
+      const box = el("span", "row-actions");
+      const b = el("button", null, x.updating ? "UPDATING…" : "UPDATE");
+      b.type = "button";
+      if (x.updating) b.disabled = true;
+      else b.addEventListener("click", () => ask_confirmation(card, x.action));
+      box.appendChild(b);
+      r.appendChild(box);
+    }
+    l.appendChild(r);
+  }
+  body.appendChild(l);
+  if (cards.some(({ x }) => !x.action)) body.appendChild(el("p", "panel-spec", "Without a button: not ticked with UPDATE in ⚙ > Hosts & agents."));
+}
+
+/** A compose project's title row in a guest's containers, with RESTART STACK when every running
+    container of it is ticked with RESTART: each of them restarted, as their own buttons would. */
+function stack_row(members, project) {
+  const r = el("div", "row compose");
+  r.appendChild(el("span", "n", project || "not in a stack"));
+  r.appendChild(el("span", "v", `${members.filter((y) => y.up).length}/${members.length} running`));
+  const restarts = members.filter((y) => y.up).map((y) => [y.card, y.card.actions.find((a) => action_verb(a) === "restart")]);
+  if (project && may_act() && restarts.length && restarts.every(([, a]) => a)) {
+    const box = el("span", "row-actions");
+    const b = el("button", null, "RESTART STACK");
+    b.type = "button";
+    b.addEventListener("click", () => {
+      put($("#confirm-text"), `Restart the ${restarts.length} running containers of ${project}?`);
+      ask([["YES", () => restarts.forEach(([card, a]) => send_action(a, card))]]);
+    });
+    box.appendChild(b);
+    r.appendChild(box);
+  }
+  return r;
+}
+
+// A container's logs, open under its row: kept here so the panel's redraws (on every update)
+// keep them. Read from the agent (POST /api/setup/logs, the admin only), never on their own.
+let ROW_ACTS = {};   // "agent/container" -> the buttons its row had before an update started
+let LOGS = {};   // "agent/container" -> {text, error, loading, at}
+
+function logs_button(agent, name) {
+  const key = `${agent}/${name}`;
+  const b = el("button", LOGS[key] ? "on" : "", "LOGS");
+  b.type = "button";
+  b.addEventListener("click", () => {
+    if (LOGS[key]) delete LOGS[key];
+    else read_logs(agent, name);
+    fill_panel();
+  });
+  return b;
+}
+
+function read_logs(agent, name) {
+  const key = `${agent}/${name}`;
+  LOGS[key] = Object.assign(LOGS[key] || {}, { loading: true });
+  setup_post("logs", { agent, target: name }).then((r) => {
+    if (!LOGS[key]) return;   // closed meanwhile
+    LOGS[key] = r.ok ? { text: r.output || "", at: Date.now() } : { error: r.error === "forbidden" ? "sign in as the admin" : r.error || "failed" };
+    fill_panel();
+  });
+}
+
+function logs_box(list, agent, name) {
+  const key = `${agent}/${name}`;
+  const st = LOGS[key];
+  if (!st) return;
+  const box = el("div", "logs");
+  const pre = el("pre", "logs-text", st.error ? "✕ " + st.error : st.text == null ? "reading…" : st.text || "(no lines)");
+  box.appendChild(pre);
+  const bar = el("div", "logs-bar");
+  bar.appendChild(el("span", "hint", st.loading ? "reading…" : st.at ? "read at " + clock(st.at / 1000) : ""));
+  const again = el("button", null, "Refresh");
+  again.type = "button";
+  again.addEventListener("click", () => { read_logs(agent, name); fill_panel(); });
+  const shut = el("button", null, "Close");
+  shut.type = "button";
+  shut.addEventListener("click", () => { delete LOGS[key]; fill_panel(); });
+  bar.appendChild(again);
+  bar.appendChild(shut);
+  box.appendChild(bar);
+  list.appendChild(box);
+  // the newest lines are at the bottom
+  requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; });
+}
+
+/** Fills the panel and returns whether anything came out beyond a plain "status: running" — a row
+    the coloured dot on the card already shows, so on its own it does not justify opening the
+    panel (see open_panel). */
+function fill_panel() {
+  const c = panelCard;
+  if (!c) return false;
+  const body = $("#panel-body");
+  body.textContent = "";
+
+  if (c.subtitle) body.appendChild(el("p", "panel-spec", c.subtitle));
+
+  const alive = card_status(c);
+  if (alive !== null) {
+    const label = alive === true ? "running" : alive === false ? "DOWN" : off_label(c, alive);
+    section(body, "status", [["status", label, alive === false]]);
+  }
+  // the card's own pages (its UI, its logs...): small buttons at the top, opened in a new tab
+  const links = [...(c.url && !LIST_VIEW ? [{ label: "Web UI", url: c.url }] : []), ...(c.links || [])];
+  if (links.length) {
+    const row = el("div", "panel-links");
+    for (const x of links) {
+      const a = el("a", null, x.label + " ↗");
+      a.href = x.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      row.appendChild(a);
+    }
+    body.appendChild(row);
+  }
+  panel_uptime(body, c);
+  const afterStatus = body.children.length;
+
+  // ---- a container from an agent (agent_target = "docker:<name>"): its image, and its logs ----
+  const ct = card_container(c);
+  if (ct) {
+    const name = c.agent_target.slice("docker:".length);
+    section(body, "container", [["image", ct.image || "—"], ["state", ct.status || ct.state || "—", ct.state && ct.state !== "running"],
+      ...(ct.project ? [["stack", ct.project]] : []),
+      ...(typeof ct.cpu === "number" ? [["CPU", nf1.format(ct.cpu) + "%"], ["RAM", bytes(ct.mem) + (ct.mem_pct ? ` · ${nf1.format(ct.mem_pct)}% of its limit` : "")]] : []),
+      ...(ct.restarts ? [["restarts", String(ct.restarts)]] : []),
+      ...(ct.updating ? [["update", "updating…"]] : ct.update ? [["update", "available"]] : []),
+      ...(scan_summary(ct) ? [["CVEs", scan_text(scan_summary(ct)), scan_summary(ct).critical > 0]] : [])]);
+    const hist = container_history(c.agent, name).slice().reverse();
+    if (hist.length) section(body, "history", hist.map((h) => [clock(h.t) + " · " + duration(Math.max(60, Math.round(Date.now() / 1000 - h.t))) + " ago",
+      history_text(h), !h.ok]));
+    const ticked = ((get(`agents.${c.agent}.buttons`) || {}).docker || {})[name];
+    if (signed_in() && ticked) {
+      const l = el("div", "list");
+      const r = el("div", "row");
+      r.appendChild(el("span", "n", "logs"));
+      const box = el("span", "row-actions");
+      box.append(details_button(c.agent, name), logs_button(c.agent, name));
+      r.appendChild(box);
+      l.appendChild(r);
+      details_box(l, c.agent, name);
+      logs_box(l, c.agent, name);
+      body.appendChild(l);
+    }
+  }
+
+  // ---- Proxmox guest: its numbers, plus the Docker containers on it ----
+  if (c.check && c.check[0] === "proxmox") {
+    const [, node, vmid] = c.check;
+    const g = get(`proxmox.${node}.guests.${vmid}`) || {};
+    section(body, "resources", [
+      ["CPU", format(g.cpu, "percent")],
+      ["RAM", `${format(g.mem, "percent")} · ${bytes(g.mem_bytes)} / ${bytes(g.mem_max)}`],
+      ["memory pressure", g.pressure == null ? "—"
+        : (bad_pressure(g) ? `${nf1.format(g.pressure)}% — REALLY short`
+           : `${nf1.format(g.pressure || 0)}% — the % above includes cache`),
+        bad_pressure(g)],
+      ["disk", g.disk_used != null ? used_of(g.disk_used, g.disk_total, true) : bytes(g.disk)],
+      ["uptime", duration(g.uptime)],
+      ["type", g.type === "lxc" ? "LXC" : "VM"],
+      ["node", `${node} / ${vmid}`],
+    ]);
+    if (c.agent && get(`agents.${c.agent}.containers`)) agent_containers(body, c);
+    const cont = c.agent ? null : get("live.containers." + vmid);
+    if (Array.isArray(cont) && cont.length) {
+      const running = cont.filter((x) => x.state === "running").length;
+      section(body, `docker containers (${running}/${cont.length})`,
+        cont.map((x) => [x.name, x.state === "running" ? (x.status || "running") : "STOPPED", x.state !== "running"]));
+    } else if (cont && cont.unavailable) {
+      section(body, "docker containers", [["could not read", String(cont.unavailable)]]);
+    }
+  }
+
+  // ---- Proxmox host ----
+  if (c.panel && c.panel.startsWith("host:")) {
+    const node = c.panel.slice("host:".length);   // the node name, exactly as Proxmox has it
+    const p = get("proxmox." + node) || {};
+    section(body, "host", [["CPU", format(p.cpu, "percent")], ["RAM", format(p.mem, "percent")],
+      ["RAM used", bytes(p.mem_used) + " / " + bytes(p.mem_total)], ["uptime", duration(p.uptime)]]);
+    // GPU utilisation no longer fits on the card (it would add a row of metrics and the group would
+    // be cut). `sensors` points at a sensors object (as agents/labhud-agent.py serves it): gpu<N>_util, gpu<N>_mem, gpu<N>_temp.
+    const t = (c.sensors && get(c.sensors)) || {};
+    const gpus = [];
+    for (let i = 0; t[`gpu${i}_util`] != null; i++) {
+      gpus.push([`GPU${i}`, `${format(t[`gpu${i}_util`], "percent")} · ${format(t[`gpu${i}_mem`], "percent")} mem · ${format(t[`gpu${i}_temp`], "celsius")}`]);
+    }
+    if (gpus.length) section(body, "GPUs", gpus);
+    if ((p.storage || []).length) {
+      section(body, "storage", p.storage.map((x) => [x.name, used_of(x.used, x.total, true)]));
+    }
+    section(body, "guests", Object.entries(p.guests || {}).map(([vmid, g]) =>
+      [`${vmid} ${g.name || ""}`, g.running
+        ? `CPU ${format(g.cpu, "percent")} · RAM ${format(g.mem, "percent")}`
+          + (g.disk_used != null ? ` · Disk ${used_of(g.disk_used, g.disk_total, false)}` : "")
+        : "stopped", !g.running]));
+  }
+
+  // ---- the day's timeline: a tap on the clock ----
+  if (c.panel === "today") {
+    const midnight = new Date().setHours(0, 0, 0, 0) / 1000;
+    const today = (TODAY_EVENTS || []).filter((e) => e.t >= midnight);
+    const bad = today.filter((e) => e.bad).length;
+    section(body, today.length ? `${today.length} changes · ${bad} bad` : "today",
+      today.length ? today.map((e) => [e.name, clock(e.t), e.bad]) : [["nothing changed since midnight", ""]]);
+    const week = outages(TODAY_EVENTS || [], 7 * 86400);
+    section(body, `last 7 days · outages${week.since ? " (history from " + day_month(week.since) + ")" : ""}`,
+      week.rows.length ? week.rows : [["no host went down", ""]]);
+  }
+
+  // ---- the weather: a tap on the corner ----
+  if (c.panel === "weather") {
+    section(body, "forecast", (get("weather.days") || []).map((d, i) => [
+      `${i === 0 ? "Today" : day_name(d.date)}  ${icon(d.code)}`,
+      `${Math.round(d.min)}° / ${Math.round(d.max)}°` + (d.rain != null ? ` · rain ${d.rain}%` : "")]));
+  }
+
+  // ---- game server ----
+  if (c.panel === "game" && c.game) {
+    const q = c.game.query || {};
+    section(body, "server", [["game", c.game.game || "—"], ["address", c.game.address || "—"],
+      ["players", q.players != null ? `${q.players}${q.max ? " / " + q.max : ""}` : "—"],
+      // Minecraft has no map in its query protocol, but gives the version; the rest give the map.
+      [q.map || !q.version ? "map" : "version", q.map || q.version || "—"],
+      ["RAM", `${Math.round(c.game.ram_mb || 0)} / ${c.game.ram_max_mb || "?"} MB`],
+      ["uptime", duration(Math.round(c.game.uptime_s || 0))]]);
+    // Names come from A2S_PLAYER / the Minecraft sample / players.json — Valheim and Enshrouded give none.
+    section(body, "who is playing", (q.names || []).map((n) => [n, ""]));
+  }
+
+  // ---- content panels ----
+  const p = c.panel || "";
+  const rows = (path) => (get(path) || []).map((d) => [d.name, d.value]);
+  if (p === "dns:details") {
+    section(body, "top blocked domains", rows("live.display.dns_blocked"));
+    section(body, "top clients", rows("live.display.dns_clients"));
+  } else if (p === "security:log") {
+    section(body, "latest events", (get("live.log") || []).slice(0, 40).map((j) => [j.text, short_time(j.ts)]));
+  } else if (p === "security:suricata") {
+    const s = get("live.suricata") || {};
+    section(body, "signatures", (s.signatures || []).slice(0, 15).map((x) => [x.name, nf.format(x.n)]));
+  } else if (p === "security:sources") {
+    section(body, "top sources", rows("live.display.sources"));
+    section(body, "countries", rows("live.display.countries"));
+  } else if (p === "security:tripwire") {
+    section(body, "tripwire · 30 days", rows("live.display.tripwire"));
+  } else if (p === "security:logins") {
+    // `user` is empty on moonlight rows (no named login, just "unauthorized request"), which is
+    // why the application is shown first, not last.
+    section(body, "recent", (get("live.logins.recent") || []).slice(0, 25).map((x) =>
+      [`${x.app || "?"} · ${x.user || x.ip || "—"}`, short_time(x.ts)]));
+  } else if (p === "network:devices") {
+    section(body, "active", (get("live.devices.list") || []).slice(0, 40).map((d) => [d.name || d.mac || "?", d.ip || ""]));
+  } else if (p === "network:traffic") {
+    section(body, "interfaces", Object.entries(get("opnsense.interfaces") || {}).map(([n, r]) => [n, `↓${rate(r.dn)} ↑${rate(r.up)}`]));
+  } else if (p === "media:jellyfin") {
+    // "who is watching" is empty when nobody watches anything — the library stays, so the panel
+    // does not look empty exactly when there is no session to show.
+    section(body, "who is watching", (get("jellyfin.sessions") || []).map((s) => [`${s.user}: ${s.title}`, s.client || ""]));
+    section(body, "library", [
+      ["box sets" /* BoxSet: movie/series collections */, nf.format(get("jellyfin.BoxSetCount") || 0)],
+      ["trailers", nf.format(get("jellyfin.TrailerCount") || 0)],
+      ["items in total", nf.format(get("jellyfin.ItemCount") || 0)],
+    ]);
+  } else if (p === "media:navidrome") {
+    section(body, "who is listening", (get("navidrome.sessions") || []).map((s) => [`${s.user}: ${s.title}`, s.state || ""]));
+  } else if (p === "media:sonarr") {
+    section(body, "missing", (get("sonarr.missing") || []).map((t) => [t, ""]));
+  } else if (p === "media:radarr") {
+    section(body, "missing", (get("radarr.missing") || []).map((t) => [t, ""]));
+  } else if (p === "media:prowlarr") {
+    section(body, "indexers", (get("prowlarr.indexers") || []).map((i) =>
+      [i.name, i.failed ? `${i.grabs} grabs · ${i.failed} failed` : `${i.grabs} grabs`, !!i.failed]));
+  } else if (p === "media:torrents") {
+    section(body, "downloading", (get("qbt.torrents") || []).map((t) => [t.name, `${Math.round(t.progress)}% · ${bytes(t.remaining)} left`]));
+  } else if (p.startsWith("list:")) {
+    // A list meant for the panel only, longer than the card's: flat rows, or sections of rows.
+    const data = get(p.slice("list:".length)) || [];
+    if (data.some((s) => s && Array.isArray(s.rows))) {
+      for (const s of data) section(body, String(s.title ?? ""), (s.rows || []).map(detail_row));
+    } else {
+      section(body, "details", data.map(detail_row));
+    }
+  }
+
+  // ---- fallback: the card has no dedicated panel above, but it still has numbers or a list ----
+  // The metrics and lists on the card's face are trimmed (little space, small font); here they fit
+  // whole, and the list is no longer limited to `c.limit`.
+  if (body.children.length === afterStatus) {
+    if (c.metrics) {
+      section(body, "numbers", c.metrics.map(([path, label, fmt]) => [label, format(get(path), fmt)]));
+    }
+    if (c.notes) notes_panel(body);
+    if (c.list === "fleet.updates") fleet_updates_panel(body);
+    else if (c.list) {
+      section(body, "details", (get(c.list) || []).map(detail_row));
+    }
+  }
+
+  panel_charts(body, c);
+  render_actions(c);
+  return body.children.length > afterStatus || links.length > 0 || !$("#panel-actions").hidden;
+}
+
+// ---------------------------------------------------------------------------------------------
+// A card's uptime in its panel (/api/uptime): slices of the last 24 hours or 7 days, oldest on the
+// left, each the worst of its 15-minute points (grey: nothing known), the share of the known time it
+// was up, and how much of the range was known. The app's tiles show the same slices, in the same
+// colours.
+// ---------------------------------------------------------------------------------------------
+
+let uptimeRange = "24h";
+const UPTIME = {};   // range -> {at, data}
+
+function load_uptime(range) {
+  const u = UPTIME[range] || (UPTIME[range] = { at: 0, data: null });
+  if (Date.now() - u.at < 300000) return;
+  u.at = Date.now();
+  fetch("/api/uptime?range=" + range).then((r) => r.json()).then((d) => { u.data = d; if (panelCard) fill_panel(); })
+    .catch(() => { u.at = 0; });
+}
+
+function uptime_slices(values, n) {
+  const per = Math.max(1, Math.ceil(values.length / n));
+  const out = [];
+  for (let i = 0; i < values.length; i += per) {
+    const known = values.slice(i, i + per).filter((v) => v !== null && v !== undefined);
+    out.push(!known.length ? null : known.every((v) => v < 0) ? -1 : Math.min(...known.filter((v) => v >= 0)));
+  }
+  return out;
+}
+
+function uptime_class(v) {
+  return v === null ? "none" : v < 0 ? "off" : v >= 0.999 ? "up" : v >= 0.9 ? "part" : "down";
+}
+
+function panel_uptime(body, c) {
+  if (!c.check || LIST_VIEW) return;
+  load_uptime(uptimeRange);
+  const d = (UPTIME[uptimeRange] || {}).data;
+  const values = d && d.cards && d.cards[c.id];
+  if (!values || !values.length) return;
+  const head = el("div", "chart-head");
+  head.appendChild(el("h3", null, "uptime"));
+  for (const name of ["24h", "7d"]) {
+    const b = el("button", "range" + (name === uptimeRange ? " on" : ""), name);
+    b.type = "button";
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); uptimeRange = name; fill_panel(); });
+    head.appendChild(b);
+  }
+  const pct = d.percent && d.percent[c.id];
+  head.appendChild(el("span", "uptime-pct" + (pct !== undefined && pct < 99 ? " low" : ""), pct === undefined ? "—" : pct + "%"));
+  // labhud off, an agent never heard from: the percent is of the known part only, and says how much that is
+  const cov = d.coverage && d.coverage[c.id];
+  if (pct !== undefined && cov !== undefined && cov < 100) head.appendChild(el("span", "uptime-cov", `· ${Math.round(cov)}% covered`));
+  body.appendChild(head);
+  const n = 48;
+  const bar = el("div", "uptime-bar");
+  const parts = uptime_slices(values, n);
+  for (let i = parts.length; i < n; i++) bar.appendChild(el("span", "none"));   // a young history fills from the right
+  for (const v of parts) bar.appendChild(el("span", uptime_class(v)));
+  body.appendChild(bar);
+}
+
+// Charts in a card's panel: its numbers that have a history, and a host's agent sensors (charts),
+// over 1 hour, 6 hours, 24 hours, 7 days (15-minute points), 30 days or a year (2-hour points)
+// ---------------------------------------------------------------------------------------------
+
+const RANGES = [["1h", 3600], ["6h", 6 * 3600], ["24h", 86400], ["7d", 7 * 86400], ["30d", 30 * 86400], ["1y", 365 * 86400]];
+let chartRange = "6h";
+let LONG_HIST = null, longAt = 0;
+let YEAR_HIST = null, yearAt = 0;
+
+/** The year's series (2-hour points, /api/history?year), for 30d and 1y, like load_long. */
+function load_year() {
+  if (Date.now() - yearAt < 1800000) return;
+  yearAt = Date.now();
+  fetch("/api/history?year").then((r) => r.json()).then((d) => { YEAR_HIST = d; if (panelCard) fill_panel(); })
+    .catch(() => { yearAt = 0; });
+}
+
+/** The long series (15-minute points, /api/history?long), asked when a 24h/7d chart is shown and
+    at most every 5 minutes after that; the panel redraws itself when it arrives. */
+function load_long() {
+  if (Date.now() - longAt < 300000) return;
+  longAt = Date.now();
+  fetch("/api/history?long").then((r) => r.json()).then((d) => { LONG_HIST = d; if (panelCard) fill_panel(); })
+    .catch(() => { longAt = 0; });
+}
+
+/** What a panel charts: the card's numbers with a history, then its agent's sensors that are not
+    one of those already (by name: "CPU" from Proxmox and "CPU" from the agent are the same) and
+    that the agent sends at all. */
+function chart_specs(c) {
+  const kept = (path) => CFG.trends && CFG.trends.includes(path);
+  const specs = (c.metrics || []).filter(([path]) => kept(path));
+  const names = new Set(specs.map(([, label]) => label.toLowerCase()));
+  for (const [path, label, fmt] of c.charts || []) {
+    if (!kept(path) || names.has(label.toLowerCase()) || specs.some(([p]) => p === path)) continue;
+    const any = (src) => (src && src[path] || []).some((v) => typeof v === "number");
+    if (!any(HIST) && !any(LONG_HIST && LONG_HIST.series) && typeof get(path) !== "number") continue;
+    names.add(label.toLowerCase());
+    specs.push([path, label, fmt]);
+  }
+  return specs;
+}
+
+function panel_charts(body, c) {
+  const specs = chart_specs(c);
+  if (!specs.length) return;
+  const head = el("div", "chart-head");
+  head.appendChild(el("h3", null, "history"));
+  for (const [name] of RANGES) {
+    const b = el("button", "range" + (name === chartRange ? " on" : ""), name);
+    b.type = "button";
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); chartRange = name; fill_panel(); });
+    head.appendChild(b);
+  }
+  body.appendChild(head);
+  const seconds = RANGES.find(([n]) => n === chartRange)[1];
+  let source = HIST, step = 60;
+  if (seconds > 7 * 86400) {
+    load_year();
+    if (!YEAR_HIST) { body.appendChild(el("p", "panel-spec", "loading…")); return; }
+    source = YEAR_HIST.series; step = YEAR_HIST.step;
+  } else if (seconds > 6 * 3600) {
+    load_long();
+    if (!LONG_HIST) { body.appendChild(el("p", "panel-spec", "loading…")); return; }
+    source = LONG_HIST.series; step = LONG_HIST.step;
+  }
+  const grid = el("div", "charts");
+  for (const [path, label, fmt] of specs) {
+    const series = (source[path] || []).slice(-Math.round(seconds / step));
+    grid.appendChild(chart(label, series, fmt, seconds));
+  }
+  body.appendChild(grid);
+}
+
+/** One chart: the line, its lowest and highest value, the latest, and how far back it goes. */
+function chart(label, series, fmt, seconds) {
+  const box = el("div", "chart");
+  const nums = series.filter((v) => typeof v === "number");
+  const top = el("div", "chart-top");
+  top.append(el("span", "lbl", label), el("span", "now", nums.length ? format(nums[nums.length - 1], fmt) : "—"));
+  box.appendChild(top);
+  if (nums.length < 2) { box.appendChild(el("div", "chart-empty", "not enough history yet")); return box; }
+  let lo = Math.min(...nums), hi = Math.max(...nums);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const W = 300, H = 60, n = Math.max(1, series.length - 1);
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  // a gap in the data (the server was down) breaks the line instead of joining across it
+  const runs = [[]];
+  series.forEach((v, i) => {
+    if (typeof v !== "number") { if (runs[runs.length - 1].length) runs.push([]); return; }
+    runs[runs.length - 1].push(`${(W * i / n).toFixed(1)},${(H - 2 - (H - 4) * (v - lo) / (hi - lo)).toFixed(1)}`);
+  });
+  for (const r of runs) {
+    if (r.length < 2) continue;
+    const line = document.createElementNS(SVG, "polyline");
+    line.setAttribute("points", r.join(" "));
+    svg.appendChild(line);
+  }
+  box.appendChild(svg);
+  const foot = el("div", "chart-foot");
+  const back = seconds >= 86400 ? `${Math.round(seconds / 86400)}d ago` : `${Math.round(seconds / 3600)}h ago`;
+  foot.append(el("span", null, back), el("span", null, `${format(lo, fmt)} – ${format(hi, fmt)}`), el("span", null, "now"));
+  box.appendChild(foot);
+  return box;
+}
+
+/** The action buttons, at the bottom of the panel. One tap on the card gets you here. */
+function render_actions(c) {
+  const bar = $("#panel-actions");
+  bar.textContent = "";
+  // the buttons are the admin's: a display that is not signed in only shows (account.js)
+  const useful = may_act() ? useful_actions(c) : [];
+  // the service's own page: only in the list view, where leaving the page is what you want
+  const link = LIST_VIEW && c.url;
+  const maint = may_act() && CFG.maintenance_buttons && c.check;
+  // signed in but only showing (the PIN's 2 minutes): one UNLOCK where the buttons would be
+  const unlock = locked() && (useful_actions(c).length || (CFG.maintenance_buttons && c.check));
+  if (!useful.length && !link && !maint && !unlock) { bar.hidden = true; return; }
+  bar.hidden = false;
+  if (unlock) {
+    const b = el("button", "unlock", "🔒 UNLOCK");
+    b.type = "button";
+    b.addEventListener("click", () => lock_unlock());
+    bar.appendChild(b);
+  }
+  if (link) {
+    const a = el("a", "open", "OPEN ↗");
+    a.href = c.url; a.target = "_blank"; a.rel = "noopener";
+    bar.appendChild(a);
+  }
+  const button = (a) => {
+    const b = el("button", action_danger(a) ? "danger" : "", action_label(a));
+    b.type = "button";
+    b.addEventListener("click", () => ask_confirmation(c, a));
+    bar.appendChild(b);
+  };
+  // what brings something up, maintenance, then after a thin line (in red) what takes it down
+  useful.filter((a) => !action_danger(a)).forEach(button);
+  if (maint) {
+    const b = el("button", "maint", maintenance_until(c) ? "MAINTENANCE ✓" : "MAINTENANCE");
+    b.type = "button";
+    b.addEventListener("click", () => ask_maintenance(c));
+    bar.appendChild(b);
+  }
+  const power = useful.filter(action_danger);
+  if (power.length && bar.children.length) bar.appendChild(el("span", "power-sep"));
+  power.forEach(button);
+}
+
+/** One `{name, value, bad}` item (or `{text, label}`) as a panel row. */
+function detail_row(d) {
+  return [String(d.name ?? d.text ?? ""), String(d.value ?? d.label ?? (d.t ? when(d.t) : "")), d.bad === true];
+}
+
+/** A row's time (Unix seconds): "14:05" today, "7 Oct" before. */
+function when(ts) {
+  const d = new Date(ts * 1000);
+  if (d.toDateString() === new Date().toDateString()) return short_time(ts);
+  return d.getDate() + " " + MONTHS[d.getMonth()];
+}
+
+function short_time(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------------------------
+
+function bind_gestures() {
+  let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  const finish = (x, y) => {
+    const dx = x - x0, dy = y - y0;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (!$("#panel").hidden) { close_panel(); return; }
+    if (!LIST_VIEW) go(page + (dx < 0 ? 1 : -1));
+  };
+  document.addEventListener("pointerdown", (e) => { x0 = x1 = e.clientX; y0 = y1 = e.clientY; touched(); }, { passive: true });
+  document.addEventListener("pointermove", (e) => { x1 = e.clientX; y1 = e.clientY; }, { passive: true });
+  document.addEventListener("pointerup", (e) => finish(e.clientX, e.clientY), { passive: true });
+  // The phone may cancel the gesture (not deliver it as pointerup) when it takes it for its own —
+  // the browser's back/forward swipe, for example. Without this, a touch from the edge is lost
+  // silently: the page does not change, although the finger really moved 60+ px.
+  document.addEventListener("pointercancel", () => finish(x1, y1), { passive: true });
+
+  $("#panel-x").addEventListener("click", close_panel);
+  document.addEventListener("visibilitychange", () => {
+    document.body.classList.toggle("page-hidden", document.hidden);
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The first-run tour: once per screen (its browser's storage), never in screenshots or the list
+// ---------------------------------------------------------------------------------------------
+
+const TOUR = [
+  "Tap any card: its details open. Signed in (top right), its buttons (wake, start, maintenance) are at the bottom.",
+  "Pages change every 20 seconds. A touch holds the page for a minute; tap a page's name to go there.",
+  "When something breaks, the screen goes to it by itself and the card pulses red for a few minutes.",
+  "An orange mark by the clock means a service does not answer: tap it. Every detail is at /status.",
+];
+const TOUR_KEY = "labhud-tour-done";
+
+function start_tour() {
+  const forced = location.search.includes("tour");
+  if (LIST_VIEW || (location.search.includes("static") && !forced)) return;
+  try { if (!forced && localStorage.getItem(TOUR_KEY)) return; } catch (e) { return; }   // no storage: no tour
+  const box = $("#tour");
+  let i = 0;
+  const show = () => {
+    put($(".text", box), TOUR[i]);
+    put($(".steps", box), `${i + 1} of ${TOUR.length}`);
+    put($(".next", box), i === TOUR.length - 1 ? "Got it" : "Next");
+  };
+  const done = () => {
+    box.hidden = true;
+    try { localStorage.setItem(TOUR_KEY, "1"); } catch (e) { /* ignore */ }
+    touched();
+  };
+  $(".next", box).addEventListener("click", (ev) => { ev.stopPropagation(); if (++i >= TOUR.length) done(); else show(); });
+  $(".skip", box).addEventListener("click", (ev) => { ev.stopPropagation(); done(); });
+  show();
+  box.hidden = false;
+  touched();
+}
+
+function from_address() {
+  const m = /^#([a-z]+)/.exec(location.hash || "");
+  if (!m) return;
+  const i = CFG.pages.findIndex((x) => x.id === m[1]);
+  if (i >= 0) page = i;
+}
+
+fetch("/api/config").then((r) => r.json()).then((cfg) => {
+  CFG = cfg;
+  document.title = CFG.title || "LabHUD";
+  lock_state(CFG.lock);
+  put($("#weather .city"), CFG.city || "");
+  for (const items of Object.values(CFG.cards)) for (const c of items) CARD_BY_ID[c.id] = c;
+  CFG.pages.forEach((p, i) => {
+    for (const g of p.groups) for (const c of CFG.cards[g.id] || []) { PAGE_OF_CARD[c.id] = i; GROUP_OF_CARD[c.id] = g.id; }
+  });
+  apply_night();
+  from_address();
+  render_menu();
+  build_strip();
+  bind_gestures();
+  if (LIST_VIEW) { document.body.classList.add("view-list"); mount_list(); } else go(page);
+  start_stream();
+
+  render_clock();
+  tick(render_clock, 10000);
+  render_night();
+  tick(render_night, 10000);
+  if (!LIST_VIEW) {   // calm may be switched on from ⚙ at any time, so it is always watched
+    $("#calm").addEventListener("click", touched);
+    tick(render_calm, 10000);
+  }
+  if (CFG.trends && CFG.trends.length) {
+    load_history();
+    if (!location.search.includes("static")) tick(load_history, 60000);
+  }
+  // check screenshots: ?static&focus=<card id> shows a card as a new problem
+  const asked = new URLSearchParams(location.search).get("focus");
+  if (asked && location.search.includes("static")) setTimeout(() => focus_on(asked), 300);
+  check_health();
+  if (!location.search.includes("static")) tick(check_health, 60000);
+  $("#health").addEventListener("click", open_health_panel);
+  start_tour();
+  $("#account").addEventListener("click", account_click);
+  render_account();
+  check_admin();
+  // a session signed out elsewhere (another screen's list, a new password) shows here too
+  if (!location.search.includes("static")) tick(check_admin, 300000);
+  $("#lock-btn").addEventListener("click", () => (locked() ? lock_unlock() : lock_close()));
+  for (const part of ["#clock .time", "#clock .date"]) $(part).addEventListener("click", open_today);
+  $("#weather").addEventListener("click", () => {
+    if (!get("weather.days")) return;
+    open_panel({ id: "_weather", name: "WEATHER" + (CFG.city ? " · " + CFG.city.toUpperCase() : ""), panel: "weather" });
+  });
+  $("#settings-x").addEventListener("click", close_settings);
+  // The rotation: checked every second against this screen's period and pages (⚙, settings.js).
+  if (!LIST_VIEW) tick(() => {
+    if (!S.rotate || Date.now() - turnedAt < S.period * 1000) return;
+    if (Date.now() < pausedUntil || overlay_open() || pad) return;
+    const pages = rotation_pages();
+    if (!pages.length) return;
+    go(pages.find((i) => i > page) ?? pages[0]);
+  }, 1000);
+});

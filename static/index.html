@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>LabHUD</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/settings.css">
+<!-- Installable: "Add to Home screen" opens it full screen (a browser installs a web app only over
+     HTTPS; over plain HTTP the same entry is a shortcut that opens in a tab). -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+</head>
+<body>
+  <!-- The top bar: the mark and the weather on the left, the pages in the middle, the clock on the
+       right. There is no submenu: all groups of a page sit on the same screen. The mark becomes the
+       full name at a desk; in portrait the name sits in the free middle of the first row. -->
+  <header id="topbar">
+    <div id="weather" class="empty"><span id="mark" aria-hidden="true"><img class="m" src="/brand/mark.svg" alt=""><img class="w" src="/brand/lockup.svg" alt=""></span><button id="search-btn" type="button" aria-label="Search (/)" data-icon="search" data-size="18"></button><span class="ic"></span><span class="t"></span><span class="city"></span></div>
+    <div id="brand" aria-hidden="true"><img src="/brand/lockup.svg" alt=""></div>
+    <nav id="menu" aria-label="Pages"></nav>
+    <div id="clock"><div id="tools"><button id="account" type="button" aria-haspopup="menu" aria-expanded="false"></button><button id="bell" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Notifications" data-icon="bell" data-size="18"><span class="badge" hidden></span></button><button id="lock-btn" type="button" hidden data-icon="lock" data-size="18"></button><button id="health" type="button" hidden></button></div><span class="time"></span><span class="date"></span></div>
+  </header>
+  <!-- The admin's menu under the corner (account.js): Settings, Sign out. -->
+  <div id="account-menu" role="menu" hidden></div>
+  <!-- The bell's list (bell.js): the alerts and what was pressed, followed until it happened. -->
+  <div id="bell-menu" hidden></div>
+  <!-- A short message at the bottom, gone after 4 s; nothing stays over the cards. -->
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+
+  <main id="content"></main>
+
+  <div id="strip"></div>
+
+  <!-- config.toml was edited and has problems: the screen keeps the last good version. -->
+  <div id="config-errors" hidden></div>
+
+  <!-- The detail panel. Opens on a short tap on any card; the actions
+       (WoL, start/stop) are at the bottom, as big buttons. -->
+  <div id="panel" hidden>
+    <div id="panel-bar"><span id="panel-title"></span><button id="panel-x" type="button">✕</button></div>
+    <div id="panel-body"></div>
+    <div id="panel-actions"></div>
+  </div>
+
+  <!-- ⚙ (settings.js), the admin's: this screen's look, and what LabHUD keeps for every screen. -->
+  <div id="settings" hidden>
+    <div id="settings-bar"><span>SETTINGS</span><button id="settings-x" type="button" aria-label="Close">✕</button></div>
+    <div id="settings-main">
+      <nav id="settings-tabs" role="tablist" aria-label="Settings"></nav>
+      <div id="settings-scroll"><div id="settings-body"></div></div>
+    </div>
+  </div>
+
+  <!-- Signing in as the admin (account.js). -->
+  <div id="signin" hidden><div class="box" role="dialog" aria-modal="true" aria-label="Sign in"></div></div>
+
+  <div id="confirm" hidden>
+    <div class="box"><p id="confirm-text"></p><div class="buttons"></div></div>
+  </div>
+
+  <!-- The first time a screen opens labhud: four short notes, then never again on that screen. -->
+  <div id="tour" hidden><div class="box"><p class="text"></p><div class="buttons">
+    <button type="button" class="skip">Skip</button><button type="button" class="next">Next</button></div>
+    <div class="steps"></div></div></div>
+
+  <!-- [calm]: nothing is red, so only the time and one word. A touch or a problem ends it. -->
+  <div id="calm" hidden><div class="box"><div class="time"></div><div class="date"></div>
+    <div class="state">ALL GOOD</div><div class="facts"></div><div class="extras"></div>
+    <img class="mark" src="/brand/mark-mono.svg" alt=""></div></div>
+
+  <!-- [night]: a black sheet over everything, see render_night. Touches go through it. -->
+  <div id="night-shade"></div>
+
+  <div id="stream-state" title="link to the aggregator"></div>
+<script src="/icons.js"></script>
+<script src="/account.js"></script>
+<script src="/settings/registry.js"></script>
+<script src="/settings.js"></script>
+<script src="/settings/look.js"></script>
+<script src="/settings/dashboard.js"></script>
+<script src="/settings/hosts.js"></script>
+<script src="/settings/containers.js"></script>
+<script src="/settings/integrations.js"></script>
+<script src="/settings/alerts.js"></script>
+<script src="/settings/notify.js"></script>
+<script src="/settings/security.js"></script>
+<script src="/settings/phones.js"></script>
+<script src="/settings/api.js"></script>
+<script src="/settings/system.js"></script>
+<script src="/advanced.js"></script>
+<script src="/pages.js"></script>
+<script src="/sources.js"></script>
+<script src="/alerts.js"></script>
+<script src="/bell.js"></script>
+<script src="/lock.js"></script>
+<script src="/search.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

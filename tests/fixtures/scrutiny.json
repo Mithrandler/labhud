@@ -1,0 +1,47 @@
+{
+ "/api/summary": {
+  "success": true,
+  "data": {
+   "summary": {
+    "0x5000c500a1b2c3d4": {
+     "device": {
+      "wwn": "0x5000c500a1b2c3d4",
+      "device_name": "sda",
+      "host_id": "nas",
+      "model_name": "ST8000VN004",
+      "capacity": 8001563222016,
+      "device_status": 0
+     },
+     "smart": {
+      "temp": 34,
+      "power_on_hours": 21000
+     }
+    },
+    "0x5000c500e5f6a7b8": {
+     "device": {
+      "wwn": "0x5000c500e5f6a7b8",
+      "device_name": "sdb",
+      "host_id": "nas",
+      "model_name": "ST8000VN004",
+      "capacity": 8001563222016,
+      "device_status": 2
+     },
+     "smart": {
+      "temp": 41
+     }
+    },
+    "0x0000000000000001": {
+     "device": {
+      "wwn": "0x0000000000000001",
+      "device_name": "nvme0",
+      "model_name": "",
+      "device_status": 1
+     },
+     "smart": {
+      "temp": 0
+     }
+    }
+   }
+  }
+ }
+}

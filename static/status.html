@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>LabHUD status</title>
+<!-- How each source is doing: for setting labhud up and for finding why a card stays empty.
+     Its own page, not the wall's: this one scrolls, and it is read on a computer or a phone in
+     the hand. It shows states and error messages only, never data or the settings' values. -->
+<style>
+  @font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url("/fonts/roboto-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url("/fonts/roboto-latin-700-normal.woff2") format("woff2"); }
+  :root {
+    /* design:colors (design/tokens.json, written by design/build.py: edit there) */
+    --bg: #000000;
+    --card: #121214;
+    --block: #1c1c1f;
+    --line: #2a2a2e;
+    --border: #3a3d44;
+    --text: #ffffff;
+    --sub: #b4b8bf;
+    --muted: #7d828a;
+    --accent: #8ab4f8;
+    --title: #7cc4ff;
+    --on-title: #000000;
+    --green: #34c759;
+    --warn: #ff9f0a;
+    --red: #ff453a;
+    --red-bg: #3a0d1c;
+    --red-text: #ffd9e2;
+    --info-bg: #0e1824;
+    /* design:end */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 "Roboto", system-ui, sans-serif; padding: 12px 16px 24px; }
+  h1 { font-size: 18px; color: var(--title); letter-spacing: .5px; }
+  h1 a { color: inherit; text-decoration: none; }
+  #general { color: var(--sub); margin: 4px 0 14px; }
+  #general b { color: var(--text); font-weight: 700; }
+  .src { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; max-width: 900px; }
+  .src .top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .src .name { font-weight: 700; min-width: 90px; }
+  .src .state { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+  .src .facts { color: var(--muted); font-size: 12px; }
+  .src .why { margin-top: 3px; color: var(--sub); font-size: 12px; overflow-wrap: anywhere; }
+  .ok .state { color: var(--green); }
+  .failing .state { color: var(--warn); }
+  .alarm .state, .alarm .why { color: var(--red); }
+  .alarm { border-color: var(--red); }
+  .host_down .state, .scheduled .state, .not_configured .state, .waiting .state { color: var(--muted); }
+  #error { color: var(--red); margin-bottom: 10px; }
+  .risky { border-color: var(--warn); }
+  .src .why.key { color: var(--warn); }
+  #checklist { max-width: 900px; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  #checklist h2 { font-size: 13px; color: var(--sub); margin-bottom: 4px; }
+  #checklist li { list-style: none; display: flex; gap: 8px; align-items: baseline; }
+  #checklist .mark { width: 1.2em; font-weight: 700; }
+  #checklist .yes .mark { color: var(--green); }
+  #checklist .no .mark { color: var(--warn); }
+  #checklist .na { color: var(--muted); }
+  #checklist .how { color: var(--muted); font-size: 12px; }
+  #adoption { max-width: 900px; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  #adoption h2 { font-size: 13px; color: var(--sub); margin-bottom: 4px; }
+  #adoption p { color: var(--muted); font-size: 12px; margin: 4px 0; }
+  #adoption pre { color: var(--sub); font-size: 12px; white-space: pre-wrap; background: #000; border-radius: 6px; padding: 6px 8px; user-select: all; }
+  #config { color: var(--red-text); background: var(--red-bg); border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; max-width: 900px; white-space: pre-line; }
+</style>
+</head>
+<body>
+  <h1><a href="/">LabHUD</a> status</h1>
+  <p id="general"></p>
+  <p id="error" hidden></p>
+  <p id="config" hidden></p>
+  <div id="checklist" hidden><h2>Setup</h2><ul></ul></div>
+  <div id="adoption" hidden><h2>Proxmox guests</h2><div></div></div>
+  <div id="sources"></div>
+<script src="/status.js"></script>
+</body>
+</html>
