@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-21
+
 ### Added
 
 - `GET /api/v1/history` (and `/api/history`) take `?keys=a&keys=b`: only those series, so a card
@@ -673,5 +675,6 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Mithrandler/labhud/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Mithrandler/labhud/releases/tag/v0.1.0
