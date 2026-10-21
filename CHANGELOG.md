@@ -8,6 +8,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Live log and terminal** (agent 0.1.1+): **LIVE** in a container's panel follows its log, **SHELL** opens a
+  terminal (xterm.js, vendored) in it. The terminal is off by default in three places (the agent's
+  `LABHUD_AGENT_TERMINAL=on`, the *Terminal* tick, the container's tick), only for the admin on a page or phone
+  with a typed PIN, 15 minutes at most, 3 idle, nothing stored, every open and close in the audit log.
+  `POST /api/setup/stream-open|read|input|resize|close` (the page polls; each poll is held up to 20 s).
 - **Stacks (docker compose)** (agent 0.1.1+, off unless the agent has `LABHUD_AGENT_STACKS`): ⚙ > Containers lists an agent's
   stacks with EDIT / REDEPLOY / RESTART / DOWN and a *New stack* editor (compose file + `.env`); the files travel
   sealed, a `.env`'s values are never read back, every action is audited. `labhud agent stack …`.

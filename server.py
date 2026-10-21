@@ -19,6 +19,7 @@ import hmac
 import iconcache
 import json
 import re
+import base64
 import os
 import queue
 import secrets
@@ -1669,7 +1670,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|remove|update|auto|autoupdate|window|hook|unhook)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|inventory|stacks|stack-run|notes)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|inventory|stacks|stack-run|stream-open|stream-read|stream-input|stream-resize|stream-close|notes)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all)", self.path)
@@ -2111,6 +2112,61 @@ class Handler(BaseHTTPRequestHandler):
         print(f"agent {name}: {what} from {self.client_address[0]}", flush=True)
         self._json({"ok": True})
 
+    def _may_terminal(self):
+        """A shell in a container is root on the host in all but name: only a page or a phone signed
+        in as the admin, with a PIN set and typed (no API token, not the command line)."""
+        return (not self._cli() and not self._token_may("admin") and LOCK.is_on()
+                and LOCK.valid(self.headers.get("X-Labhud-Unlock")))
+
+    def _live_stream(self, op, body, who):
+        """Live logs and the terminal (agents.stream_*): open {agent, kind: logs|shell, target, cols,
+        rows} -> {id}; read {id, after} -> {data (base64), next, end}, held for up to 20 s until there
+        is something; input {id, data}; resize {id, cols, rows}; close {id}. Only the admin; the shell
+        also needs the PIN (_may_terminal). What goes through is never logged: the audit line says
+        who, where, how long and how many bytes."""
+        if op == "stream-open":
+            kind, target = str(body.get("kind") or ""), str(body.get("target") or "")
+            if kind == "shell" and not self._may_terminal():
+                audit.record(self, "terminal", f"refused {body.get('agent')}/{target}", False)
+                return self._json({"ok": False, "error": "the terminal needs the admin signed in on a page or phone, with a PIN"}, 403)
+            if DEMO and str(body.get("agent")) == "docker":
+                return self._json({"ok": False, "error": "no live streams in the demo"}, 502)
+            aid, a = agents.by_name(str(body.get("agent") or "")) if agents.enabled() else (None, None)
+            if not a:
+                return self._json({"ok": False, "error": "no such agent"}, 404)
+            ok, error, sid = agents.stream_open(aid, kind, target, body.get("cols"), body.get("rows"), who)
+            audit.record(self, "terminal" if kind == "shell" else "live-log", f"open {a['name']}/{target}", ok)
+            print(f"setup: {kind} on {a['name']}/{target} opened by {who}: {'ok' if ok else error}", flush=True)
+            return self._json({"ok": True, "id": sid} if ok else {"ok": False, "error": error}, 200 if ok else 502)
+        st = agents.stream_get(str(body.get("id") or ""))
+        if not st:
+            return self._json({"ok": False, "error": "no such stream"}, 404)
+        if st.kind == "shell" and not self._may_terminal():
+            return self._json({"ok": False, "error": "the PIN is needed again"}, 403)
+        if op == "stream-read":
+            after = body.get("after") if isinstance(body.get("after"), int) and body["after"] >= 0 else 0
+            data, nxt, end = st.read(after, 20)
+            return self._json({"ok": True, "data": base64.b64encode(data).decode(), "next": nxt, "end": end})
+        if op == "stream-input":
+            try:
+                raw = base64.b64decode(str(body.get("data") or ""), validate=True)
+            except ValueError:
+                return self._json({"ok": False, "error": "data is base64"}, 400)
+            if st.kind != "shell" or not agents.stream_input(st, raw):
+                return self._json({"ok": False, "error": "not taken"}, 409)
+            return self._json({"ok": True})
+        if op == "stream-resize":
+            cols, rows = body.get("cols"), body.get("rows")
+            if st.kind != "shell" or not all(isinstance(v, int) and not isinstance(v, bool) for v in (cols, rows)) \
+                    or not (1 <= cols <= 500 and 1 <= rows <= 200):
+                return self._json({"ok": False, "error": "cols and rows"}, 400)
+            agents.stream_send(st, {"type": "resize", "cols": cols, "rows": rows})
+            return self._json({"ok": True})
+        sent, secs = agents.stream_close(st)   # stream-close
+        a = agents.get(st.aid) or {}
+        audit.record(self, "terminal" if st.kind == "shell" else "live-log", f"close {a.get('name', '?')}/{st.target} {secs}s {sent}B", True)
+        return self._json({"ok": True})
+
     def _setup(self, op):
         """⚙ > Setup and ⚙ > Advanced (managed.py): the config labhud keeps in LABHUD_DATA and the
         keys typed into the page. Only for whoever may manage; values of keys never go out."""
@@ -2156,6 +2212,8 @@ class Handler(BaseHTTPRequestHandler):
                 ok, error, output = agents.read(aid, "docker", op, target)
                 print(f"setup: {op} of {target} on {a['name']} from {who}: {'ok' if ok else error}", flush=True)
                 return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error}, 200 if ok else 502)
+            if op.startswith("stream-"):
+                return self._live_stream(op, body, who)
             if op in ("stacks", "stack-run"):   # compose stacks kept by an agent with `stacks` ticked
                 aid, a = agents.by_name(str(body.get("agent") or "")) if agents.enabled() else (None, None)
                 if not a:

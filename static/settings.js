@@ -685,6 +685,7 @@ const CAP_TEXT = {
   pve: ["Proxmox", "start, shut down, reboot guests"],
   ptero: ["Game servers", "start, stop, restart (Pterodactyl)"],
   scan: ["Image scan", "CVEs in the ticked containers' images (trivy or grype on the host)"],
+  terminal: ["Terminal", "a shell in the ticked containers, for the admin with the PIN (the agent needs LABHUD_AGENT_TERMINAL=on)"],
   stacks: ["Stacks", "deploy, redeploy, restart and take down docker compose stacks (docker compose on the host)"],
 };
 

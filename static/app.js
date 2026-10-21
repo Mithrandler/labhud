@@ -2134,7 +2134,7 @@ function agent_containers(body, c) {
     if (x.scan && (x.scan.critical || x.scan.high)) v.appendChild(el("span", "badge" + (x.scan.critical ? " bad" : ""), scan_text(x.scan)));
     r.appendChild(v);
     const box = el("span", "row-actions");
-    if (signed_in() && x.card.actions.length) box.append(details_button(c.agent, x.name), logs_button(c.agent, x.name));
+    if (signed_in() && x.card.actions.length) box.append(details_button(c.agent, x.name), logs_button(c.agent, x.name), ...stream_buttons(c.agent, x.name));
     // while it is updated the row keeps its shape: the same buttons, greyed, UPDATE as UPDATING…
     const key = `${c.agent}/${x.name}`;
     if (!x.updating) ROW_ACTS[key] = x.actions;
@@ -2376,7 +2376,7 @@ function fill_panel() {
       const r = el("div", "row");
       r.appendChild(el("span", "n", "logs"));
       const box = el("span", "row-actions");
-      box.append(details_button(c.agent, name), logs_button(c.agent, name));
+      box.append(details_button(c.agent, name), logs_button(c.agent, name), ...stream_buttons(c.agent, name));
       r.appendChild(box);
       l.appendChild(r);
       details_box(l, c.agent, name);

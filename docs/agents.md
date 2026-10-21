@@ -109,6 +109,14 @@ tooling, and ⚙ only shows which version each agent runs.
   networks* and *Anonymous volumes* (a volume with a name is never removed). Each asks first, and the
   timeline says what it freed. From a terminal: `labhud agent inventory <agent>` and
   `labhud agent prune <agent> [images|dangling|networks|volumes]`. Needs agent 0.1.1 or later.
+- **Live log and terminal**: in a container's panel, **LIVE** follows its log as it is written (read only,
+  closes after 10 minutes), and **SHELL** opens a terminal in it. The terminal is off in three places: the
+  agent must be started with `LABHUD_AGENT_TERMINAL=on`, *Terminal* must be ticked for the agent, and the
+  container ticked under it (a tick of its own). It opens only for the admin signed in on a page or a phone
+  **with a PIN set and typed** (no API token, not the `labhud` command), closes after 15 minutes or 3
+  without a key, and nothing typed or printed is stored: the audit log says who opened which container
+  when, for how long and how many bytes. A shell in a container can do what that container can: if it has
+  the Docker socket or a host mount, that is the host.
 - **Stacks (docker compose)**: set `LABHUD_AGENT_STACKS=/var/lib/labhud-agent/stacks` on an agent that runs
   as a service (the container image has no docker CLI) on a host with `docker compose`, tick *Stacks*, and
   ⚙ > Containers > *<agent> · stacks* lists the stacks it keeps, with **EDIT**, **REDEPLOY**, **RESTART**,

@@ -14,6 +14,7 @@ state, the list), on_event(text, bad, event=None) for the timeline (event: notif
 the kinds in EVENT_OF), and tls_fp, its certificate's SHA-256.
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -44,21 +45,22 @@ MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this mu
 
 VERBS = {
     "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect",
-               "inventory", "prune-dangling", "prune-networks", "prune-volumes"),
+               "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow"),
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
     "pve": ("start", "shutdown", "reboot"),
     "ptero": ("start", "stop", "restart"),
     "stacks": ("deploy", "redeploy", "restart", "down", "show"),
+    "terminal": ("shell",),
 }
 # sensors and scan only report: scan (agent with trivy or grype) reads the ticked containers' images
 CAPS = ("sensors",) + tuple(VERBS) + ("scan",)
 # what an agent may say it understands beyond v1's first messages (hello.features)
 FEATURES = ("registry-auth",)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes"),
-         "stacks": VERBS["stacks"]}   # compose answers with its output: only ⚙ > Containers > Stacks asks
+READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow"),
+         "stacks": VERBS["stacks"], "terminal": VERBS["terminal"]}   # compose answers with its output: only ⚙ > Containers > Stacks asks
 # the host's Docker (its images, volumes and networks), ticked as this target, which is no container
 # and takes none of a container's verbs, as the host verbs take no container (the agent checks the same)
 PRUNE_TARGET = "images"
@@ -84,6 +86,7 @@ TARGET = {
     "pve": re.compile(r"[1-9][0-9]{2,8}"),
     "ptero": re.compile(r"[0-9a-f]{8}"),
     "stacks": re.compile(r"[a-z0-9][a-z0-9_-]{0,63}"),
+    "terminal": re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}"),
 }
 MAX_TARGETS = 200
 
@@ -380,6 +383,8 @@ def allowed(aid, cap, verb, target):
     a = get(aid)
     if cap == "docker" and (verb in HOST_VERBS) != (target == PRUNE_TARGET):
         return False
+    if cap == "terminal" and target == PRUNE_TARGET:
+        return False
     return bool(a and cap in VERBS and verb in VERBS[cap] and cap in a.get("caps", [])
                 and target in a.get("targets", {}).get(cap, []))
 
@@ -414,7 +419,8 @@ def listing():
                  "systemd": sorted(st.get("units") or {}),
                  "pve": sorted(st.get("guests") or {}, key=lambda v: int(v) if v.isdigit() else 0),
                  "ptero": sorted(st.get("servers") or {}), "wol": sorted(st.get("neighbours") or {}),
-                 "host": ["host"] if "host" in a.get("found", []) else [], "stacks": sorted(stacks_of(aid))}
+                 "host": ["host"] if "host" in a.get("found", []) else [], "stacks": sorted(stacks_of(aid)),
+                 "terminal": _containers(a, sorted(st.get("containers") or {}))}
         labels = {"docker": {PRUNE_TARGET: "Unused images"},
                   "pve": {k: (v or {}).get("name") for k, v in (st.get("guests") or {}).items()},
                   "ptero": {k: (v or {}).get("name") for k, v in (st.get("servers") or {}).items()},
@@ -441,7 +447,8 @@ def snapshot():
         if st and aid not in _live:   # its last report, kept: shown dimmed, "not updated since"
             st["stale"] = "the agent is offline"
         out[a["name"]] = dict(st, id=aid, online=aid in _live, seen=int(_seen.get(aid) or a.get("seen", 0)), version=a.get("version", ""),
-                              caps=a.get("caps", []), buttons=buttons(aid, a), history=history.get(aid, {}))
+                              caps=a.get("caps", []), buttons=buttons(aid, a), history=history.get(aid, {}),
+                              terminal=a.get("targets", {}).get("terminal", []) if "terminal" in a.get("caps", []) else [])
     return out
 
 
@@ -693,6 +700,151 @@ def stack(aid, verb, name, compose=None, env=None):
     return s.command("stacks", verb, name, wait)
 
 
+# ---------------------------------------------------------------------------------------------
+# Live streams: a ticked container's log being followed, a shell in one (the terminal capability).
+# The output is handed on once and forgotten: it is never logged, never written, and what the
+# browser has not fetched is dropped past STREAM_BUFFER. The agent has its own limits (life, idle);
+# these are labhud's, for an agent that does not keep them or a page that went away.
+# ---------------------------------------------------------------------------------------------
+
+STREAM_KINDS = {"logs": ("docker", "follow", 600), "shell": ("terminal", "shell", 900)}   # kind -> cap, verb, life (s)
+STREAMS_PER_AGENT = 2
+STREAM_BUFFER = 256 << 10
+STREAM_IDLE_POLL = 60        # s: nobody fetching, the page is gone
+STREAM_IDLE_INPUT = 180      # s: a shell nobody types in
+STREAM_GRACE = 30            # s after the agent's own life, before labhud ends it
+STREAM_INPUT_MAX = 16 << 10
+_streams = {}                # id -> Stream
+_streams_lock = threading.Lock()
+
+
+class Stream:
+    def __init__(self, sid, aid, kind, target, session, who):
+        now = time.monotonic()
+        self.id, self.aid, self.kind, self.target, self.session, self.who = sid, aid, kind, target, session, who
+        self.opened, self.last_poll, self.last_input = now, now, now
+        self.data, self.base = bytearray(), 0     # what is not fetched yet, and the offset of its first byte
+        self.sent = 0                             # bytes that went through, for the audit line only
+        self.end = None                           # why it ended, once it did
+        self.cond = threading.Condition()
+
+    def put(self, raw):
+        with self.cond:
+            self.sent += len(raw)
+            self.data += raw
+            if len(self.data) > STREAM_BUFFER:     # the page is too slow: the oldest goes
+                drop = len(self.data) - STREAM_BUFFER
+                del self.data[:drop]
+                self.base += drop
+            self.cond.notify_all()
+
+    def finish(self, reason):
+        with self.cond:
+            if self.end is None:
+                self.end = str(reason)[:200] or "ended"
+            self.cond.notify_all()
+
+    def read(self, after, wait):
+        """(bytes from `after` on, the offset after them, why it ended or None): waits up to `wait`
+        s for something. What the caller has (`after`) is forgotten."""
+        deadline = time.monotonic() + wait
+        with self.cond:
+            self.last_poll = time.monotonic()
+            while True:
+                after = max(after, self.base)
+                skip = after - self.base
+                if skip:
+                    del self.data[:skip]
+                    self.base = after
+                if self.data or self.end is not None:
+                    out = bytes(self.data)
+                    return out, self.base + len(out), self.end if not out else None
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return b"", self.base, None
+                self.cond.wait(left)
+
+
+def stream_open(aid, kind, target, cols=80, rows=24, who=""):
+    """(ok, error, id): opens a stream on a ticked target. The agent checks the allow list again."""
+    cap, verb, _ = STREAM_KINDS.get(kind, (None, None, 0))
+    a = get(aid)
+    if not cap or not a:
+        return False, "no such stream", ""
+    if not isinstance(target, str) or not TARGET[cap].fullmatch(target) or not allowed(aid, cap, verb, target):
+        return False, "not allowed", ""
+    s = _live.get(aid)
+    if not s:
+        return False, "the agent is offline", ""
+    with _streams_lock:
+        if sum(1 for x in _streams.values() if x.aid == aid and x.end is None) >= STREAMS_PER_AGENT:
+            return False, "too many open on this agent", ""
+        sid = secrets.token_hex(8)
+        st = _streams[sid] = Stream(sid, aid, kind, target, s, who)
+    s.streams[sid] = st
+    msg = {"type": "open", "cmd": sid, "cap": cap, "verb": verb, "target": target}
+    if kind == "shell":
+        msg.update(cols=min(max(int(cols or 80), 20), 500), rows=min(max(int(rows or 24), 5), 200))
+    try:
+        s.send(msg)
+    except websock.Closed:
+        _forget_stream(st)
+        return False, "the agent is offline", ""
+    return True, "", sid
+
+
+def _forget_stream(st):
+    st.finish("closed")
+    st.session.streams.pop(st.id, None)
+    with _streams_lock:
+        _streams.pop(st.id, None)
+
+
+def stream_get(sid):
+    return _streams.get(sid) if isinstance(sid, str) else None
+
+
+def stream_send(st, msg):
+    """input / resize / close to the agent; False when it is gone."""
+    if st.end is not None and msg.get("type") != "close":
+        return False
+    try:
+        st.session.send(dict(msg, cmd=st.id))
+        return True
+    except websock.Closed:
+        st.finish("the agent went offline")
+        return False
+
+
+def stream_input(st, raw):
+    if not isinstance(raw, (bytes, bytearray)) or len(raw) > STREAM_INPUT_MAX:
+        return False
+    st.last_input = time.monotonic()
+    return stream_send(st, {"type": "input", "data": base64.b64encode(raw).decode()})
+
+
+def stream_close(st):
+    """Closes it and forgets it; (bytes that went through, seconds it lasted) for the audit line."""
+    stream_send(st, {"type": "close"})
+    result = (st.sent, int(time.monotonic() - st.opened))
+    _forget_stream(st)
+    return result
+
+
+def reap_streams():
+    """Called every few seconds: a stream whose life is up, whose page went away, or whose shell
+    nobody types in is closed, and a finished one nobody fetches any more is forgotten."""
+    now = time.monotonic()
+    for st in list(_streams.values()):
+        life = STREAM_KINDS[st.kind][2] + STREAM_GRACE
+        if st.end is not None:
+            if now - st.last_poll > STREAM_IDLE_POLL:
+                _forget_stream(st)
+        elif now - st.opened > life or now - st.last_poll > STREAM_IDLE_POLL or \
+                (st.kind == "shell" and now - st.last_input > STREAM_IDLE_INPUT + STREAM_GRACE):
+            stream_close(st)
+
+
 def clean(aid, what="images"):
     """(ok, error, output): one cleaning of the host's Docker (CLEAN: images, dangling, networks,
     volumes); the inventory is asked again after it."""
@@ -806,6 +958,7 @@ class Session:
         self.last_heard = time.monotonic()
         self._out = threading.Lock()
         self._waiting = {}     # cmd id -> [Event, (ok, error)]
+        self.streams = {}      # stream id -> Stream (open on this connection)
         self._events = []
 
     def send(self, message):
@@ -900,6 +1053,8 @@ class Session:
             for slot in list(self._waiting.values()):
                 slot[1] = (False, "the agent went offline", "")
                 slot[0].set()
+            for st in list(self.streams.values()):
+                st.finish("the agent went offline")
             if self.aid:
                 with _lock:
                     gone = _live.get(self.aid) is self
@@ -976,6 +1131,18 @@ class Session:
                 out = msg.get("output") if isinstance(msg.get("output"), str) else ""
                 slot[1] = (True, "", out[-MAX_OUTPUT:]) if msg.get("ok") is True else (False, err, "")
                 slot[0].set()
+        elif kind == "chunk":
+            st = self.streams.get(msg.get("cmd"))
+            data = msg.get("data")
+            if st and isinstance(data, str) and len(data) <= 16 << 10:
+                try:
+                    st.put(base64.b64decode(data, validate=True))
+                except ValueError:
+                    pass
+        elif kind == "end":
+            st = self.streams.get(msg.get("cmd"))
+            if st:
+                st.finish(msg.get("reason") if isinstance(msg.get("reason"), str) else "ended")
         elif kind == "event":
             self._events = [t for t in self._events if now - t < 60]
             if len(self._events) < EVENTS_PER_MINUTE and isinstance(msg.get("text"), str):
@@ -990,6 +1157,7 @@ class Session:
 def pinger(stop):
     """One thread for every connection: a ping each PING_EVERY s, which also finds dead ones."""
     while not stop.wait(PING_EVERY):
+        reap_streams()
         for s in list(_live.values()):
             try:
                 s.ws.ping()

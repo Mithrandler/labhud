@@ -761,3 +761,11 @@ body.density-airy .card .row { padding: 3px 8px; line-height: 1.4; }
 .w-cal-day { padding: 2px 0; border-radius: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
 .w-cal-day.today { background: var(--accent); color: var(--bg); font-weight: 700; }
 .w-frame { display: block; width: 100%; border: 0; border-radius: 6px; background: var(--bg); }
+.stream-window { position: fixed; inset: 4vh 4vw; z-index: 60; display: flex; flex-direction: column; background: #000; color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+.stream-head { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.stream-title { font-weight: 700; flex: 1; }
+.stream-body { flex: 1; min-height: 0; overflow: hidden; display: flex; }
+.stream-body .stream-log { flex: 1; margin: 0; max-height: none; overflow: auto; padding: 8px 12px; white-space: pre-wrap; word-break: break-all; }
+.stream-term { padding: 6px; }
+.stream-term .xterm { flex: 1; }

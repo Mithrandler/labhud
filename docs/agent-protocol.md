@@ -195,14 +195,26 @@ agent then execs the new binary (same PID) and dials again with the new version.
 stops (`systemctl` will not restart it: it exits with status 0 and the unit has
 `Restart=on-failure`). Any reason other than `removed` is only logged.
 
+## Streams
+
+A live log (`docker` `follow`) and a terminal (`terminal` `shell`) are streams, not commands. labhud sends a signed
+`open` (`{cmd, cap, verb, target, cols?, rows?}`), checked against the allow list like a command, and then,
+for as long as it is open, `input` (`{cmd, data}`, base64, at most 16 KiB), `resize` (`{cmd, cols, rows}`) and
+`close` (`{cmd}`). The agent answers with `chunk`s (`{cmd, data}`, base64, at most 8 KiB before encoding) and
+exactly one `end` (`{cmd, reason}`): `closed`, `time` (a log lives 10 minutes, a shell 15), `idle` (a shell
+with no key for 3 minutes), `ended` (the container or the shell exited), `too many open` (at most 3 on a
+connection) or the reason of a refusal. Everything open ends with the connection. Nothing that goes through is
+logged or kept, on either side; labhud holds at most 256 KiB of output not yet fetched by the page.
+
 ## Capabilities and verbs
 
 | cap | targets | verbs | done through |
 |---|---|---|---|
 | `sensors` | — | — (state only) | `/proc`, hwmon, `nvidia-smi`, RAPL, `statvfs` |
-| `docker` | container names, and `images` | `start` `stop` `restart` `update` `logs` `inspect`; on `images` only: `inventory` `prune` `prune-dangling` `prune-networks` `prune-volumes` | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only; `inspect` = how it is made (ports, mounts, networks, restart policy, labels, the environment's names without values), read only; `prune` = the images no container uses, unused for 24 hours, removed (`docker image prune -a --filter until=24h`), answered with what it freed. `inventory` = `{images, volumes, networks, more?}`, the biggest first, at most 100 of each (image: id, tags, size, created, used, dangling; volume: name, driver, size or -1, used, anonymous; network: name, driver, scope, used, builtin); `prune-dangling` = the untagged layers; `prune-networks` = user-made networks no container is on, a day old at least; `prune-volumes` = only the anonymous volumes (64 hex characters) nothing uses, chosen by the agent, never a named one. `images` takes no other verb |
+| `docker` | container names, and `images` | `start` `stop` `restart` `update` `logs` `inspect` `follow` (a stream); on `images` only: `inventory` `prune` `prune-dangling` `prune-networks` `prune-volumes` | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only; `inspect` = how it is made (ports, mounts, networks, restart policy, labels, the environment's names without values), read only; `prune` = the images no container uses, unused for 24 hours, removed (`docker image prune -a --filter until=24h`), answered with what it freed. `inventory` = `{images, volumes, networks, more?}`, the biggest first, at most 100 of each (image: id, tags, size, created, used, dangling; volume: name, driver, size or -1, used, anonymous; network: name, driver, scope, used, builtin); `prune-dangling` = the untagged layers; `prune-networks` = user-made networks no container is on, a day old at least; `prune-volumes` = only the anonymous volumes (64 hex characters) nothing uses, chosen by the agent, never a named one. `images` takes no other verb |
 | `systemd` | unit names | `start` `stop` `restart` | D-Bus `org.freedesktop.systemd1` |
 | `host` | `host` | `reboot` `shutdown` `update` | D-Bus `login1`; `update` = a transient unit running apt-get/dnf |
+| `terminal` | container names | `shell` (a stream, see below) | a shell in the container through `docker exec` with a TTY; only when the agent has `LABHUD_AGENT_TERMINAL=on`; ticked on its own, not by docker's tick |
 | `stacks` | stack names (`[a-z0-9][a-z0-9_-]{0,63}`) | `deploy` `redeploy` `restart` `down` `show` (all answer with `output`) | only with `LABHUD_AGENT_STACKS=<folder>` and `docker compose` on the host: one folder per stack with `compose.yaml` and `.env`; `deploy` carries `files` in the command, sealed (`{"compose", "env"}`, up to 64 KiB; no `env` key keeps the host's `.env`, `""` removes it), checked with `compose config` in a scratch folder, then `up -d --remove-orphans`; `redeploy` = `pull` then `up`; `down` never removes volumes; `show` = the file and the `.env`'s names. The one capability that runs a program (fixed arguments, no shell). Its state part `stacks` = `{name: {updated, env}}`. A command that takes longer than 40 s may: the capability says how long |
 | `wol` | MAC addresses (`aa:bb:…`, lowercase) | `wake` | UDP broadcast to port 9 |
 | `pve` | VMIDs | `start` `shutdown` `reboot` | `https://localhost:8006`, a local token |
