@@ -242,3 +242,29 @@ class UpdateTrack(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RowAndPageIcons(unittest.TestCase):
+    """A list row carries `quiet` and its `icon` after the three fields, only when there is something
+    to say; a page carries the `icon` the config gave it."""
+
+    def test_row_without_icon_stays_short(self):
+        self.assertEqual(cardstate.list_row({"name": "zzz-nothing", "value": "1"}), ["zzz-nothing", "1", False])
+
+    def test_quiet_row_keeps_its_place(self):
+        self.assertEqual(cardstate.list_row({"name": "zzz-nothing", "value": "1", "quiet": True}),
+                         ["zzz-nothing", "1", False, True])
+
+    def test_own_icon_wins(self):
+        self.assertEqual(cardstate.list_row({"name": "x", "value": "", "icon": "nginx"}), ["x", "", False, False, "nginx"])
+
+    def test_icon_from_image_and_name(self):
+        self.assertEqual(cardstate.list_row({"name": "web", "value": "", "image": "nginx:1.27"})[4], "nginx")
+        self.assertEqual(cardstate.list_row({"name": "proxmox", "value": ""})[4], "proxmox")
+
+    def test_page_icon_in_state(self):
+        cfg = {"pages": [{"id": "a", "title": "A", "icon": "proxmox", "groups": []},
+                         {"id": "b", "title": "B", "groups": []}], "cards": {}}
+        pages = cardstate.state(cfg, {})["pages"]
+        self.assertEqual(pages[0]["icon"], "proxmox")
+        self.assertNotIn("icon", pages[1])

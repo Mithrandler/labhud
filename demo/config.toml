@@ -136,6 +136,21 @@ title = "GENERAL"
     list = "fleet.updates"
     limit = 3
 
+  [[page.group]]
+  id = "widgets"
+  title = "Widgets"
+
+    [[page.group.card]]
+    id = "w-clock"
+    name = "CLOCK"
+    widget = "clock"
+    timezone = "Europe/Bucharest"
+
+    [[page.group.card]]
+    id = "w-calendar"
+    name = "CALENDAR"
+    widget = "calendar"
+
 [[page]]
 id = "network"
 title = "NETWORK"

@@ -154,13 +154,14 @@ A card:
 - `icon` names the card's icon: a file `/icons/svc/<icon>.png` (96 px; `.svg` for the web) when the server has one (it carries about 340 and fetches the others from the dashboard-icons pack on the first request, then keeps them; `[display] icons_online = false` turns that off), else one of labhud's line icons (`server`, `nas`, `vm`, `pc`, `app`, and the others in design/tokens.json). Its own `icon` in config.toml or the `labhud.icon` label, else its source's, else its kind's; missing when none fits.
 - `widget` (`clock` or `calendar`, with `timezone` for the clock) is a card the app draws on its own, without data; `frame` (+ `frame_height`, 120 to 800) is an address the card shows inside itself (a web view; nothing else is loaded from it). Missing on every other card.
 - `size` is the card's place in the grid when the config sets one (`s` 1×1, `m` 2×1, `l` 2×2, `xl` 4×2 cells); missing means `s`.
-- A card or a group the config marks `hidden` is not in `state` at all (not in `pages[].groups`, `cards` or `problems`); the alerts of its card (`alerts[]`) stay. A group whose cards are all hidden is left out too. A page may carry `columns` (1 to 6: at most that many columns of cells) and `density` (`compact` or `normal`); missing means the app's own choice.
+- A card or a group the config marks `hidden` is not in `state` at all (not in `pages[].groups`, `cards` or `problems`); the alerts of its card (`alerts[]`) stay. A group whose cards are all hidden is left out too. A page may carry `icon` (the one the config gave it; else pick your own), `columns` (1 to 6: at most that many columns of cells) and `density` (`compact` or `normal`); missing means the app's own choice.
 - `theme` is the board's look, for every screen that has not picked its own: `base` (`oled` or `grey`, the colours behind the cards) and `accent` (a name: `blue`, `green`, `orange`, `red`, `violet`, `cyan`, `pink`, `yellow`, or `#rrggbb`). Set in ⚙ > Dashboard > Theme (`[display] base`, `accent`).
 - `role` (`viewer`, `operator`, `admin`) is the role of the token or phone that asked, and `[roles.<role>] pages = [...]` in config.toml limits `pages` (and so `cards` and `problems`) to those pages for that role; a role with no table sees them all. It only decides what is shown: the alerts of a card a role does not see stay in `alerts[]`, and `/api/v1/card/<id>` answers 404 for it. A phone that is not signed in as the admin is a viewer.
 - `frozen`: the numbers are not live (host down or off, or the source kept its last answer); dim
   them. `note` says why, `note_kind` is `stale`, `off`, `not_configured`, `error` or `""`.
-- `rows` (lists): `[name, value, bad]`, a fourth `true` for a row grey on purpose (a host off by
-  design); at most 50.
+- `rows` (lists): `[name, value, bad]`, a fourth `true`/`false` for a row grey on purpose (a host off by
+  design) and a fifth, `icon`, the logo of the row (its own `icon`, else that of its image or its name;
+  `/icons/svc/<icon>.png`) when one is known; at most 50. Read the fourth and fifth only when there.
 - Optional: `subtitle`, `url` (the service's own page), `links` (`[{label, url}]`), `as_of` (Unix
   time of the data), `maintenance_until`.
 - `actions`: the buttons that make sense now (no START for what runs): `{name, label, confirm,

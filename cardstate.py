@@ -350,6 +350,18 @@ def detail_row(d):
     return ["" if name is None else _js(name), _js(value), d.get("bad") is True]
 
 
+def list_row(d):
+    """A list card's row: [name, value, bad], then `quiet` (grey on purpose) and the row's `icon`
+    (its own, else the logo of its image or name) when there is one: [name, value, bad, quiet, icon]."""
+    row = detail_row(d)
+    icon = _js(d.get("icon")) if d.get("icon") else cardtype.icon_for(row[0], image=d.get("image"))
+    if d.get("quiet") or icon:
+        row.append(bool(d.get("quiet")))
+    if icon:
+        row.append(icon)
+    return row
+
+
 def summary(c, data):
     """"CPU 12% · RAM 40%": the card's first numbers, or its first list row, in one line."""
     if is_guest(c):
@@ -758,8 +770,7 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False, found
     out["maintenance_button"] = bool(buttons and c.get("check"))
     if c.get("list"):
         rows = get(data, c["list"])
-        out["rows"] = [detail_row(d) + ([True] if d.get("quiet") else []) for d in rows if isinstance(d, dict)][:50] \
-            if isinstance(rows, list) else []
+        out["rows"] = [list_row(d) for d in rows if isinstance(d, dict)][:50] if isinstance(rows, list) else []
     if c.get("notes"):
         out["notes"] = (data.get("notes") or {}).get("text", "")
     for k in ("widget", "timezone", "frame", "frame_height"):
@@ -862,7 +873,8 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
                     cards.append(card(c, data, topology, actions_on, page=p["id"], group=g["id"], full=full, found=found))
             if ids or not every:   # a group whose cards are all hidden goes with them
                 groups.append({"id": g["id"], "title": g["title"], "cards": ids})
-        pages.append({"id": p["id"], "title": p["title"], "groups": groups, **({"games": True} if p.get("games") else {}),
+        pages.append({"id": p["id"], "title": p["title"], "groups": groups,
+                      **({"icon": p["icon"]} if p.get("icon") else {}), **({"games": True} if p.get("games") else {}),
                       **{k: p[k] for k in ("columns", "density") if p.get(k)}})
     every_game = games(topology, data, actions_on, full)
     for page in pages:

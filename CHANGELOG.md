@@ -8,6 +8,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Icons on rows and pages** in `/api/v1/state`: a list row is `[name, value, bad, quiet, icon]` (the last two only
+  when there is something to say) and a page carries the `icon` the config gave it.
 - **Small widgets**: a card can be a `widget = "clock"` (own `timezone`), a `widget = "calendar"`, or show a
   page with `frame = "https://…"`. The browser draws them alone; the CSP lets through only the frame's origin.
 - **Command palette**: the search box (🔍 or `/`) also finds pages, the sections of ⚙ and the cards'
