@@ -112,7 +112,9 @@ function apply_look() {
 
 /** The spacing: this screen's (⚙ > Look), unless the page being shown sets its own (⚙ > Dashboard). */
 function apply_density() {
-  const own = CFG && CFG.pages[page] ? CFG.pages[page].density : "";
+  // settings.js runs apply_look() before app.js has declared CFG (and page): until then, this screen's own
+  const cfg = typeof CFG === "undefined" ? null : CFG;
+  const own = cfg && typeof page !== "undefined" && cfg.pages[page] ? cfg.pages[page].density : "";
   const d = own || S.density;
   for (const k of ["compact", "airy"]) document.body.classList.toggle("density-" + k, d === k);
 }
