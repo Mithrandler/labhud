@@ -128,6 +128,11 @@ CARDS = {
     "agenda": ([("today", "Today", "count")], {"list": "agenda.events"}),
     "releases": ([], {"list": "releases.list"}),
     "scrutiny": ([("failed", "Failed", "count"), ("hottest", "Hottest", "celsius")], {"list": "scrutiny.disks"}),
+    "portainer": ([("running", "Up", "count"), ("stopped", "Stopped", "count"), ("unhealthy", "Unhealthy", "count")],
+                  {"list": "portainer.rows"}),
+    "paperless": ([("documents", "Documents", "count"), ("inbox", "Inbox", "count")], {}),
+    "tautulli": ([("streams", "Watching", "count"), ("bandwidth", "Bandwidth", "rate")], {"list": "tautulli.now"}),
+    "mealie": ([("recipes", "Recipes", "count"), ("uncategorized", "Uncategorized", "count")], {}),
 }
 
 
@@ -436,6 +441,10 @@ KNOWN = [
     ("adguard", 3000, "http", "/", "adguard"),
     ("pihole", 80, "http", "/admin/", "pi-hole"),
     ("traefik", 8080, "http", "/dashboard/", "traefik"),
+    ("portainer", 9000, "http", "/", "portainer"),
+    ("paperless", 8000, "http", "/accounts/login/", "paperless"),
+    ("tautulli", 8181, "http", "/", "tautulli"),
+    ("mealie", 9925, "http", "/", "mealie"),
 ]
 MAX_HOSTS = 32
 _HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$|^[0-9A-Fa-f:]{2,45}$")

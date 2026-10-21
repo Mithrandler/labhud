@@ -8,6 +8,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Four more services**: Portainer, Paperless-ngx, Tautulli and Mealie are sources, with a form and a
+  connection test in ⚙ > Integrations, a first card, and a place in the network scan. Read-only keys.
 - **Discovered, to approve**: ⚙ > Dashboard > Discovered lists the Proxmox guests and the containers
   (and, after a network scan, the services) that have no card, to add one by one or all at once
   (into a page "Discovered", group "Found") or dismiss; nothing is added by itself

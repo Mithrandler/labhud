@@ -142,6 +142,19 @@ user with read access is enough.
 - `homeassistant.<domain>.<object>.value` for each entity in `LABHUD_HA_ENTITIES`: a room's
   temperature is `homeassistant.sensor.rack_temperature.value`; on/off become 1/0.
 
+## Portainer, Paperless-ngx, Tautulli, Mealie
+
+Set in ⚙ > Integrations (a form, with a test of the connection) or as variables; each key only reads:
+
+| source | variables | data |
+|---|---|---|
+| Portainer | `LABHUD_PORTAINER_URL`, `_KEY` (an access token) | `portainer.running`, `stopped`, `unhealthy`, `down`; `list = "portainer.rows"` (one line per environment, broken first) |
+| Paperless-ngx | `LABHUD_PAPERLESS_URL`, `_TOKEN` | `paperless.documents`, `inbox` |
+| Tautulli | `LABHUD_TAUTULLI_URL`, `_KEY` | `tautulli.streams`, `transcoding`, `bandwidth` (format `rate`); `list = "tautulli.now"` |
+| Mealie | `LABHUD_MEALIE_URL`, `_TOKEN` (an admin's) | `mealie.recipes`, `users`, `categories`, `uncategorized` |
+
+The network scan (⚙ > Dashboard > Discovered) recognises them on their usual ports.
+
 ## CrowdSec, Gitea Actions, Nextcloud, authentik
 
 Each reads with a key that can only read, set in ⚙ > Sources or as variables:
