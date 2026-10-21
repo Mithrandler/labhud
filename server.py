@@ -44,6 +44,7 @@ import editmode
 import events
 import lock
 import mqtt
+import defaultboard
 import layout
 import onboard
 import notify
@@ -277,6 +278,33 @@ def label_cards(topology, every):
 
 def _label_ids(topology):
     return sorted((c["id"], c.get("url", ""), c["name"]) for cs in topology["cards"].values() for c in cs if c.get("labels"))
+
+
+_seed_lock = threading.Lock()
+
+
+def seed_board():
+    """First run: a config with no card at all gets the board defaultboard.py makes from what the
+    sources found, once. Only a config labhud keeps itself is written, and a board that has any card
+    is never touched."""
+    if not managed.active() or store.load(defaultboard.STORE_KEY, False) or not _seed_lock.acquire(blocking=False):
+        return
+    try:
+        raw = managed.read_config()
+        if not defaultboard.needs(raw):
+            store.save(defaultboard.STORE_KEY, True)
+            return
+        with _lock:
+            data = dict(_data)
+        raw, added = defaultboard.build(raw, data, scan.status()["found"])
+        if added:
+            managed.save_config(raw)
+            store.save(defaultboard.STORE_KEY, True)
+            print(f"setup: default board made, {len(added)} card(s)", flush=True)
+    except (ValueError, OSError) as e:
+        print(f"setup: no default board: {e}", flush=True)
+    finally:
+        _seed_lock.release()
 
 
 def derive(file_topology, previous=None):
@@ -1061,6 +1089,8 @@ def loop():
                     _send("config", {"reload": True})
                 if name in ("status", "proxmox"):
                     mqtt.update(card_states())
+                if name in ("proxmox", "agents") and not DEMO:
+                    seed_board()
         finally:
             with running_lock:
                 running.discard(name)
