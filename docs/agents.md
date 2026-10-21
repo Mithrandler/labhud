@@ -109,6 +109,14 @@ tooling, and ⚙ only shows which version each agent runs.
   networks* and *Anonymous volumes* (a volume with a name is never removed). Each asks first, and the
   timeline says what it freed. From a terminal: `labhud agent inventory <agent>` and
   `labhud agent prune <agent> [images|dangling|networks|volumes]`. Needs agent 0.1.1 or later.
+- **Stacks (docker compose)**: set `LABHUD_AGENT_STACKS=/var/lib/labhud-agent/stacks` on an agent that runs
+  as a service (the container image has no docker CLI) on a host with `docker compose`, tick *Stacks*, and
+  ⚙ > Containers > *<agent> · stacks* lists the stacks it keeps, with **EDIT**, **REDEPLOY**, **RESTART**,
+  **DOWN** (volumes stay) and **New stack**: a compose file and an optional `.env`. The files reach the
+  agent sealed for that one command; the `.env`'s values never come back (the editor shows its names, and
+  empty keeps the host's). A compose file is checked before anything changes. A compose file can ask for
+  what the Docker socket can, so *Stacks* is as strong as that; each action is in the audit log
+  (`stack`). `labhud agent stack <agent> …` does the same from a terminal. A git source is not done yet.
 - **Update on their own**: under Docker in ⚙ > Devices > Agents, the ticked containers labhud
   updates by itself when their registry has a newer image, in a window the same for every agent
   (every day at 04:00 unless changed; labhud's local time, `TZ`), one after the other, as UPDATE

@@ -685,6 +685,7 @@ const CAP_TEXT = {
   pve: ["Proxmox", "start, shut down, reboot guests"],
   ptero: ["Game servers", "start, stop, restart (Pterodactyl)"],
   scan: ["Image scan", "CVEs in the ticked containers' images (trivy or grype on the host)"],
+  stacks: ["Stacks", "deploy, redeploy, restart and take down docker compose stacks (docker compose on the host)"],
 };
 
 function agents_post(op, body) {
@@ -903,7 +904,13 @@ function containers_settings(ctx) {
     agentsWindow = r.window || agentsWindow;
     agent_window_row(win, () => open_settings());
     const docker = r.agents.filter((a) => a.caps.includes("docker"));
-    if (!docker.length) {
+    for (const a of r.agents.filter((x) => x.caps.includes("stacks"))) {
+      const s = ctx.section(a.name + " · stacks", { wide: true, about: `${Object.keys(a.stacks || {}).length} stack(s) kept by this agent`
+        + (a.online ? "" : " · offline, seen " + ago(a.seen)) });
+      agent_stacks_row(a, s);
+      host.appendChild(s);
+    }
+    if (!docker.length && !r.agents.some((x) => x.caps.includes("stacks"))) {
       const s = ctx.section("No containers yet", { wide: true, about: "No agent may act on Docker: tick Docker for one in Hosts & agents." });
       const go = el("button", "choice", "Hosts & agents");
       go.type = "button";
@@ -924,6 +931,91 @@ function containers_settings(ctx) {
       host.appendChild(s);
     }
   });
+}
+
+/** Compose stacks of an agent with `stacks` ticked: the list, a button for each action, and an
+    editor (the compose file, the .env) that deploys. The .env's values are never read back: the
+    editor shows the names, and what is typed there replaces the host's .env (empty keeps it). */
+function agent_stacks_row(a, box) {
+  const list = el("div", "stacks");
+  const out = el("p", "hint", "");
+  const editor = el("div", "stack-editor");
+  editor.hidden = true;
+  const name = el("input", "agent-filter");
+  name.placeholder = "stack name (lowercase letters, digits, - _)";
+  const compose = el("textarea", "stack-text");
+  compose.placeholder = "compose.yaml";
+  compose.spellcheck = false;
+  const env = el("textarea", "stack-text stack-env");
+  env.placeholder = ".env: KEY=value lines (empty keeps the one on the host)";
+  env.spellcheck = false;
+  const noenv = el("label", "hint");
+  const noenv_box = el("input");
+  noenv_box.type = "checkbox";
+  noenv.append(noenv_box, " remove the .env");
+  const go = el("button", "choice", "DEPLOY");
+  go.type = "button";
+  const note = el("span", "hint", "");
+  const run = (verb, nm, extra) => {
+    out.textContent = verb + " " + nm + "…";
+    return setup_post("stack-run", Object.assign({ agent: a.name, verb, name: nm }, extra || {})).then((r) => {
+      out.textContent = (r.ok ? "✓ " : "✕ " + (r.error || "failed") + "\n") + (r.output || "");
+      out.style.whiteSpace = "pre-wrap";
+      return r;
+    });
+  };
+  go.addEventListener("click", () => {
+    const nm = name.value.trim();
+    if (!nm || !compose.value.trim()) return put(note, "a name and a compose file");
+    put($("#confirm-text"), `Deploy the stack ${nm} on ${a.name}? A compose file can do anything the Docker socket can.`);
+    ask([["DEPLOY", () => run("deploy", nm, { compose: compose.value, env: noenv_box.checked ? "" : env.value ? env.value : undefined })
+      .then((r) => { if (r.ok) { env.value = ""; stacks_load(); } })]]);
+  });
+  editor.append(name, compose, env, noenv, go, note);
+  const edit = (nm) => {
+    editor.hidden = false;
+    name.value = nm;
+    compose.value = "";
+    env.value = "";
+    noenv_box.checked = false;
+    if (!nm) return;
+    setup_post("stack-run", { agent: a.name, verb: "show", name: nm }).then((r) => {
+      if (!r.ok) return put(note, "✕ " + (r.error || "failed"));
+      const [text, names] = r.output.split("\n# .env: ");
+      compose.value = text;
+      put(note, names ? ".env on the host has: " + names.trim() : "no .env on the host");
+    });
+  };
+  const draw = (stacks) => {
+    list.replaceChildren();
+    const names = Object.keys(stacks).sort();
+    if (!names.length) list.appendChild(el("p", "hint", a.online ? "No stack yet: add one below." : "Shown when the agent is online."));
+    for (const nm of names) {
+      const x = stacks[nm];
+      const row = el("div", "choices");
+      row.appendChild(el("strong", null, nm));
+      row.appendChild(el("span", "hint", ` ${x.running}/${x.services} running`));
+      const btn = (label, fn, danger) => {
+        const b = el("button", "choice small", label);
+        b.type = "button";
+        b.addEventListener("click", fn);
+        row.appendChild(b);
+      };
+      btn("EDIT", () => edit(nm));
+      btn("REDEPLOY", () => { put($("#confirm-text"), `Pull and redeploy ${nm}?`); ask([["REDEPLOY", () => run("redeploy", nm).then(stacks_load)]]); });
+      btn("RESTART", () => { put($("#confirm-text"), `Restart ${nm}?`); ask([["RESTART", () => run("restart", nm).then(stacks_load)]]); });
+      btn("DOWN", () => { put($("#confirm-text"), `Take ${nm} down? Its containers go, its volumes stay.`); ask([["DOWN", () => run("down", nm).then(stacks_load)]]); });
+      list.appendChild(row);
+    }
+  };
+  function stacks_load() {
+    setup_post("stacks", { agent: a.name }).then((r) => { if (r.ok) draw(r.stacks); });
+  }
+  draw(a.stacks || {});
+  const add = el("button", "choice", "New stack");
+  add.type = "button";
+  add.addEventListener("click", () => edit(""));
+  box.append(list, add, editor, out);
 }
 
 /** Webhooks: a secret URL per container that CI calls after it pushed a new image (POST), and

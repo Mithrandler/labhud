@@ -50,13 +50,15 @@ VERBS = {
     "wol": ("wake",),
     "pve": ("start", "shutdown", "reboot"),
     "ptero": ("start", "stop", "restart"),
+    "stacks": ("deploy", "redeploy", "restart", "down", "show"),
 }
 # sensors and scan only report: scan (agent with trivy or grype) reads the ticked containers' images
 CAPS = ("sensors",) + tuple(VERBS) + ("scan",)
 # what an agent may say it understands beyond v1's first messages (hello.features)
 FEATURES = ("registry-auth",)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes")}
+READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes"),
+         "stacks": VERBS["stacks"]}   # compose answers with its output: only ⚙ > Containers > Stacks asks
 # the host's Docker (its images, volumes and networks), ticked as this target, which is no container
 # and takes none of a container's verbs, as the host verbs take no container (the agent checks the same)
 PRUNE_TARGET = "images"
@@ -81,6 +83,7 @@ TARGET = {
     "wol": re.compile(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}"),
     "pve": re.compile(r"[1-9][0-9]{2,8}"),
     "ptero": re.compile(r"[0-9a-f]{8}"),
+    "stacks": re.compile(r"[a-z0-9][a-z0-9_-]{0,63}"),
 }
 MAX_TARGETS = 200
 
@@ -411,7 +414,7 @@ def listing():
                  "systemd": sorted(st.get("units") or {}),
                  "pve": sorted(st.get("guests") or {}, key=lambda v: int(v) if v.isdigit() else 0),
                  "ptero": sorted(st.get("servers") or {}), "wol": sorted(st.get("neighbours") or {}),
-                 "host": ["host"] if "host" in a.get("found", []) else []}
+                 "host": ["host"] if "host" in a.get("found", []) else [], "stacks": sorted(stacks_of(aid))}
         labels = {"docker": {PRUNE_TARGET: "Unused images"},
                   "pve": {k: (v or {}).get("name") for k, v in (st.get("guests") or {}).items()},
                   "ptero": {k: (v or {}).get("name") for k, v in (st.get("servers") or {}).items()},
@@ -423,6 +426,7 @@ def listing():
                     "found": a.get("found", []), "caps": a.get("caps", []),
                     "prune": "docker" in a.get("caps", []) and PRUNE_TARGET in a.get("targets", {}).get("docker", []),
                     "auto": auto_targets(a), "hooks": sorted(a.get("hooks", {})),
+                    "stacks": stacks_of(aid) if "stacks" in a.get("found", []) else {},
                     "targets": {c: _wings(a, c, v) for c, v in a.get("targets", {}).items()},
                     "choices": {c: v for c, v in found.items() if c in a.get("found", [])},
                     "labels": labels})
@@ -638,6 +642,57 @@ def inventory(aid, fresh=False):
     return True, "", out
 
 
+STACK_FILE_MAX = 48 << 10   # a compose file, and a .env
+
+
+def stacks_of(aid):
+    """{name: {updated, env, services, running}}: the stacks the agent keeps, with what runs of each
+    (the containers whose compose project it is)."""
+    st = _state.get(aid) or {}
+    running = {}
+    for x in (st.get("containers") or {}).values():
+        if isinstance(x, dict) and x.get("project"):
+            n = running.setdefault(x["project"], [0, 0])
+            n[0] += 1
+            n[1] += x.get("state") == "running"
+    return {name: {"updated": x.get("updated", 0), "env": x.get("env") is True,
+                   "services": running.get(name, [0, 0])[0], "running": running.get(name, [0, 0])[1]}
+            for name, x in (st.get("stacks") or {}).items() if isinstance(x, dict) and TARGET["stacks"].fullmatch(name)}
+
+
+def stack(aid, verb, name, compose=None, env=None):
+    """(ok, error, output): one verb on a stack. A deploy carries the files, sealed: `compose` (text)
+    and `env` (text; None keeps the .env the host has, "" removes it). Whatever the admin does here
+    ticks the stack (the allowlist is the admin's own act); the agent checks it again."""
+    a = get(aid)
+    if not a or "stacks" not in a.get("caps", []):
+        return False, "not allowed", ""
+    if not isinstance(name, str) or not TARGET["stacks"].fullmatch(name):
+        return False, "a stack's name is lowercase letters, digits, - and _", ""
+    files = None
+    if verb == "deploy":
+        if not isinstance(compose, str) or not compose.strip():
+            return False, "a compose file is needed", ""
+        if len(compose.encode()) > STACK_FILE_MAX or (isinstance(env, str) and len(env.encode()) > STACK_FILE_MAX):
+            return False, f"a file is at most {STACK_FILE_MAX >> 10} KiB", ""
+        files = json.dumps({"compose": compose, **({"env": env} if isinstance(env, str) else {})}, separators=(",", ":"))
+        if len(files.encode()) > P.MAX_SEALED_FILES:
+            return False, "the files are too long together", ""
+    elif verb not in VERBS["stacks"]:
+        return False, "no such action", ""
+    if name not in a.get("targets", {}).get("stacks", []):
+        set_targets(aid, "stacks", sorted(set(a.get("targets", {}).get("stacks", [])) | {name}))
+    if not allowed(aid, "stacks", verb, name):
+        return False, "not allowed", ""
+    s = _live.get(aid)
+    if not s:
+        return False, "the agent is offline", ""
+    wait = 330 if verb in ("deploy", "redeploy") else 120
+    if files is not None:
+        return s.ask({"type": "command", "cap": "stacks", "verb": verb, "target": name}, wait, files=files)
+    return s.command("stacks", verb, name, wait)
+
+
 def clean(aid, what="images"):
     """(ok, error, output): one cleaning of the host's Docker (CLEAN: images, dangling, networks,
     volumes); the inventory is asked again after it."""
@@ -769,7 +824,7 @@ class Session:
     def command(self, cap, verb, target, wait):
         return self.ask({"type": "command", "cap": cap, "verb": verb, "target": target}, wait)
 
-    def ask(self, message, wait, seal=None):
+    def ask(self, message, wait, seal=None, files=None):
         """Sends a command or an update and waits for its result: (ok, error, output). `seal`:
         (registry, text) to add as the command's `auth`, sealed for this command of this
         connection (agentproto.seal): a frame is signed, not encrypted."""
@@ -777,6 +832,9 @@ class Session:
         slot = [threading.Event(), (False, "no answer from the agent", "")]
         self._waiting[cmd] = slot
         message = dict(message, cmd=cmd)
+        if files is not None:   # a stack's files, sealed for this command like a login
+            nonce = secrets.token_hex(16)
+            message["files"] = {"nonce": nonce, "box": P.seal(self.key, self.session, cmd, nonce, files, P.MAX_SEALED_FILES)}
         if seal:
             nonce = secrets.token_hex(16)
             message["auth"] = {"registry": seal[0], "nonce": nonce,

@@ -100,6 +100,7 @@ def read_frame(text, key_for, direction, session, last_seq, now):
 #     box      = hex(text XOR stream_0 || stream_1 || …)
 
 MAX_SEALED = 4096   # bytes of text
+MAX_SEALED_FILES = 64 << 10   # a stack deploy's files (the agent's proto.MaxSealedFiles)
 
 
 def _keystream(key, session, cmd, nonce, n):
@@ -112,19 +113,19 @@ def _keystream(key, session, cmd, nonce, n):
     return bytes(out[:n])
 
 
-def seal(key, session, cmd, nonce, text):
+def seal(key, session, cmd, nonce, text, limit=MAX_SEALED):
     """`text` (str) sealed for one command of one connection: lowercase hex, twice its UTF-8 length."""
     raw = text.encode()
-    if len(raw) > MAX_SEALED:
+    if len(raw) > limit:
         raise ValueError("too long to seal")
     if not HEX16.fullmatch(nonce):
         raise ValueError("the nonce is 16 bytes of hex")
     return bytes(a ^ b for a, b in zip(raw, _keystream(key, session, cmd, nonce, len(raw)))).hex()
 
 
-def unseal(key, session, cmd, nonce, box):
+def unseal(key, session, cmd, nonce, box, limit=MAX_SEALED):
     """seal()'s text back (the agent's side; labhud only seals)."""
-    if not (isinstance(box, str) and re.fullmatch(r"(?:[0-9a-f]{2}){0,%d}" % MAX_SEALED, box)) or not HEX16.fullmatch(nonce):
+    if not (isinstance(box, str) and re.fullmatch(r"(?:[0-9a-f]{2}){0,%d}" % limit, box)) or not HEX16.fullmatch(nonce):
         raise ValueError("not a sealed value")
     raw = bytes.fromhex(box)
     return bytes(a ^ b for a, b in zip(raw, _keystream(key, session, cmd, nonce, len(raw)))).decode()

@@ -23,6 +23,10 @@ only `admin` and `pin` work, as with init.py.
     labhud agent prune <agent> [images|dangling|networks|volumes]
                                                    clean the host's Docker (the target "images" ticked); volumes: the anonymous ones
     labhud agent inventory <agent>                 the host's images, volumes and networks, with sizes
+    labhud agent stack <agent> [list]              the compose stacks the agent keeps (agent with `stacks` ticked)
+    labhud agent stack <agent> show|redeploy|restart|down <name>
+    labhud agent stack <agent> deploy <name> <compose.yaml> [<env-file>|-]
+                                                   deploy; no env file keeps the host's .env, "-" removes it
     labhud agent schedule <agent> <container> on|off   update it on its own, in the window
     labhud agent window daily|mon,thu <HH:MM>      when those updates run (labhud's local time)
     labhud agent update <agent> | --all            update to the release labhud pins (a service, not a container)
@@ -307,6 +311,18 @@ def agent(args):
     if sub == ["prune"] and len(args) in (2, 3):
         what = args[2] if len(args) == 3 else "images"
         return print(f"✓ {args[1]}: {setup('prune', {'agent': args[1], 'what': what}).get('output', '')}")
+    if sub == ["stack"] and len(args) in (2, 3) and (len(args) == 2 or args[2] == "list"):
+        for name, x in sorted(setup("stacks", {"agent": args[1]})["stacks"].items()):
+            print(f"{name:<24}{x['running']}/{x['services']} running" + ("  .env" if x["env"] else ""))
+        return None
+    if sub == ["stack"] and len(args) == 4 and args[2] in ("show", "redeploy", "restart", "down"):
+        r = setup("stack-run", {"agent": args[1], "verb": args[2], "name": args[3]})
+        return print(r.get("output", ""), end="" if args[2] == "show" else "\n")
+    if sub == ["stack"] and len(args) in (5, 6) and args[2] == "deploy":
+        body = {"agent": args[1], "verb": "deploy", "name": args[3], "compose": open(args[4], encoding="utf-8").read()}
+        if len(args) == 6:
+            body["env"] = "" if args[5] == "-" else open(args[5], encoding="utf-8").read()
+        return print(setup("stack-run", body).get("output", ""))
     if sub == ["inventory"] and len(args) == 2:
         inv = setup("inventory", {"agent": args[1]})
         gb = lambda n: f"{n / (1 << 30):.2f} GB" if n >= 1 << 29 else f"{n / (1 << 20):.0f} MB"   # noqa: E731
@@ -319,7 +335,7 @@ def agent(args):
             print(f"network  {n['name'][:12]:<13}{'':>10}  {str(n['used']) + ' on':<7} {n['driver']}{' (built in)' if n['builtin'] else ''}")
         return None
     raise Failed("usage: labhud agent list | code | allow <agent> <cap> [target … | --all] | deny <agent> <cap> [target …] "
-                 "| logs <agent> <container> | prune <agent> [what] | inventory <agent> | schedule <agent> <container> on|off | window daily|mon,thu HH:MM "
+                 "| logs <agent> <container> | prune <agent> [what] | inventory <agent> | stack <agent> … | schedule <agent> <container> on|off | window daily|mon,thu HH:MM "
                  "| update <agent> | update --all | auto on|off")
 
 

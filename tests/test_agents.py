@@ -503,6 +503,51 @@ class PruneAndHistory(Server):
             self.assertEqual(json.loads(answer["r"][1]), {"ok": True, "output": "done"})
         c.close()
 
+    def test_stacks(self):
+        c, session, aid, key = self.pair(name="stackbox")
+        origin = f"http://{self.host}"
+        self.manage("caps", {"id": aid, "caps": ["stacks"]})
+        c.read_signed(key, session)
+
+        def ask(body, reply):
+            answer = {}
+            t = threading.Thread(target=lambda: answer.update(r=self.post_json("/api/setup/stack-run", dict(body, agent="stackbox"), origin)))
+            t.start()
+            cmd = c.read_signed(key, session)
+            while cmd.get("type") != "command":   # an `allow` goes first when the stack gets ticked
+                cmd = c.read_signed(key, session)
+            c.send_signed(key, session, aid, dict({"type": "result", "cmd": cmd["cmd"]}, **reply))
+            t.join(5)
+            return cmd, json.loads(answer["r"][1])
+
+        # a deploy: the files arrive sealed (not in the clear), the name gets ticked
+        cmd, got = ask({"verb": "deploy", "name": "web", "compose": "services: {}\n", "env": "TOKEN=hunter2\n"},
+                       {"ok": True, "output": "up"})
+        self.assertEqual((cmd["cap"], cmd["verb"], cmd["target"]), ("stacks", "deploy", "web"))
+        self.assertEqual(got, {"ok": True, "output": "up"})
+        self.assertNotIn("hunter2", json.dumps(cmd))
+        self.assertNotIn("services", json.dumps(cmd))
+        opened = json.loads(P.unseal(key, session, cmd["cmd"], cmd["files"]["nonce"], cmd["files"]["box"], P.MAX_SEALED_FILES))
+        self.assertEqual(opened, {"compose": "services: {}\n", "env": "TOKEN=hunter2\n"})
+        self.assertEqual(self.listed(aid)["targets"]["stacks"], ["web"])
+        # no env key at all: the host keeps its .env
+        cmd, _ = ask({"verb": "deploy", "name": "web", "compose": "services: {}\n"}, {"ok": True, "output": ""})
+        self.assertEqual(json.loads(P.unseal(key, session, cmd["cmd"], cmd["files"]["nonce"], cmd["files"]["box"],
+                                                      P.MAX_SEALED_FILES)), {"compose": "services: {}\n"})
+        # the other verbs carry no files
+        cmd, got = ask({"verb": "down", "name": "web"}, {"ok": False, "error": "compose down: boom"})
+        self.assertNotIn("files", cmd)
+        self.assertEqual(got["error"], "compose down: boom")
+        # refused before the agent hears of it
+        post = lambda body: self.post_json("/api/setup/stack-run", dict(body, agent="stackbox"), origin)   # noqa: E731
+        self.assertEqual(post({"verb": "deploy", "name": "Bad Name", "compose": "x"})[0], 502)
+        self.assertEqual(post({"verb": "deploy", "name": "web", "compose": ""})[0], 502)
+        self.assertEqual(post({"verb": "deploy", "name": "web", "compose": "x" * (49 << 10)})[0], 502)
+        self.assertEqual(post({"verb": "exec", "name": "web"})[0], 502)
+        # a stack is no button on a card
+        self.assertEqual(self.post_json(f"/action/agent-{aid}-stacks-web-down", {}, origin)[0], 403)
+        c.close()
+
     def test_history(self):
         c, session, aid, key = self.pair(name="histbox")
         for ev in ({"text": "web updated (1.2 → 1.3)", "bad": False, "cap": "docker", "target": "web",

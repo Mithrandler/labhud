@@ -397,3 +397,7 @@
 #settings .host-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 3px 6px; }
 #settings .host-table td { padding: 3px 6px; border-top: 1px solid var(--line); word-break: break-all; }
 #settings .host-table td:nth-child(n+2) { white-space: nowrap; word-break: normal; }
+#settings .stack-editor { display: grid; gap: 6px; margin: 8px 0; max-width: 720px; }
+#settings .stack-text { width: 100%; box-sizing: border-box; min-height: 160px; font: 12px/1.4 ui-monospace, monospace; padding: 8px;
+  border-radius: 6px; border: 1px solid var(--line); background: var(--bg, transparent); color: var(--text); }
+#settings .stack-env { min-height: 70px; }

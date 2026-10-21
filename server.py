@@ -1669,7 +1669,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|remove|update|auto|autoupdate|window|hook|unhook)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|inventory|notes)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|inventory|stacks|stack-run|notes)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all)", self.path)
@@ -2156,6 +2156,19 @@ class Handler(BaseHTTPRequestHandler):
                 ok, error, output = agents.read(aid, "docker", op, target)
                 print(f"setup: {op} of {target} on {a['name']} from {who}: {'ok' if ok else error}", flush=True)
                 return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error}, 200 if ok else 502)
+            if op in ("stacks", "stack-run"):   # compose stacks kept by an agent with `stacks` ticked
+                aid, a = agents.by_name(str(body.get("agent") or "")) if agents.enabled() else (None, None)
+                if not a:
+                    return self._json({"ok": False, "error": "no such agent"}, 404)
+                if op == "stacks":
+                    return self._json({"ok": True, "stacks": agents.stacks_of(aid)})
+                verb, name = str(body.get("verb") or ""), str(body.get("name") or "")
+                ok, error, output = agents.stack(aid, verb, name, body.get("compose"), body.get("env"))
+                audit.record(self, "stack", f"{verb} {a['name']}/{name}", ok)
+                print(f"setup: stack {name} on {a['name']}: {verb} by {who}: {'ok' if ok else error}", flush=True)
+                if verb != "show":
+                    _log([(f"{a['name']}: stack {name} {verb}" + (" done" if ok else f" failed: {error}"), not ok)])
+                return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error, "output": output}, 200 if ok else 502)
             if op == "notes":   # the notes card's text (notes = true), written in its panel or in the app
                 text = body.get("text")
                 if not isinstance(text, str) or len(text) > NOTES_MAX:

@@ -8,6 +8,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Stacks (docker compose)** (agent 0.1.1+, off unless the agent has `LABHUD_AGENT_STACKS`): ⚙ > Containers lists an agent's
+  stacks with EDIT / REDEPLOY / RESTART / DOWN and a *New stack* editor (compose file + `.env`); the files travel
+  sealed, a `.env`'s values are never read back, every action is audited. `labhud agent stack …`.
 - **Icons on rows and pages** in `/api/v1/state`: a list row is `[name, value, bad, quiet, icon]` (the last two only
   when there is something to say) and a page carries the `icon` the config gave it.
 - **The host's Docker, whole** (agent 0.1.1+): ⚙ > Devices > Agents > *Docker host* lists the images, volumes and
