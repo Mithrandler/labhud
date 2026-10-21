@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-22
+
+Needs labhud-agent 0.1.1 for the live log, the terminal, stacks and the host's Docker.
+
 ### Added
 
 - **Live log and terminal** (agent 0.1.1+): **LIVE** in a container's panel follows its log, **SHELL** opens a
@@ -53,11 +57,6 @@ still change in a minor version; such changes are listed under **Changed** with 
   takes either name and lists both (`role`, `roles`).
 - **Audit retention**: `[audit] keep_days` (7 to 730, default 90), set from ⚙ > System > API & audit
   (`POST /api/audit/settings`, written to the kept config, no restart) and read back as `keep_days`.
-
-## [0.1.1] - 2026-10-21
-
-### Added
-
 - `GET /api/v1/history` (and `/api/history`) take `?keys=a&keys=b`: only those series, so a card
   draws its own without the whole lab's history. An older labhud ignores it.
 - **Icons for machines and containers**: about 340 shipped (distros, Windows, the usual homelab
