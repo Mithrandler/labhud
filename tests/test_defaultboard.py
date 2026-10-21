@@ -43,6 +43,34 @@ class Build(unittest.TestCase):
         self.assertEqual((raw, added), (EMPTY, []))
 
 
+class SeedOnDisk(unittest.TestCase):
+    """seed_board() with the real managed.py: a minimal config.toml in a LABHUD_DATA folder becomes a board that loads."""
+
+    def test_the_file_is_rewritten_once_and_loads(self):
+        import server
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.toml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('title = "Lab"\n\n[[page]]\nid = "general"\ntitle = "GENERAL"\n')
+            kept = {}
+            with mock.patch.dict(os.environ, {"LABHUD_DATA": d}), \
+                    mock.patch.object(server.store, "load", side_effect=lambda k, dflt=None: kept.get(k, dflt)), \
+                    mock.patch.object(server.store, "save", side_effect=kept.__setitem__), \
+                    mock.patch.object(server.scan, "status", return_value={"found": []}), \
+                    mock.patch.dict(server._data, DATA, clear=True):
+                server.seed_board()
+                with open(path, encoding="utf-8") as f:
+                    first = f.read()
+                server.seed_board()
+                with open(path, encoding="utf-8") as f:
+                    second = f.read()
+            self.assertEqual(first, second)
+            t = config.loads(first, path)
+            self.assertEqual(t["title"], "Lab")
+            self.assertEqual([c["id"] for cs in t["cards"].values() for c in cs], ["host-pve", "docker-box-nginx", "pve-pve-100"])
+            self.assertEqual([p["id"] for p in t["pages"]], ["general", "games"])
+
+
 class Seed(unittest.TestCase):
     def run_seed(self, raw, stored=None):
         import server
