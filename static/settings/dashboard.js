@@ -13,6 +13,8 @@ register_section({
     layout_settings(ctx.section("Pages and groups · every screen", { wide: true,
       about: "Where every card sits, for every screen and the app; a card's size in the grid and its icon." }));
     board_files(ctx.section("Export and import", { about: "The pages, groups and the places and sizes of the cards as a file. Import shows what it would do first; cards it does not know are dropped, cards it leaves out go to a group \"Unplaced\"." }));
+    discovered_settings(ctx.section("Discovered · to approve", { wide: true,
+      about: "Guests, containers and services labhud sees but has no card for. Nothing is added by itself: approve the ones you want, or dismiss the rest." }));
     board_theme_settings(ctx.section("Theme · every screen", { about: "The colours behind the cards and the accent, for every screen and the app that has not picked its own in ⚙ > Look." }));
     role_pages(ctx.section("Pages per role", { wide: true, about: "What an API token or phone sees in the app, by role. A role with no tick sees every page. Alerts do not depend on it: a card a role does not see still raises its alert." }));
     page_columns(ctx.section("Shown on this screen", { wide: true,
@@ -24,6 +26,41 @@ function board_post(path, body) {
   return fetch(path, {
     method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: JSON.stringify(body),
   }).then((r) => r.json());
+}
+
+/** What labhud sees and has no card for (GET /api/discover/list): approve into the page "Discovered", or dismiss. */
+function discovered_settings(s) {
+  const msg = el("span", "device-seen", "Looking…");
+  const list = el("div", "choices");
+  s.append(list, msg);
+  const act = (what, keys) => board_post("/api/discover/" + what, { keys }).then((r) => {
+    if (r.ok) { if (what === "approve") location.reload(); else open_settings(); } else msg.textContent = r.error || "Not saved";
+  });
+  fetch("/api/discover/list", { headers: admin_headers({}) }).then((r) => r.json()).then((r) => {
+    if (!r.ok) { msg.textContent = signed_in() ? (r.error || "Not read") : "Sign in as the admin to see them."; return; }
+    const kinds = { pve: "VM/LXC", docker: "Container", svc: "Service" };
+    for (const it of r.items) {
+      const row = el("div", "choices");
+      row.append(el("span", "lbl", `${kinds[it.kind] || it.kind} · ${it.name}`), el("span", "device-seen", it.detail));
+      const ok = el("button", "choice small", "Add"); ok.type = "button";
+      ok.addEventListener("click", () => act("approve", [it.key]));
+      const no = el("button", "choice small", "Dismiss"); no.type = "button";
+      no.addEventListener("click", () => act("dismiss", [it.key]));
+      row.append(ok, no);
+      s.insertBefore(row, msg);
+    }
+    if (r.items.length > 1) {
+      const all = el("button", "choice", "Add all (" + r.items.length + ")"); all.type = "button";
+      all.addEventListener("click", () => act("approve", r.items.map((i) => i.key)));
+      list.appendChild(all);
+    }
+    if (r.dismissed) {
+      const back = el("button", "choice small", "Show " + r.dismissed + " dismissed"); back.type = "button";
+      back.addEventListener("click", () => board_post("/api/discover/restore", {}).then(() => open_settings()));
+      list.appendChild(back);
+    }
+    msg.textContent = r.items.length ? "" : "Nothing new: every guest and container has a card.";
+  }).catch(() => { msg.textContent = "Not read"; });
 }
 
 /** The board's theme: base and accent, saved in the config (POST /api/boards/theme). */

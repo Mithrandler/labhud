@@ -8,6 +8,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Discovered, to approve**: ⚙ > Dashboard > Discovered lists the Proxmox guests and the containers
+  (and, after a network scan, the services) that have no card, to add one by one or all at once
+  (into a page "Discovered", group "Found") or dismiss; nothing is added by itself
+  (`/api/discover/list`, `approve`, `dismiss`, `restore`; admin, audited).
 - **Theme per board and pages per role**: `[display] base` (`oled`, `grey`) and `accent` set the theme
   of every screen that has not picked its own (⚙ > Look has a new "Board" choice; a screen that picked
   one keeps it), from ⚙ > Dashboard > Theme (`POST /api/boards/theme`), and `/api/v1/state` carries
