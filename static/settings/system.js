@@ -34,6 +34,17 @@ function about_settings(s) {
   s.appendChild(box);
   fetch("/api/brand/about").then((r) => r.json()).then((r) => {
     facts.appendChild(el("p", "about-version", "Version " + (r.version || "?")));
+    const tag = (r.latest || {}).server || "";
+    if (r.update && tag) {
+      const p = el("p", "about-update", "Update available: v" + tag.replace(/^v/, "") + " · ");
+      const a = el("a", null, "release notes");
+      a.href = `${(r.links || {}).source}/releases/tag/${encodeURIComponent(tag)}`; a.target = "_blank"; a.rel = "noopener";
+      p.appendChild(a);
+      facts.appendChild(p);
+    }
+    const o = r.outdated || {}, l = r.latest || {};
+    if (o.agent) facts.appendChild(el("p", "hint", `Agent ${l.agent} is out: update the pinned release (agents/agent-release.json).`));
+    if (o.app) facts.appendChild(el("p", "hint", `The Android app ${l.app} is out.`));
     const names = { source: "Source", app: "Android app", agent: "Agent" };
     const links = el("p", "about-links");
     for (const [k, url] of Object.entries(r.links || {})) {

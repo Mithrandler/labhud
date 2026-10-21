@@ -10,6 +10,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 - `GET /api/v1/history` (and `/api/history`) take `?keys=a&keys=b`: only those series, so a card
   draws its own without the whole lab's history. An older labhud ignores it.
+- **Update available**: every six hours labhud reads the latest releases of itself, its agent and
+  its Android app from GitHub. ⚙ > System > About says "Update available: v0.1.1 · release notes",
+  the account button and its Settings entry get a dot, and `/api/brand/about` carries `latest`,
+  `update` and `outdated` for the app. The same news goes out once per version as `update_available`
+  (tick it in ⚙ > Notifications). `[update] check = false` turns it all off.
 
 ### Fixed
 

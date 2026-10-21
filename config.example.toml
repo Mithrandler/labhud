@@ -195,6 +195,11 @@ sources = ["synology"]
 # default), and the quiet hours (23 to 7 by default; the same hour twice = none). In them only
 # urgent news goes out (offline, disk, temperature, a host down); the rest waits for the end, in
 # one message.
+# Updates (optional): every six hours LabHUD reads the latest releases of itself, its agent and its
+# app from GitHub, and ⚙ > System > About says "Update available". false: it never asks.
+# [update]
+# check = true
+
 # [notify]
 # via = "both"
 # quiet_from = 23

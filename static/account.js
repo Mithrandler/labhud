@@ -102,11 +102,23 @@ function recheck_admin() {
 // ---------------------------------------------------------------------------------------------
 
 
+let UPDATE_TAG = null;   // the newer LabHUD GitHub has ("" none), read once from /api/brand/about (updates.py)
+
+function load_update() {
+  UPDATE_TAG = "";
+  fetch("/api/brand/about").then((r) => r.json()).then((r) => {
+    UPDATE_TAG = r.update ? (r.latest || {}).server || "" : "";
+    if (UPDATE_TAG) render_account();
+  }).catch(() => {});
+}
+
 function render_account() {
   const b = $("#account");
   if (!b) return;
   const inside = signed_in();
+  if (inside && UPDATE_TAG === null) load_update();
   cls(b, "in", inside);
+  cls(b, "has-update", inside && !!UPDATE_TAG);
   b.textContent = "";
   if (inside) {
     b.append(icon_svg("person", 16));
@@ -136,7 +148,7 @@ function account_click() {
     b.addEventListener("click", () => { close_account_menu(); run(); });
     m.appendChild(b);
   };
-  item("Settings", () => open_settings());
+  item("Settings", () => open_settings(), UPDATE_TAG ? "has-update" : "");
   m.appendChild(el("div", "sep"));
   item("Sign out", sign_out, "out");
   m.hidden = false;

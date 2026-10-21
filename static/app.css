@@ -746,3 +746,7 @@ body.density-airy .card .row { padding: 3px 8px; line-height: 1.4; }
 
 /* a container's icon, before its name (card_icon: its logo, else the docker line icon) */
 .row .n .ic { display: inline-flex; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px; }
+
+/* a newer LabHUD is out: a dot on the account button and on its Settings entry (account.js) */
+#account.has-update::after, #account-menu .item.has-update::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--accent); }
+#account.in.has-update { opacity: 1; }

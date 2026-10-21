@@ -201,7 +201,7 @@ every refusal. Actions need `LABHUD_ACTION_URL` and `LABHUD_ACTION_SECRET` on th
 
 ## The logo
 
-`/brand/mark.svg` (the mark alone, no background), `/brand/lockup.svg` (the mark and the name, for a dark background), `/brand/lockup-light.svg` (for a light one) and `/brand/mark-mono.svg` (one colour, for small sizes). `GET /api/brand/about` gives `{name, version, logo, mark, links}` for an About screen.
+`/brand/mark.svg` (the mark alone, no background), `/brand/lockup.svg` (the mark and the name, for a dark background), `/brand/lockup-light.svg` (for a light one) and `/brand/mark-mono.svg` (one colour, for small sizes). `GET /api/brand/about` gives `{name, version, logo, mark, links}` for an About screen, and the update check (`updates.py`, every six hours, `[update] check = false` turns it off): `latest` (`{server, agent, app}`, the newest release tags, "" when not known), `update` (the server is behind its latest release), `outdated` (`{agent, app}`: the agent this server pins, and the app, which says its version in an `X-Labhud-App` header, are behind), `checked` (Unix time of the last read, 0 before the first) and `enabled`.
 
 ## API tokens
 

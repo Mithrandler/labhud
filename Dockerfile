@@ -12,7 +12,7 @@ RUN apk add --no-cache iputils libcap openssl \
  && printf '#!/bin/sh\nexec python3 /app/cli.py "$@"\n' > /usr/local/bin/labhud && chmod 755 /usr/local/bin/labhud
 RUN pip install --no-cache-dir cryptography==50.0.2
 WORKDIR /app
-COPY admin.py agentproto.py alerting.py agents.py cardstate.py cardtype.py cli.py config.py devices.py iconcache.py editmode.py envfiles.py events.py init.py layout.py lock.py managed.py mqtt.py notify.py onboard.py qr.py routes.py scan.py screen.py server.py setupmode.py store.py thresholds.py tlscert.py tomlw.py util.py websock.py ./
+COPY admin.py agentproto.py alerting.py agents.py cardstate.py cardtype.py cli.py config.py devices.py iconcache.py editmode.py envfiles.py events.py init.py layout.py lock.py managed.py mqtt.py notify.py onboard.py qr.py routes.py scan.py screen.py server.py setupmode.py store.py thresholds.py tlscert.py tomlw.py updates.py util.py websock.py ./
 COPY sources ./sources
 COPY api ./api
 COPY agents/labhud-agent.py agents/install.sh agents/install-agent.sh agents/agent-release.json ./agents/

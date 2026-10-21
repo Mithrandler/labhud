@@ -386,3 +386,7 @@
 #settings .bkp-row.on { border-color: var(--title); box-shadow: inset 0 0 0 1px var(--title); }
 #settings .bkp-name { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; font-size: 13px; overflow-wrap: anywhere; }
 #settings .bkp-name .hint { margin: 0; }
+
+/* ⚙ > System > About: a newer LabHUD */
+#settings .about-update { color: var(--accent); font-weight: 600; margin: 4px 0; }
+#settings .about-update a { color: inherit; }

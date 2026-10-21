@@ -26,6 +26,7 @@ import socket
 import threading
 import time
 import urllib.parse
+import updates
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
@@ -381,6 +382,7 @@ def _apply(topology):
     LOCK.idle = topology.get("lock", {}).get("idle", lock.IDLE)
     admin.configure(topology.get("admin"))   # session length, trusted proxies, admin networks, OIDC
     notify.configure(topology.get("notify") or {}, topology.get("title"))
+    updates.configure(topology.get("update"))
     agents.registries = topology.get("registries") or []   # the logins api/registries.py hands out
 
 
@@ -2588,6 +2590,9 @@ if __name__ == "__main__":
         mqtt.announce(mqtt_cards(), TOPOLOGY["title"])
         mqtt.start()
     threading.Thread(target=check_keys, daemon=True, name="keys").start()
+    if not DEMO:
+        threading.Thread(target=updates.run, args=(VERSION, store, lambda text: _log([(text, False, (None, None, "update_available"))])),
+                         daemon=True, name="updates").start()
     agents.tls_fp = devices.tls_fingerprint(TLS_CERT)
     agents.load_history()
     _data["notes"] = store.load("notes") or ({"text": "Synology sleeps 00:00–08:00.\nBackups at 02:00.", "t": int(time.time())}

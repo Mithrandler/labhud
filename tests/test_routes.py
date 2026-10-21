@@ -36,6 +36,13 @@ class Served(DemoServer):
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(body)["name"], "LabHUD")
 
+    def test_about_carries_the_update_fields(self):
+        about = json.loads(self.get("/api/brand/about")[2])
+        self.assertEqual(set(about["latest"]), {"server", "agent", "app"})
+        self.assertIs(about["update"], False)           # the demo never asks GitHub
+        self.assertEqual(set(about["outdated"]), {"agent", "app"})
+        self.assertIn("checked", about)
+
     def test_get_route_is_not_a_post_route(self):
         code = self.post_json("/api/brand/about", {})[0]
         self.assertEqual(code, 403)

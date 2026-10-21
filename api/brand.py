@@ -3,6 +3,7 @@ where the project lives. Public: nothing in it is secret, the page already shows
 
 import os
 
+import updates
 from routes import route
 
 LINKS = {"source": "https://github.com/Mithrandler/labhud",
@@ -12,5 +13,6 @@ LINKS = {"source": "https://github.com/Mithrandler/labhud",
 
 @route("GET", "/api/brand/about", guard="public")
 def about(h, body):
-    return 200, {"name": "LabHUD", "version": os.environ.get("LABHUD_VERSION", "dev"),
-                 "logo": "/brand/lockup.svg", "mark": "/brand/mark.svg", "links": LINKS}
+    version = os.environ.get("LABHUD_VERSION", "dev")
+    return 200, {"name": "LabHUD", "version": version, "logo": "/brand/lockup.svg", "mark": "/brand/mark.svg", "links": LINKS,
+                 **updates.about(version, h.headers.get("X-Labhud-App"))}
