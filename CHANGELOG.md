@@ -10,6 +10,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 - **Icons on rows and pages** in `/api/v1/state`: a list row is `[name, value, bad, quiet, icon]` (the last two only
   when there is something to say) and a page carries the `icon` the config gave it.
+- **The host's Docker, whole** (agent 0.1.1+): ⚙ > Devices > Agents > *Docker host* lists the images, volumes and
+  networks with sizes and what uses them, and cleans each kind on its own: unused images, untagged layers,
+  unused networks, anonymous volumes (never a named one). `labhud agent inventory <agent>` and
+  `labhud agent prune <agent> [images|dangling|networks|volumes]`; `POST /api/setup/inventory` and
+  `/api/setup/prune {agent, what}`. The agent's answer is rebuilt field by field before it is shown.
 - **Small widgets**: a card can be a `widget = "clock"` (own `timezone`), a `widget = "calendar"`, or show a
   page with `frame = "https://…"`. The browser draws them alone; the CSP lets through only the frame's origin.
 - **Command palette**: the search box (🔍 or `/`) also finds pages, the sections of ⚙ and the cards'

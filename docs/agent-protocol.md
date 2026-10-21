@@ -158,7 +158,7 @@ not: `null` without systemd, `[]` when none failed.
 `result` — the end of a command: `{"type":"result","cmd":"<id>","ok":true}` or
 `{"type":"result","cmd":"<id>","ok":false,"error":"<one line>"}`. A command that only starts
 something long (a package update, a container's update) answers `ok` at once and reports the end
-as an `event`. A read verb (`logs`, `prune`) answers with `output`: text, at most 48 KiB (the newest part).
+as an `event`. A read verb (`logs`, `inspect`, `inventory`, `prune`, `prune-dangling`, `prune-networks`, `prune-volumes`) answers with `output`: text, at most 48 KiB (the newest part).
 
 `event` — `{"type":"event","text":"pve2: packages updated (12)","bad":false}`, for the timeline.
 An event can say what it is about, for the history labhud keeps beside each
@@ -200,7 +200,7 @@ stops (`systemctl` will not restart it: it exits with status 0 and the unit has
 | cap | targets | verbs | done through |
 |---|---|---|---|
 | `sensors` | — | — (state only) | `/proc`, hwmon, `nvidia-smi`, RAPL, `statvfs` |
-| `docker` | container names, and `images` | `start` `stop` `restart` `update` `logs` `inspect`; `prune` on `images` only | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only; `inspect` = how it is made (ports, mounts, networks, restart policy, labels, the environment's names without values), read only; `prune` = the images no container uses, unused for 24 hours, removed (`docker image prune -a --filter until=24h`), answered with what it freed. `images` takes no other verb |
+| `docker` | container names, and `images` | `start` `stop` `restart` `update` `logs` `inspect`; on `images` only: `inventory` `prune` `prune-dangling` `prune-networks` `prune-volumes` | `/var/run/docker.sock`; `update` = pull, then the container made again with the same settings (the old one is kept until the new one runs, and put back if it does not); `logs` = the last 200 lines, read only; `inspect` = how it is made (ports, mounts, networks, restart policy, labels, the environment's names without values), read only; `prune` = the images no container uses, unused for 24 hours, removed (`docker image prune -a --filter until=24h`), answered with what it freed. `inventory` = `{images, volumes, networks, more?}`, the biggest first, at most 100 of each (image: id, tags, size, created, used, dangling; volume: name, driver, size or -1, used, anonymous; network: name, driver, scope, used, builtin); `prune-dangling` = the untagged layers; `prune-networks` = user-made networks no container is on, a day old at least; `prune-volumes` = only the anonymous volumes (64 hex characters) nothing uses, chosen by the agent, never a named one. `images` takes no other verb |
 | `systemd` | unit names | `start` `stop` `restart` | D-Bus `org.freedesktop.systemd1` |
 | `host` | `host` | `reboot` `shutdown` `update` | D-Bus `login1`; `update` = a transient unit running apt-get/dnf |
 | `wol` | MAC addresses (`aa:bb:…`, lowercase) | `wake` | UDP broadcast to port 9 |

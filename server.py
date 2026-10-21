@@ -1669,7 +1669,7 @@ class Handler(BaseHTTPRequestHandler):
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|remove|update|auto|autoupdate|window|hook|unhook)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
-        st = re.fullmatch(r"/api/setup/(status|take-over|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|notes)", self.path)
+        st = re.fullmatch(r"/api/setup/(status|take-over|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|inventory|notes)", self.path)
         if st:
             return self._setup(st.group(1))
         ad = re.fullmatch(r"/api/admin/(login|logout|check|sessions|revoke|logout-all)", self.path)
@@ -2167,16 +2167,25 @@ class Handler(BaseHTTPRequestHandler):
                 _publish({"notes": notes})
                 print(f"setup: notes saved by {who} ({len(text)} characters)", flush=True)
                 return self._json({"ok": True, "notes": notes})
-            if op == "prune":   # a host's unused images, by the agent that has "images" ticked
+            if op in ("prune", "inventory"):   # a host's Docker (images, volumes, networks), by the agent that has "images" ticked
+                what = str(body.get("what") or "images")
+                if op == "prune" and what not in agents.CLEAN:
+                    return self._json({"ok": False, "error": "what: " + ", ".join(agents.CLEAN)}, 400)
                 if DEMO and str(body.get("agent")) == "docker":
-                    return self._json({"ok": True, "output": "freed 2.4 GB (31 image layers)"})
+                    if op == "inventory":
+                        return self._json({"ok": True, **demo.inventory()})
+                    return self._json({"ok": True, "output": demo.CLEANED[what]})
                 aid, a = agents.by_name(str(body.get("agent") or "")) if agents.enabled() else (None, None)
                 if not a:
                     return self._json({"ok": False, "error": "no such agent"}, 404)
-                ok, error, output = agents.read(aid, "docker", "prune", agents.PRUNE_TARGET, wait=60)
-                print(f"setup: unused images on {a['name']} cleaned by {who}: {output if ok else error}", flush=True)
-                _log([(f"{a['name']}: unused images cleaned, {output}" if ok else
-                       f"{a['name']}: cleaning unused images failed: {error}", not ok)])
+                if op == "inventory":
+                    ok, error, inv = agents.inventory(aid, fresh=body.get("fresh") is True)
+                    print(f"setup: inventory of {a['name']} read by {who}: {'ok' if ok else error}", flush=True)
+                    return self._json({"ok": True, **inv} if ok else {"ok": False, "error": error}, 200 if ok else 502)
+                ok, error, output = agents.clean(aid, what)
+                print(f"setup: {what} on {a['name']} cleaned by {who}: {output if ok else error}", flush=True)
+                _log([(f"{a['name']}: {what} cleaned, {output}" if ok else
+                       f"{a['name']}: cleaning {what} failed: {error}", not ok)])
                 return self._json({"ok": True, "output": output} if ok else {"ok": False, "error": error}, 200 if ok else 502)
             if op == "scan-status":
                 return self._json({"ok": True, **scan.status(), "default": scan.default_cidr(os.environ.get("LABHUD_HOSTS", ""))})

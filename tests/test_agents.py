@@ -464,6 +464,45 @@ class PruneAndHistory(Server):
         self.assertEqual(self.listed(aid)["prune"], True)
         c.close()
 
+    def test_inventory_and_selective_cleaning(self):
+        c, session, aid, key = self.pair(name="hostbox")
+        origin = f"http://{self.host}"
+        self.manage("caps", {"id": aid, "caps": ["docker"]})
+        self.manage("targets", {"id": aid, "cap": "docker", "targets": ["images"]})
+        c.read_signed(key, session), c.read_signed(key, session)
+        # an unknown kind of cleaning is refused before the agent hears of it
+        self.assertEqual(self.post_json("/api/setup/prune", {"agent": "hostbox", "what": "everything"}, origin)[0], 400)
+        text = json.dumps({"images": [{"id": "abc", "tags": ["nginx:1"], "size": 100, "created": 5, "used": 0, "dangling": False,
+                                       "evil": "<script>"}],
+                           "volumes": [{"name": "v", "driver": "local", "size": -1, "used": 1, "anonymous": False}],
+                           "networks": [{"name": "bridge", "driver": "bridge", "scope": "local", "used": 0, "builtin": True}],
+                           "more": {"images": 3, "other": 9}})
+        answer = {}
+        t = threading.Thread(target=lambda: answer.update(r=self.post_json("/api/setup/inventory", {"agent": "hostbox"}, origin)))
+        t.start()
+        cmd = c.read_signed(key, session)
+        self.assertEqual((cmd["cap"], cmd["verb"], cmd["target"]), ("docker", "inventory", "images"))
+        c.send_signed(key, session, aid, {"type": "result", "cmd": cmd["cmd"], "ok": True, "output": text})
+        t.join(5)
+        got = json.loads(answer["r"][1])
+        self.assertTrue(got["ok"])
+        self.assertEqual(got["images"][0], {"id": "abc", "tags": ["nginx:1"], "size": 100, "created": 5, "used": 0, "dangling": False})
+        self.assertEqual(got["more"], {"images": 3})
+        self.assertEqual(got["totals"], {"images": 100, "unused_images": 100, "volumes": 0})
+        # the second look is served from the cache: no command goes to the agent
+        self.assertTrue(json.loads(self.post_json("/api/setup/inventory", {"agent": "hostbox"}, origin)[1])["ok"])
+        # each cleaning is its own verb, on "images"
+        for what, verb in (("dangling", "prune-dangling"), ("networks", "prune-networks"), ("volumes", "prune-volumes")):
+            answer.clear()
+            t = threading.Thread(target=lambda: answer.update(r=self.post_json("/api/setup/prune", {"agent": "hostbox", "what": what}, origin)))
+            t.start()
+            cmd = c.read_signed(key, session)
+            self.assertEqual((cmd["cap"], cmd["verb"], cmd["target"]), ("docker", verb, "images"))
+            c.send_signed(key, session, aid, {"type": "result", "cmd": cmd["cmd"], "ok": True, "output": "done"})
+            t.join(5)
+            self.assertEqual(json.loads(answer["r"][1]), {"ok": True, "output": "done"})
+        c.close()
+
     def test_history(self):
         c, session, aid, key = self.pair(name="histbox")
         for ev in ({"text": "web updated (1.2 → 1.3)", "bad": False, "cap": "docker", "target": "web",
@@ -491,6 +530,12 @@ class PruneRules(unittest.TestCase):
 
     def tearDown(self):
         agents.store = self.real
+
+    def test_host_verbs_belong_to_images(self):
+        for verb in agents.HOST_VERBS:
+            self.assertTrue(agents.allowed("a1b2c3d4", "docker", verb, "images"), verb)
+            self.assertFalse(agents.allowed("a1b2c3d4", "docker", verb, "jellyfin"), verb)
+        self.assertEqual(set(agents.HOST_VERBS), set(agents.CLEAN.values()) | {"inventory"})
 
     def test_images_takes_prune_only(self):
         self.assertTrue(agents.allowed("a1b2c3d4", "docker", "prune", "images"))

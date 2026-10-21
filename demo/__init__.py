@@ -448,3 +448,33 @@ def inspect(name):
                        "env": ["PGID", "PUID", "TZ"] + (["WEBUI_PASSWORD"] if name == "qbittorrent" else []),
                        "labels": {"com.docker.compose.project": x.get("project", "")} if x.get("project") else {},
                        "health": x.get("health", "")})
+
+
+# ⚙ > Devices > Agents > the host's Docker: what `inventory` reads and what each cleaning says
+CLEANED = {"images": "freed 2.4 GB (31 image layers)", "dangling": "freed 310 MB (6 untagged layers)",
+           "networks": "removed 2 unused networks", "volumes": "freed 120 MB (3 anonymous volumes)"}
+
+
+def inventory():
+    gb, mb = 1 << 30, 1 << 20
+    return {
+        "images": [
+            {"id": "5f2a9c1d0b3e", "tags": ["jellyfin/jellyfin:10.10.3"], "size": int(1.2 * gb), "created": 1760000000, "used": 1, "dangling": False},
+            {"id": "a81c33e0f7d2", "tags": ["jellyfin/jellyfin:10.10.2"], "size": int(1.2 * gb), "created": 1757000000, "used": 0, "dangling": False},
+            {"id": "0c9e7714ab55", "tags": ["lscr.io/linuxserver/sonarr:latest"], "size": 330 * mb, "created": 1759500000, "used": 1, "dangling": False},
+            {"id": "77d0be2a9c41", "tags": ["lscr.io/linuxserver/radarr:latest"], "size": 310 * mb, "created": 1759400000, "used": 1, "dangling": False},
+            {"id": "e3b1f0a2c874", "tags": [], "size": 280 * mb, "created": 1750000000, "used": 0, "dangling": True},
+            {"id": "19ad5c60e8b3", "tags": ["portainer/portainer-ce:2.21.4"], "size": 290 * mb, "created": 1758000000, "used": 1, "dangling": False}],
+        "volumes": [
+            {"name": "jellyfin-config", "driver": "local", "size": int(2.1 * gb), "used": 1, "anonymous": False},
+            {"name": "arr-config", "driver": "local", "size": 410 * mb, "used": 2, "anonymous": False},
+            {"name": "d4" * 32, "driver": "local", "size": 120 * mb, "used": 0, "anonymous": True},
+            {"name": "old-test-data", "driver": "local", "size": 8 * mb, "used": 0, "anonymous": False}],
+        "networks": [
+            {"name": "bridge", "driver": "bridge", "scope": "local", "used": 0, "builtin": True},
+            {"name": "arr_default", "driver": "bridge", "scope": "local", "used": 3, "builtin": False},
+            {"name": "media_default", "driver": "bridge", "scope": "local", "used": 1, "builtin": False},
+            {"name": "test_default", "driver": "bridge", "scope": "local", "used": 0, "builtin": False}],
+        "more": {},
+        "totals": {"images": int(3.6 * gb) + 0, "unused_images": int(1.5 * gb), "volumes": int(2.6 * gb)},
+    }

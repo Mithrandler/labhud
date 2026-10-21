@@ -1007,26 +1007,80 @@ function agent_window_row(box, reload) {
   box.appendChild(row);
 }
 
-/** "images" ticked under Docker: the button that removes the images no container uses (unused
-    for a day at least), and what that freed. */
+/** "images" ticked under Docker: the host's Docker. Nothing is asked until the admin opens it;
+    then the images, volumes and networks with their sizes, and a button for each cleaning. */
+const CLEANINGS = [
+  ["images", "Unused images", "Remove the images no container uses, unused for a day at least. An image a stopped container uses stays."],
+  ["dangling", "Untagged layers", "Remove the image layers no tag points to."],
+  ["networks", "Unused networks", "Remove the networks no container is on (made a day ago at least). The built-in ones stay."],
+  ["volumes", "Anonymous volumes", "Remove the volumes with no name that no container uses. A volume with a name is never removed."],
+];
+
 function agent_prune_row(a, box) {
-  const row = el("div", "choices");
-  const b = el("button", "choice", "Clean unused images");
-  b.type = "button";
-  const out = el("span", "hint", "Images no container uses, unused for a day at least.");
-  b.addEventListener("click", () => {
-    put($("#confirm-text"), `Remove the unused images on ${a.name}? An image a stopped container uses stays.`);
-    ask([["CLEAN", () => {
-      b.disabled = true;
-      put(out, "cleaning…");
-      setup_post("prune", { agent: a.name }).then((r) => {
-        b.disabled = false;
-        put(out, r.ok ? "✓ " + r.output : "✕ " + (r.error || "failed"));
-      });
-    }]]);
+  const wrap = el("div", "docker-host");
+  const head = el("div", "choices");
+  const open = el("button", "choice", "Docker host: images, volumes, networks");
+  open.type = "button";
+  const note = el("span", "hint", "Sizes and what uses them, read when you open it.");
+  head.append(open, note);
+  const body = el("div", "docker-host-body");
+  body.hidden = true;
+  open.addEventListener("click", () => {
+    body.hidden = !body.hidden;
+    if (!body.hidden) host_load(a, body, note);
   });
-  row.append(b, out);
-  box.appendChild(row);
+  wrap.append(head, body);
+  box.appendChild(wrap);
+}
+
+function host_load(a, body, note, fresh) {
+  put(note, "reading…");
+  return setup_post("inventory", { agent: a.name, fresh: !!fresh }).then((r) => {
+    body.replaceChildren();
+    if (!r.ok) return put(note, "✕ " + (r.error || "failed"));
+    put(note, `${r.images.length} images (${bytes(r.totals.images)}, ${bytes(r.totals.unused_images)} unused) · ` +
+      `${r.volumes.length} volumes (${bytes(r.totals.volumes)}) · ${r.networks.length} networks`);
+    const table = (title, head, rows) => {
+      body.appendChild(el("h4", null, title));
+      const t = el("table", "host-table");
+      const tr = el("tr");
+      head.forEach((h) => tr.appendChild(el("th", null, h)));
+      t.appendChild(tr);
+      rows.forEach((cells) => {
+        const row = el("tr");
+        cells.forEach((c) => row.appendChild(el("td", null, c)));
+        t.appendChild(row);
+      });
+      body.appendChild(t);
+    };
+    table("Images", ["Image", "Size", "Used by"], r.images.map((i) =>
+      [i.tags.join(", ") || `(untagged) ${i.id}`, bytes(i.size), i.used ? i.used + " containers" : "unused"]));
+    table("Volumes", ["Volume", "Size", "Used by"], r.volumes.map((v) =>
+      [v.anonymous ? `(anonymous) ${v.name.slice(0, 12)}` : v.name, v.size < 0 ? "—" : bytes(v.size), v.used ? v.used + " containers" : "unused"]));
+    table("Networks", ["Network", "Driver", "Containers"], r.networks.map((n) =>
+      [n.name + (n.builtin ? " (built in)" : ""), n.driver, String(n.used)]));
+    if (Object.keys(r.more || {}).length) body.appendChild(el("p", "hint", "More than shown: " + Object.entries(r.more).map(([k, v]) => `${v} ${k}`).join(", ") + "."));
+    const row = el("div", "choices");
+    const out = el("span", "hint", "");
+    CLEANINGS.forEach(([what, label, text]) => {
+      const b = el("button", "choice", "Clean: " + label);
+      b.type = "button";
+      b.addEventListener("click", () => {
+        put($("#confirm-text"), `${text} On ${a.name}.`);
+        ask([["CLEAN", () => {
+          b.disabled = true;
+          put(out, "cleaning…");
+          setup_post("prune", { agent: a.name, what }).then((c) => {
+            b.disabled = false;
+            put(out, c.ok ? "✓ " + c.output : "✕ " + (c.error || "failed"));
+            if (c.ok) host_load(a, body, note, true).then(() => put(note, "✓ " + c.output + " · " + note.textContent));
+          });
+        }]]);
+      });
+      row.appendChild(b);
+    });
+    body.append(row, out);
+  });
 }
 
 function agent_targets(a, c, reload) {

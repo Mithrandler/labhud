@@ -43,7 +43,8 @@ EVENTS_PER_MINUTE = 10
 MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this much, the newest part)
 
 VERBS = {
-    "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect"),
+    "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect",
+               "inventory", "prune-dangling", "prune-networks", "prune-volumes"),
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
@@ -55,10 +56,13 @@ CAPS = ("sensors",) + tuple(VERBS) + ("scan",)
 # what an agent may say it understands beyond v1's first messages (hello.features)
 FEATURES = ("registry-auth",)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs", "prune", "inspect")}
-# docker's prune cleans the host's unused images: ticked as this target, which is no container
-# and takes no other verb (the agent checks the same)
+READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes")}
+# the host's Docker (its images, volumes and networks), ticked as this target, which is no container
+# and takes none of a container's verbs, as the host verbs take no container (the agent checks the same)
 PRUNE_TARGET = "images"
+HOST_VERBS = ("inventory", "prune", "prune-dangling", "prune-networks", "prune-volumes")
+# what cleans what: the name the admin sends -> the verb (api: /api/setup/prune {agent, what})
+CLEAN = {"images": "prune", "dangling": "prune-dangling", "networks": "prune-networks", "volumes": "prune-volumes"}
 HISTORY_KEY = "agent_history"
 HISTORY_KINDS = ("update", "crash", "oom", "loop", "held")
 # notify.py's event for each kind (⚙ > Notifications > Events); a failed update is still "update_done"
@@ -371,7 +375,7 @@ def remove(aid):
 
 def allowed(aid, cap, verb, target):
     a = get(aid)
-    if cap == "docker" and (verb == "prune") != (target == PRUNE_TARGET):
+    if cap == "docker" and (verb in HOST_VERBS) != (target == PRUNE_TARGET):
         return False
     return bool(a and cap in VERBS and verb in VERBS[cap] and cap in a.get("caps", [])
                 and target in a.get("targets", {}).get(cap, []))
@@ -588,6 +592,61 @@ def read(aid, cap, verb, target, wait=COMMAND_WAIT, auto=False):
         if extra or seal:
             return s.ask(dict({"type": "command", "cap": cap, "verb": verb, "target": target}, **extra), wait, seal)
     return s.command(cap, verb, target, wait)
+
+
+INVENTORY_KEEP = 20    # seconds an inventory is reused (opening the screen twice does not ask the host twice)
+_inventory = {}
+
+
+def _count(v, low=0):
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= low else low
+
+
+def inventory(aid, fresh=False):
+    """(ok, error, inventory): the host's images, volumes and networks, from the agent that has
+    "images" ticked. The agent's text is parsed and rebuilt field by field: nothing else it says
+    reaches the screens. Asked only when a screen opens, and kept for a few seconds."""
+    hit = _inventory.get(aid)
+    if hit and not fresh and time.time() - hit[0] < INVENTORY_KEEP:
+        return True, "", hit[1]
+    ok, error, text = read(aid, "docker", "inventory", PRUNE_TARGET, wait=60)
+    if not ok:
+        return False, error, None
+    try:
+        raw = json.loads(text)
+        if not isinstance(raw, dict):
+            raise ValueError
+    except ValueError:
+        return False, "the agent's answer was not an inventory", None
+    s = lambda v, n=200: v[:n] if isinstance(v, str) else ""   # noqa: E731
+    rows = lambda k: [x for x in raw.get(k) or [] if isinstance(x, dict)][:100]   # noqa: E731
+    out = {
+        "images": [{"id": s(x.get("id"), 64), "tags": [s(t) for t in (x.get("tags") or [])[:8] if isinstance(t, str)],
+                    "size": _count(x.get("size")), "created": _count(x.get("created")), "used": _count(x.get("used")),
+                    "dangling": x.get("dangling") is True} for x in rows("images")],
+        "volumes": [{"name": s(x.get("name")), "driver": s(x.get("driver"), 40), "size": _count(x.get("size"), -1),
+                     "used": _count(x.get("used")), "anonymous": x.get("anonymous") is True} for x in rows("volumes")],
+        "networks": [{"name": s(x.get("name")), "driver": s(x.get("driver"), 40), "scope": s(x.get("scope"), 20),
+                      "used": _count(x.get("used")), "builtin": x.get("builtin") is True} for x in rows("networks")],
+        "more": {k: _count(v) for k, v in (raw.get("more") or {}).items()
+                 if k in ("images", "volumes", "networks")} if isinstance(raw.get("more"), dict) else {},
+    }
+    out["totals"] = {"images": sum(i["size"] for i in out["images"]),
+                     "unused_images": sum(i["size"] for i in out["images"] if not i["used"]),
+                     "volumes": sum(max(v["size"], 0) for v in out["volumes"])}
+    _inventory[aid] = (time.time(), out)
+    return True, "", out
+
+
+def clean(aid, what="images"):
+    """(ok, error, output): one cleaning of the host's Docker (CLEAN: images, dangling, networks,
+    volumes); the inventory is asked again after it."""
+    verb = CLEAN.get(what)
+    if not verb:
+        return False, "clean: " + ", ".join(CLEAN), ""
+    result = read(aid, "docker", verb, PRUNE_TARGET, wait=60)
+    _inventory.pop(aid, None)
+    return result
 
 
 def update_extras(aid, target, auto=False):

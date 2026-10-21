@@ -392,3 +392,8 @@
 /* ⚙ > System > About: a newer LabHUD */
 #settings .about-update { color: var(--accent); font-weight: 600; margin: 4px 0; }
 #settings .about-update a { color: inherit; }
+#settings .docker-host-body { margin: 6px 0 10px; }
+#settings .host-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 6px; }
+#settings .host-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 3px 6px; }
+#settings .host-table td { padding: 3px 6px; border-top: 1px solid var(--line); word-break: break-all; }
+#settings .host-table td:nth-child(n+2) { white-space: nowrap; word-break: normal; }

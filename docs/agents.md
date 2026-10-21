@@ -103,8 +103,12 @@ tooling, and ⚙ only shows which version each agent runs.
   memory** or **keeps stopping** (3 times in 10 minutes) is an event on the timeline and a
   notification, like a host going down.
 - **Clean unused images**: tick `images` under Docker (it is no container, and "Tick all" leaves it
-  out), then ⚙ > Devices > Agents > *Clean unused images*, or `labhud agent prune <agent>`: the
-  images no container uses, unused for a day at least, go, and the timeline says what that freed.
+  out), then ⚙ > Devices > Agents > *Docker host*: it lists the images, volumes and networks with
+  their sizes and what uses them (read when you open it), and has a button for each cleaning:
+  *Unused images* (no container uses them, unused for a day at least), *Untagged layers*, *Unused
+  networks* and *Anonymous volumes* (a volume with a name is never removed). Each asks first, and the
+  timeline says what it freed. From a terminal: `labhud agent inventory <agent>` and
+  `labhud agent prune <agent> [images|dangling|networks|volumes]`. Needs agent 0.1.1 or later.
 - **Update on their own**: under Docker in ⚙ > Devices > Agents, the ticked containers labhud
   updates by itself when their registry has a newer image, in a window the same for every agent
   (every day at 04:00 unless changed; labhud's local time, `TZ`), one after the other, as UPDATE
