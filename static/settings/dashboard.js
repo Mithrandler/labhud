@@ -13,15 +13,74 @@ register_section({
     layout_settings(ctx.section("Pages and groups · every screen", { wide: true,
       about: "Where every card sits, for every screen and the app; a card's size in the grid and its icon." }));
     board_files(ctx.section("Export and import", { about: "The pages, groups and the places and sizes of the cards as a file. Import shows what it would do first; cards it does not know are dropped, cards it leaves out go to a group \"Unplaced\"." }));
+    board_theme_settings(ctx.section("Theme · every screen", { about: "The colours behind the cards and the accent, for every screen and the app that has not picked its own in ⚙ > Look." }));
+    role_pages(ctx.section("Pages per role", { wide: true, about: "What an API token or phone sees in the app, by role. A role with no tick sees every page. Alerts do not depend on it: a card a role does not see still raises its alert." }));
     page_columns(ctx.section("Shown on this screen", { wide: true,
       about: "Hide a group or a card on this screen only; the top tick puts the page in the rotation." }));
   },
 });
 
-function board_files(s) {
-  const post = (path, body) => fetch(path, {
+function board_post(path, body) {
+  return fetch(path, {
     method: "POST", headers: admin_headers(lock_headers({ "Content-Type": "application/json" })), body: JSON.stringify(body),
   }).then((r) => r.json());
+}
+
+/** The board's theme: base and accent, saved in the config (POST /api/boards/theme). */
+function board_theme_settings(s) {
+  const now = board_theme();
+  const msg = el("span", "device-seen", "");
+  const save = (base, accent) => board_post("/api/boards/theme", { base, accent }).then((r) => {
+    if (r.ok) location.reload(); else msg.textContent = r.error || "Not saved";
+  });
+  const bases = el("div", "choices");
+  for (const [k, v] of Object.entries(BASES)) {
+    const b = el("button", "choice" + (k === now.base ? " on" : ""), v.label);
+    b.type = "button";
+    b.addEventListener("click", () => save(k, now.accent));
+    bases.appendChild(b);
+  }
+  const accents = el("div", "choices");
+  for (const [k, c] of Object.entries(ACCENTS)) {
+    const b = el("button", "choice swatch" + (k === now.accent ? " on" : ""), k[0].toUpperCase() + k.slice(1));
+    b.type = "button"; b.style.setProperty("--sw", c[1]);
+    b.addEventListener("click", () => save(now.base, k));
+    accents.appendChild(b);
+  }
+  const custom = el("label", "choice swatch custom" + (ACCENTS[now.accent] ? "" : " on"));
+  const picker = el("input"); picker.type = "color"; picker.value = accent_colours(now.accent)[1];
+  picker.addEventListener("change", () => save(now.base, picker.value));
+  custom.append(picker, el("span", null, "custom"));
+  accents.appendChild(custom);
+  s.append(bases, accents, msg);
+}
+
+/** [roles.<role>] pages: one row of page ticks per role (POST /api/boards/roles). */
+function role_pages(s) {
+  const pages = (CFG && CFG.pages) || [];
+  const msg = el("span", "device-seen", "");
+  s.appendChild(msg);
+  fetch("/api/boards/roles", { headers: admin_headers({}) }).then((r) => r.json()).then((r) => {
+    if (r.ok) draw(r.roles || {}); else msg.textContent = signed_in() ? (r.error || "Not read") : "Sign in as the admin to see and change them.";
+  }).catch(() => { msg.textContent = "Not read"; });
+  const draw = (roles) => { for (const role of ["viewer", "operator", "admin"]) {
+    const row = el("div", "choices");
+    row.appendChild(el("span", "lbl", role[0].toUpperCase() + role.slice(1)));
+    const chosen = new Set(roles[role] || []);
+    const save = () => board_post("/api/boards/roles", { role, pages: pages.map((p) => p.id).filter((id) => chosen.has(id)) })
+      .then((r) => { if (r.ok) location.reload(); else msg.textContent = r.error || "Not saved"; });
+    for (const p of pages) {
+      const b = el("button", "choice small" + (chosen.has(p.id) ? " on" : ""), p.title);
+      b.type = "button";
+      b.addEventListener("click", () => { chosen.has(p.id) ? chosen.delete(p.id) : chosen.add(p.id); save(); });
+      row.appendChild(b);
+    }
+    s.insertBefore(row, msg);
+  } };
+}
+
+function board_files(s) {
+  const post = board_post;
   const msg = el("span", "device-seen", "");
   const exp = el("button", "choice", "Export"); exp.type = "button";
   const file = el("input"); file.type = "file"; file.accept = "application/json,.json"; file.hidden = true;

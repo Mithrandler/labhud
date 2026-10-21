@@ -54,7 +54,14 @@ PAGE_DENSITIES = ("compact", "normal")   # a page's spacing, for the apps and th
 PAGE_COLUMNS = (1, 6)                    # a page's columns, from to (both included)
 # An icon's name: a file in static/icons/svc/ (dashboard-icons names: "proxmox", "home-assistant")
 ICON_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-DISPLAY_KEYS = {"warn", "crit", "icons_online"}
+DISPLAY_KEYS = {"warn", "crit", "icons_online", "base", "accent"}
+# The board's theme (⚙ > Dashboard): the colours behind the cards and the accent. A screen may pick its own (⚙ > Look)
+THEME_BASES = ("oled", "grey")
+THEME_ACCENTS = ("blue", "green", "orange", "red", "violet", "cyan", "pink", "yellow")
+ACCENT_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+# What a role (an API token's scope, a paired phone) sees: [roles.<role>] pages = ["id", ...]
+ROLE_NAMES = ("viewer", "operator", "admin")
+ROLE_KEYS = {"pages"}
 # The marks where a resource (CPU, RAM, disk: a percentage) turns orange, then red
 DEFAULT_MARKS = (80, 92)
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
@@ -70,7 +77,7 @@ CALM_KEYS = {"after"}
 LOCK_KEYS = {"idle"}
 PUBLIC_KEYS = {"title", "groups"}
 TOP_KEYS = {"title", "page", "strip", "quiet_hours", "weather", "action", "alerts", "night", "calm", "public", "include", "sparklines",
-            "maintenance", "lock", "alert", "notify", "search", "bookmark", "display", "admin", "registry", "update", "audit"}
+            "maintenance", "lock", "alert", "notify", "search", "bookmark", "display", "admin", "registry", "update", "audit", "roles"}
 UPDATE_KEYS = {"check"}
 AUDIT_KEYS = {"keep_days"}
 SEARCH_KEYS = {"url"}
@@ -948,7 +955,7 @@ def _validate(raw, path):
             public_page = {"title": ck.opt("public", pb, "title", str, "a string") or "Status", "groups": groups}
 
     # [display] warn/crit: where CPU, RAM and disk turn orange and red (a metric's own warn/crit wins)
-    display = {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1], "icons_online": True}
+    display = {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1], "icons_online": True, "base": "oled", "accent": "blue"}
     if "display" in raw:
         dp = raw["display"]
         if not isinstance(dp, dict):
@@ -965,6 +972,16 @@ def _validate(raw, path):
                 ck.err("display", "icons_online must be true or false")
             else:
                 display["icons_online"] = dp.get("icons_online", True)
+            if dp.get("base", "oled") not in THEME_BASES:
+                ck.err("display", f"base must be one of {', '.join(THEME_BASES)}, got {dp['base']!r}")
+            else:
+                display["base"] = dp.get("base", "oled")
+            accent = dp.get("accent", "blue")
+            if not isinstance(accent, str) or not (accent in THEME_ACCENTS or ACCENT_HEX_RE.match(accent)):
+                ck.err("display", f"accent must be one of {', '.join(THEME_ACCENTS)} or a #rrggbb colour, got {accent!r}")
+            else:
+                display["accent"] = accent.lower()
+    roles = _roles(ck, raw, page_ids)
 
     registries = _registries(ck, raw)
     alert_rules = _alert_rules(ck, raw, [c for cs in cards.values() for c in cs])
@@ -1001,7 +1018,7 @@ def _validate(raw, path):
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
             "weather": weather, "night": night, "calm": calm, "lock": lock, "public": public_page,
             "alert_rules": alert_rules, "notify": notify_cfg, "search": search, "bookmarks": bookmarks,
-            "display": display, "admin": admin_cfg, "update": update_cfg, "audit": audit_cfg, "registries": registries,
+            "display": display, "roles": roles, "admin": admin_cfg, "update": update_cfg, "audit": audit_cfg, "registries": registries,
             "marks": {k: v for cs in cards.values() for c in cs for k, v in (c.get("marks") or {}).items()},
             "trends": [] if sparklines is False else sorted({
                 m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) + c.get("charts", [])
@@ -1051,6 +1068,38 @@ def _registries(ck, raw):
     return out
 
 
+def _roles(ck, raw, page_ids):
+    """[roles.<viewer|operator|admin>] pages = [page ids]: the pages that role sees in /api/v1/state.
+    A role without a table sees every page. -> {role: [page ids]}"""
+    if "roles" not in raw:
+        return {}
+    rt = raw["roles"]
+    if not isinstance(rt, dict):
+        ck.err("top level", "roles must be written as [roles.viewer], [roles.operator] and [roles.admin] tables")
+        return {}
+    ck.unknown("roles", rt, set(ROLE_NAMES))
+    out = {}
+    for name in ROLE_NAMES:
+        if name not in rt:
+            continue
+        where = f"roles.{name}"
+        t = rt[name]
+        if not isinstance(t, dict):
+            ck.err(where, f"must be a [{where}] table")
+            continue
+        ck.unknown(where, t, ROLE_KEYS)
+        pages = t.get("pages")
+        if not isinstance(pages, list) or not pages or not all(isinstance(p, str) for p in pages):
+            ck.err(where, "pages must be a list of page ids (at least one)")
+            continue
+        missing = [p for p in pages if p not in page_ids]
+        if missing:
+            ck.err(where, f"page {', '.join(repr(m) for m in missing)} does not exist")
+            continue
+        out[name] = list(dict.fromkeys(pages))
+    return out
+
+
 def public(topology):
     """What the browser gets from /api/config: the layout, without the server-side schedules
     and without the weather coordinates (only the city name is shown)."""
@@ -1058,7 +1107,8 @@ def public(topology):
     out["search"] = topology.get("search") or {}
     out["bookmarks"] = topology.get("bookmarks") or []
     out["calm"] = topology.get("calm")
-    out["display"] = topology.get("display") or {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1], "icons_online": True}
+    out["display"] = topology.get("display") or {"warn": DEFAULT_MARKS[0], "crit": DEFAULT_MARKS[1], "icons_online": True,
+                                                 "base": "oled", "accent": "blue"}
     out["marks"] = topology.get("marks") or {}
     out["maintenance_buttons"] = topology["maintenance"]["buttons"]
     out["city"] = (topology.get("weather") or {}).get("city", "")

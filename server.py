@@ -1477,11 +1477,11 @@ def write_cli_key():
         print(f"warning: the labhud command will not work: {path}: {e}", flush=True)
 
 
-def app_state(full=False):
+def app_state(full=False, role=None):
     with _lock:
         data = dict(_data)
     found = {a["name"]: a.get("found", []) for a in agents.listing()} if agents.enabled() else {}
-    return cardstate.state(TOPOLOGY, data, actions_on=actions_on(), full=full, found=found)
+    return cardstate.state(TOPOLOGY, data, actions_on=actions_on(), full=full, found=found, role=role)
 
 
 def app_info():
@@ -1566,6 +1566,17 @@ class Handler(BaseHTTPRequestHandler):
             if auth.startswith("Bearer " + tokens.PREFIX):
                 self._tok = tokens.lookup(auth[len("Bearer "):].strip(), audit.client_ip(self))
         return self._tok
+
+    def _role(self):
+        """viewer / operator / admin: what [roles.<role>] decides this request sees. An API token's
+        scope; the labhud command and a phone signed in as the admin are admin; any other paired
+        phone only looks (viewer)."""
+        if self._cli():
+            return "admin"
+        tok = self._token()
+        if tok:
+            return {v: k for k, v in tokens.ROLES.items()}.get(tok[1].get("scope"), "viewer")
+        return "admin" if self._device_admin() else "viewer"
 
     def _token_may(self, needed):
         """An API token whose scope covers `needed` (read < act < admin)."""
@@ -1740,10 +1751,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v1/info":
             return self._json(dict(app_info(), **self._app_rights()))
         if path == "/api/v1/state":
-            return self._json(dict(app_state(), **self._app_rights()))
+            return self._json(dict(app_state(role=self._role()), **self._app_rights()))
         c = re.fullmatch(r"/api/v1/card/([A-Za-z0-9_.-]{1,64})", path)
         if c:
-            card = next((x for x in app_state(full=True)["cards"] if x["id"] == c.group(1)), None)
+            card = next((x for x in app_state(full=True, role=self._role())["cards"] if x["id"] == c.group(1)), None)
             return self._json(card) if card else self._json({"error": "no such card"}, 404)
         g = re.fullmatch(r"/api/v1/game/([A-Za-z0-9_-]{1,64})", path)
         if g:
@@ -2290,6 +2301,7 @@ class Handler(BaseHTTPRequestHandler):
     def _app_stream(self):
         """SSE for apps: `event: state` with the whole of /api/v1/state, again whenever it changes
         (at most once a second). Counts against MAX_SUBSCRIBERS like a display."""
+        role = self._role()
         q = queue.Queue(maxsize=64)
         with _subscribers_lock:
             if len(_subscribers) >= MAX_SUBSCRIBERS:
@@ -2304,7 +2316,7 @@ class Handler(BaseHTTPRequestHandler):
         last = None
         try:
             while True:
-                st = app_state()
+                st = app_state(role=role)
                 sign = json.dumps({k: v for k, v in st.items() if k != "now"}, sort_keys=True)
                 if sign != last:
                     last = sign

@@ -172,7 +172,23 @@ def apply(raw, pages):
     if lost:
         raise ValueError("groups that add guests by themselves cannot be dropped: " + ", ".join(sorted(lost)))
     raw["page"] = new_pages
+    _prune_roles(raw, {p["id"] for p in new_pages})
     return raw
+
+
+def _prune_roles(raw, page_ids):
+    """[roles.*] pages that no longer exist go (a role left with none sees every page again)."""
+    roles = raw.get("roles")
+    if not isinstance(roles, dict):
+        return
+    for name in list(roles):
+        kept = [p for p in (roles[name] or {}).get("pages", []) if p in page_ids]
+        if kept:
+            roles[name] = {**roles[name], "pages": kept}
+        else:
+            del roles[name]
+    if not roles:
+        del raw["roles"]
 
 
 def organize(raw, page_id, agents=None):

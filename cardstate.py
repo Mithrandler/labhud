@@ -832,12 +832,17 @@ def games(topology, data, actions_on=False, full=False):
     return out
 
 
-def state(topology, data, actions_on=False, full=False, found=None):
+def state(topology, data, actions_on=False, full=False, found=None, role=None):
     """Everything an app shows: pages with their cards, the problems first, the alerts. `found`:
-    {agent name: what it found} (agents.listing()), for each card's `type`."""
+    {agent name: what it found} (agents.listing()), for each card's `type`. `role` (viewer /
+    operator / admin): only the pages [roles.<role>] lists; the alerts (alerting.py) do not depend
+    on it, so a card a role does not see still raises its alert."""
     pages, cards, seen = [], [], set()
     titles = {}
+    only = (topology.get("roles") or {}).get(role)
     for i, p in enumerate(topology["pages"]):
+        if only is not None and p["id"] not in only:
+            continue
         groups = []
         for g in p["groups"]:
             titles[g["id"]] = g["title"]
@@ -868,5 +873,8 @@ def state(topology, data, actions_on=False, full=False, found=None):
     rules = get(data, "alerting.active")
     alerts += [{"id": _js(a.get("id")), "text": _js(a.get("text")), "card": a.get("card"), "since": a.get("since")}
                for a in rules if isinstance(a, dict)] if isinstance(rules, list) else []
+    disp = topology.get("display") or {}
     return {"title": topology.get("title") or "LabHUD", "now": int(time.time()), "pages": pages,
-            "cards": cards, "problems": problems, "alerts": alerts}
+            "cards": cards, "problems": problems, "alerts": alerts,
+            "theme": {"base": disp.get("base", "oled"), "accent": disp.get("accent", "blue")},
+            **({"role": role} if role else {})}

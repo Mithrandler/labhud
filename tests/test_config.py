@@ -327,11 +327,11 @@ class IconSizeMarks(unittest.TestCase):
 
     def test_display_defaults(self):
         t = load_text(MINIMAL)
-        self.assertEqual(t["display"], {"warn": 80, "crit": 92, "icons_online": True})
+        self.assertEqual(t["display"], {"warn": 80, "crit": 92, "icons_online": True, "base": "oled", "accent": "blue"})
 
     def test_display_custom(self):
         t = load_text(MINIMAL + '[display]\nwarn = 65\ncrit = 90\n')
-        self.assertEqual(t["display"], {"warn": 65, "crit": 90, "icons_online": True})
+        self.assertEqual(t["display"], {"warn": 65, "crit": 90, "icons_online": True, "base": "oled", "accent": "blue"})
 
     def test_display_icons_online(self):
         self.assertIs(load_text(MINIMAL + '[display]\nicons_online = false\n')["display"]["icons_online"], False)

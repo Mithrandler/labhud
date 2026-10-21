@@ -289,6 +289,15 @@ confirm = "Wake the backup server now?"
 # Icons: a card's, a guest's or a container's logo that labhud does not carry is fetched once from
 # the dashboard-icons pack through jsDelivr and kept in LABHUD_DATA/icons. false: never ask.
 # icons_online = true
+# Theme of every screen that has not picked its own in ⚙ > Look: base "oled" or "grey", and
+# accent blue, green, orange, red, violet, cyan, pink, yellow or "#rrggbb".
+# base = "oled"
+# accent = "blue"
+
+# What each role (an API token's scope, a paired phone) sees in the app: the pages it lists, in
+# /api/v1/state. A role with no table sees every page. Alerts do not depend on it.
+# [roles.viewer]
+# pages = ["general"]
 
 # Night (optional): between these hours of the display's own clock the screen dims to `dim`
 # percent (0 = black). A touch lights it up for a minute; a new problem lights it up while the

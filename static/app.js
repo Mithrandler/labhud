@@ -2776,6 +2776,7 @@ function from_address() {
 
 fetch("/api/config").then((r) => r.json()).then((cfg) => {
   CFG = cfg;
+  apply_look();   // the board's theme, for a screen that has not picked its own
   document.title = CFG.title || "LabHUD";
   lock_state(CFG.lock);
   put($("#weather .city"), CFG.city || "");

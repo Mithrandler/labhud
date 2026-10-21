@@ -134,6 +134,54 @@ class Routes(unittest.TestCase):
         code, r = boards.import_board(self.h, {"doc": {"format": "labhud-board", "version": 1, "pages": [{"id": "main", "groups": []}]}, "apply": True})
         self.assertIn(code, (400, 409))
 
+    # --- theme and roles (Q3) ---
+
+    def test_theme_saved_and_audited(self):
+        managed.take_over()
+        code, r = boards.save_theme(self.h, {"base": "grey", "accent": "#AABBCC"})
+        self.assertEqual((code, r["accent"]), (200, "#aabbcc"))
+        self.assertEqual(managed.read_config()["display"], {"base": "grey", "accent": "#aabbcc"})
+        self.audit.assert_called_once_with(self.h, "board-theme", "grey #aabbcc")
+
+    def test_theme_refuses_bad_values(self):
+        managed.take_over()
+        for body in ({"base": "white", "accent": "blue"}, {"base": "oled", "accent": "teal"},
+                     {"base": "oled", "accent": "#12345"}, {"base": "oled"}):
+            code, r = boards.save_theme(self.h, body)
+            self.assertEqual(code, 400, body)
+        self.assertNotIn("display", managed.read_config())
+        self.audit.assert_not_called()
+
+    def test_theme_needs_take_over(self):
+        code, _ = boards.save_theme(self.h, {"base": "grey", "accent": "blue"})
+        self.assertEqual(code, 409)
+        self.audit.assert_called_once()
+        self.assertFalse(self.audit.call_args[0][3])
+
+    def test_roles_saved_and_removed(self):
+        managed.take_over()
+        code, r = boards.save_roles(self.h, {"role": "viewer", "pages": ["main", "main"]})
+        self.assertEqual(code, 200)
+        self.assertEqual(managed.read_config()["roles"], {"viewer": {"pages": ["main"]}})
+        self.audit.assert_called_with(self.h, "board-roles", "viewer: main")
+        code, _ = boards.save_roles(self.h, {"role": "viewer", "pages": []})
+        self.assertEqual(code, 200)
+        self.assertNotIn("roles", managed.read_config())
+
+    def test_roles_refuses_unknown_page_and_role(self):
+        managed.take_over()
+        self.assertEqual(boards.save_roles(self.h, {"role": "viewer", "pages": ["nope"]})[0], 400)
+        self.assertEqual(boards.save_roles(self.h, {"role": "root", "pages": ["main"]})[0], 400)
+        self.assertEqual(boards.save_roles(self.h, {"role": "viewer", "pages": "main"})[0], 400)
+        self.assertNotIn("roles", managed.read_config())
+
+    def test_dropping_a_page_drops_it_from_the_roles(self):
+        raw = Layout.raw(self)
+        raw["roles"] = {"viewer": {"pages": ["main"]}}
+        pages = [{"id": "other", "title": "O", "groups": [{"id": "g", "title": "G", "cards": ["a", "b"]}]}]
+        out = layout.apply(raw, pages)
+        self.assertNotIn("roles", out)
+
 
 if __name__ == "__main__":
     unittest.main()

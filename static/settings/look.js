@@ -12,14 +12,17 @@ register_section({
 function look_settings(ctx) {
   const section = ctx.section, choices = ctx.choices;
   const changed = (fn) => { fn(); save_settings(); apply_look(); };
-  const look = section("Theme", { about: "The background behind the cards, and the accent of titles and bars." });
-  choices(look, Object.entries(BASES).map(([k, v]) => [k, v.label]), S.base, (v) => changed(() => { S.base = v; }));
-  const acc = choices(look, Object.keys(ACCENTS).map((k) => [k, k[0].toUpperCase() + k.slice(1), ACCENTS[k][1]]), S.accent,
-    (v) => changed(() => { S.accent = v; }));
-  const custom = el("label", "choice swatch custom" + (ACCENTS[S.accent] ? "" : " on"));
+  const look = section("Theme", { about: "The background behind the cards, and the accent of titles and bars. \"Board\" follows ⚙ > Dashboard > Theme, for every screen." });
+  const board = board_theme();
+  choices(look, [["board", "Board (" + BASES[board.base].label + ")"], ...Object.entries(BASES).map(([k, v]) => [k, v.label])],
+    S.base || "board", (v) => changed(() => { S.base = v === "board" ? null : v; }));
+  const own = S.accent;
+  const acc = choices(look, [["board", "Board"], ...Object.keys(ACCENTS).map((k) => [k, k[0].toUpperCase() + k.slice(1), ACCENTS[k][1]])],
+    own || "board", (v) => changed(() => { S.accent = v === "board" ? null : v; }));
+  const custom = el("label", "choice swatch custom" + (own && !ACCENTS[own] ? " on" : ""));
   const picker = el("input");
   picker.type = "color";
-  picker.value = accent_colours(S.accent)[1];
+  picker.value = accent_colours(look_accent())[1];
   picker.addEventListener("input", () => changed(() => { S.accent = picker.value; }));
   picker.addEventListener("change", () => open_settings());
   custom.append(picker, el("span", null, "custom"));

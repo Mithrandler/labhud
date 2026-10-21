@@ -8,6 +8,12 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Theme per board and pages per role**: `[display] base` (`oled`, `grey`) and `accent` set the theme
+  of every screen that has not picked its own (⚙ > Look has a new "Board" choice; a screen that picked
+  one keeps it), from ⚙ > Dashboard > Theme (`POST /api/boards/theme`), and `/api/v1/state` carries
+  it as `theme`. `[roles.viewer|operator|admin] pages = [...]` (⚙ > Dashboard > Pages per role,
+  `POST /api/boards/roles`) limits what each role sees in `/api/v1/state`; the alerts of a card it does
+  not see stay active. Both need the admin and are heard by the audit log.
 - **Hidden cards and groups, columns and density per page**: `hidden = true` on a card or a group
   keeps it off every screen (it is not in `/api/v1/state`; its alerts stay active); a page takes
   `columns` (1 to 6) and `density` (`compact` or `normal`), both in `/api/v1/state`. All three are

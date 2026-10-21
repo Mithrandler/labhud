@@ -36,7 +36,8 @@ const FONTS = {
 };
 
 const DEFAULTS = {
-  base: "oled", accent: "blue", font: "roboto", scale: 100,
+  base: null, accent: null,   // null = the board's (⚙ > Dashboard > Theme); otherwise this screen's own
+  font: "roboto", scale: 100,
   rotate: true, period: 20, skip: [],
   night: null,   // null = as in config.toml; otherwise {on, from, to, dim}
   wake: true,    // a new problem lights a dimmed screen up
@@ -56,7 +57,12 @@ let S = load_settings();
 function load_settings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    return { ...DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}) };
+    const out = { ...DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}) };
+    // Older versions wrote their defaults into the saved settings: those were never a choice, so
+    // they follow the board's theme (a screen that picked something else keeps it)
+    if (out.base === "oled") out.base = null;
+    if (out.accent === "blue") out.accent = null;
+    return out;
   } catch (e) {
     return { ...DEFAULTS };   // private window, blocked storage: the defaults, every time
   }
@@ -65,6 +71,16 @@ function load_settings() {
 function save_settings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(S)); } catch (e) { /* not kept, still applied */ }
 }
+
+/** The board's theme ({base, accent}, [display] in the config), or the built-in one before /api/config is read. */
+function board_theme() {
+  const d = (typeof CFG !== "undefined" && CFG && CFG.display) || {};
+  return { base: BASES[d.base] ? d.base : "oled", accent: d.accent || "blue" };
+}
+
+/** What this screen shows: its own choice, else the board's. */
+function look_base() { return BASES[S.base] ? S.base : board_theme().base; }
+function look_accent() { return S.accent || board_theme().accent; }
 
 /** The accent as [accent, title], a preset name or a custom "#rrggbb". */
 function accent_colours(a) {
@@ -80,12 +96,12 @@ function ui_scale() {
 
 function apply_look() {
   const root = document.documentElement.style;
-  const base = BASES[S.base] || BASES.oled;
+  const base = BASES[look_base()] || BASES.oled;
   for (const name of ["--bg", "--card", "--block", "--line", "--border"]) {
     if (base.vars[name]) root.setProperty(name, base.vars[name]); else root.removeProperty(name);
   }
-  const [accent, title] = accent_colours(S.accent);
-  if (S.accent === "blue") { root.removeProperty("--accent"); root.removeProperty("--title"); }
+  const [accent, title] = accent_colours(look_accent());
+  if (look_accent() === "blue") { root.removeProperty("--accent"); root.removeProperty("--title"); }
   else { root.setProperty("--accent", accent); root.setProperty("--title", title); }
   const font = FONTS[S.font] || FONTS.roboto;
   if (S.font === "roboto") root.removeProperty("--font"); else root.setProperty("--font", font[1]);
