@@ -6,13 +6,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [0.1.0] - 2026-10-21
 
-From Portainer, Dockhand, Homarr and Homepage. The agent's release is 0.1.0.
-
-What Dockhand and Beszel had and labhud did not, through the agent (0.1.0 or newer).
-
-First public release.
-
-First tagged version, not published: the display as it runs in production, generalized.
+First public release: the display as it runs in production, generalized, with what Portainer,
+Dockhand, Homarr, Homepage and Beszel had and labhud did not (much of it through the agent, whose
+release is 0.1.0 too).
 
 ### Added
 
