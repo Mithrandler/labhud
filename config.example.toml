@@ -199,6 +199,35 @@ sources = ["synology"]
 # via = "both"
 # quiet_from = 23
 # quiet_to = 7
+#
+# More channels, each tried with a test from ⚙ > Notifications (which writes these for you). The
+# secrets stay out of this file, in secrets.env: LABHUD_NOTIFY_SMTP_PASSWORD (email),
+# LABHUD_NOTIFY_WEBHOOK_URL and LABHUD_NOTIFY_WEBHOOK_AUTH (a JSON POST), LABHUD_NOTIFY_DISCORD_URL
+# (a Discord webhook), LABHUD_NOTIFY_GOTIFY_TOKEN (an app token).
+# [notify.email]
+# host = "smtp.example.org"
+# security = "starttls"          # starttls (587), ssl (465) or none (25); port = ... to change it
+# user = "labhud@example.org"
+# from = "labhud@example.org"    # default: user
+# to = ["me@example.org"]
+# [notify.gotify]
+# url = "https://gotify.example.org"
+#
+# Which news goes where: app, ntfy, email, webhook, discord, gotify. Without this table the bad
+# news goes to every channel that is set, and update_available, update_done and admin_login
+# nowhere. The events: alert, host_down, container_stopped, update_available, update_done,
+# agent_offline, admin_login, backup_failed.
+# [notify.events]
+# host_down = ["app", "ntfy", "email"]
+# update_available = ["discord"]
+# admin_login = ["email"]
+
+# Private registries (optional): labhud signs the agent in when it pulls or checks an image from
+# one of them. The token or password is in secrets.env, as LABHUD_REGISTRY_<HOST>_TOKEN (the host
+# in capitals, every other character _: LABHUD_REGISTRY_GHCR_IO_TOKEN). ⚙ > Containers adds them.
+# [[registry]]
+# host = "ghcr.io"
+# user = "me"
 
 # Action buttons (optional, and off unless LABHUD_ACTION_URL is set: see docs/actions.md): a label and a confirmation text per action name. Without an
 # entry, the label comes from the name (wol-* START, shutdown-* SHUT DOWN,

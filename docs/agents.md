@@ -16,6 +16,7 @@ APIs, never through a shell or scripts you write. The agent is
 | `wol` | a UDP broadcast | wake other machines on its network |
 | `pve` | the local API (`https://localhost:8006`, a token made at install) | start, shut down, reboot VMs and LXCs |
 | `ptero` | the panel's client API (a key given at install) | start, stop, restart game servers |
+| `scan` | `trivy` or `grype` in the agent's `PATH` (the agent downloads nothing) | count the critical and high CVEs of the ticked containers' images (once a day); with ⚙ > Containers > Hold back risky updates, scan a new image before an update on its own replaces the old one |
 
 Each capability is found by the agent itself and stays **off until you tick it** in ⚙ > Devices > Agents,
 and then only on the **targets you tick**: each container, service, guest, server or MAC. The

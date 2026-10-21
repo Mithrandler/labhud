@@ -25,15 +25,21 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **Its own agents.** `labhud-agent` (one small Go binary or container per host) pairs with a
   one-time code from ⚙ > Agents and does only what you tick there: sensors and charts, Docker
   containers (start, stop, update, logs), systemd services, Proxmox guests, Pterodactyl game
-  servers, Wake-on-LAN, the host's reboot and updates. See [docs/agents.md](docs/agents.md).
+  servers, Wake-on-LAN, the host's reboot and updates; private registries, and the images' CVEs
+  with trivy or grype (an update with new critical ones can wait). See [docs/agents.md](docs/agents.md).
 - **Set up from the screen.** ⚙ holds everything: sources (tried before they are kept, or found
   by scanning your network), pages and groups by drag and drop, agents, alert rules, phones, the
   PIN, the config file itself. The `labhud` command does the same from a terminal
   ([docs/cli.md](docs/cli.md)).
 - **Alerts on hosts.** CPU, RAM, disk, temperature or an agent gone for some minutes, on one host
-  or on every one; quiet hours; sent to ntfy, to the app, or both.
-- **One admin, with two factors.** A password and an authenticator app. A screen or phone that
-  is not signed in only looks: no buttons, no ⚙.
+  or on every one; quiet hours. Sent to the app, ntfy, email, a webhook, Discord or Gotify, each
+  with a test, and a table of which news goes where (a host down, an update, an admin sign-in…).
+- **One admin, with two factors.** A password and an authenticator app, or single sign-on
+  (OpenID Connect: Authentik, Keycloak…), from the admin's networks only if you list them. A
+  screen or phone that is not signed in only looks: no buttons, no ⚙.
+- **API tokens and an audit log.** Tokens for scripts (`read`, `act` or `admin`, shown once, only
+  their hash kept) and a log of every sign-in, change and refusal, kept 90 days (⚙ > System >
+  API & audit).
 - **A PIN for a screen anyone walks by.** With a 4-digit PIN, a signed-in screen goes back to only
   looking after 2 minutes without a touch. Only a scrypt hash is kept; wrong guesses are slowed.
 - **A phone app.** [LabHUD for Android](https://github.com/Mithrandler/labhud-android) pairs with a
@@ -43,6 +49,8 @@ on the wall: hosts, VMs, network, storage, backups and media at a glance, with l
 - **Each screen its own look.** The ⚙ next to the clock sets, for that screen only: OLED black or
   dark grey, an accent colour, the font and text size, which pages rotate and how fast, and its
   own night and calm hours.
+- **Backup and restore** from ⚙ > System: config.toml and labhud's data in one file, the secrets
+  only encrypted with a password; a daily one keeps the last few.
 - **HTTPS by default**, with labhud's own certificate, pinned by the app and the agents.
 - **Demo mode** with made-up data, so you can try it without touching your lab.
 
