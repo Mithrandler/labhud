@@ -27,6 +27,9 @@ const SHOTS = [
   ["desktop.png", "?static#general", 1920, 1080, false],
   ["settings-look.png", "?static&settings=look", 800, 360, true],
   ["settings-alerts.png", "?static&settings=alerts", 800, 360, true],
+  ["settings-security.png", "?static&settings=security", 800, 360, true],
+  ["settings-api.png", "?static&settings=api", 800, 360, true],
+  ["settings-notifications.png", "?static&settings=notifications", 800, 360, true],
 ];
 // SHOTS_ALL=1: every demo page at the three sizes (wall, portrait, desktop), for a before/after
 // of the cards; SHOTS_ONLY=<regex> keeps only the files it matches.

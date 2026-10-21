@@ -96,6 +96,8 @@ alerts, the sources, the phones and the agents.
 | | |
 |---|---|
 | ![⚙ > Look](docs/screenshots/settings-look.png) | ![⚙ > Alerts](docs/screenshots/settings-alerts.png) |
+| ![⚙ > Security](docs/screenshots/settings-security.png) | ![⚙ > API & audit](docs/screenshots/settings-api.png) |
+| ![⚙ > Notifications](docs/screenshots/settings-notifications.png) | |
 
 ## Docs
 
