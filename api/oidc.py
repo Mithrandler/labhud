@@ -1,4 +1,4 @@
-"""Signing in as the admin with an OpenID Connect provider (Authentik), package F.
+"""Signing in as the admin with an OpenID Connect provider (Authentik).
 
     POST /api/admin/oidc/start {mode}        -> {url, bind}   "web": this page; "app": a paired phone
     GET  /api/admin/oidc/callback?code&state -> 303 to the page (/?oidc=<r>) or the app (labhud://oidc?r=<r>)
@@ -39,6 +39,7 @@ import urllib.parse
 import urllib.request
 
 import admin
+import util
 from routes import redirect, route
 
 SECRET_ENV = "LABHUD_OIDC_CLIENT_SECRET"
@@ -265,10 +266,6 @@ def _sweep(now):
             box.pop(min(box, key=lambda k: box[k]["made"]))
 
 
-def _hash(s):
-    return hashlib.sha256(str(s).encode()).hexdigest()
-
-
 def begin(cfg, mode, redirect_uri, device=None, now=None):
     """(authorization URL, bind) for a new sign-in. Raises OidcError when the provider is not there."""
     now = time.time() if now is None else now
@@ -277,7 +274,7 @@ def begin(cfg, mode, redirect_uri, device=None, now=None):
     challenge = _b64e(hashlib.sha256(verifier.encode()).digest())
     with _lock:
         _sweep(now)
-        _pending[state] = {"verifier": verifier, "nonce": nonce, "bind": _hash(bind), "redirect": redirect_uri,
+        _pending[state] = {"verifier": verifier, "nonce": nonce, "bind": util.sha256_hex(bind), "redirect": redirect_uri,
                            "mode": mode, "device": device, "made": now}
     scopes = list(dict.fromkeys(["openid", *cfg.get("scopes", ["profile", "email"])]))
     q = urllib.parse.urlencode({"response_type": "code", "client_id": cfg["client_id"], "redirect_uri": redirect_uri,
@@ -330,7 +327,7 @@ def claim(r, bind, mode, device=None, now=None):
     with _lock:
         res = _results.get(r)
         if (res is None or now - res["made"] > RESULT_TTL or res["mode"] != mode or res["device"] != device
-                or not hmac.compare_digest(res["bind"], _hash(bind))):
+                or not hmac.compare_digest(res["bind"], util.sha256_hex(bind))):
             return None
         del _results[r]
     return res["user"]

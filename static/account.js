@@ -229,7 +229,7 @@ function open_signin() {
       show_message("✓ Signed in as " + r.user);
     });
   });
-  if (CFG.admin.oidc && typeof oidc_signin_button === "function") body.appendChild(oidc_signin_button(said));   // package F
+  if (CFG.admin.oidc && typeof oidc_signin_button === "function") body.appendChild(oidc_signin_button(said));
   body.appendChild(form);
   box.hidden = false;
   touched();

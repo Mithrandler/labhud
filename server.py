@@ -24,6 +24,7 @@ import secrets
 import socket
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfiles  # noqa: F401  (first: LABHUD_*_FILE -> LABHUD_*, before anything reads them)
@@ -51,7 +52,7 @@ import store
 import thresholds
 import websock
 from sources import push
-from api import audit, tokens  # pachet G: API tokens and the audit log
+from api import audit, tokens
 
 # print() writes the text and the newline separately, so two threads logging at once glued their
 # lines together ("kept across restarts in /datawarning: ..."). One lock around each whole line.
@@ -167,7 +168,7 @@ if DEMO:
     os.environ.setdefault("LABHUD_CONFIG", demo.CONFIG)
     ACTION_URL = ""
     ACTION_SECRET = b""
-    notify.URL, notify.MUTED = "", True  # made-up events are not news (pachet I: on no channel)
+    notify.URL, notify.MUTED = "", True  # made-up events are not news
     mqtt.URL = ""
 
 STATUS_EVERY = 30  # the ping/TCP checks, handled here: they need the topology
@@ -362,7 +363,7 @@ def _apply(topology):
     LOCK.idle = topology.get("lock", {}).get("idle", lock.IDLE)
     admin.configure(topology.get("admin"))   # session length, trusted proxies, admin networks, OIDC
     notify.configure(topology.get("notify") or {}, topology.get("title"))
-    agents.registries = topology.get("registries") or []   # pachet H: the logins api/registries.py hands out
+    agents.registries = topology.get("registries") or []   # the logins api/registries.py hands out
 
 
 # The display's lock (lock.py): a PIN, then a ticket that the requests changing something carry.
@@ -634,13 +635,18 @@ def seed_demo_uptime():
         _uptime[c["id"]] = collections.deque(series, maxlen=UPTIME_POINTS)
 
 
-def history(long=False, year=False):
+def history(long=False, year=False, keys=None):
+    """The kept series. `keys` (a set of paths; ?keys=a&keys=b) limits them to those a screen draws:
+    a card's, not the whole lab's."""
     with _lock:
-        if year:
-            return {"step": YEAR_STEP, "series": {p: list(s) for p, s in _year.items()}}
-        if long:
-            return {"step": LONG_STEP, "series": {p: list(s) for p, s in _long.items()}}
-        return {"step": HISTORY_STEP, "series": {p: list(s) for p, s in _history.items()}}
+        step, src = (YEAR_STEP, _year) if year else (LONG_STEP, _long) if long else (HISTORY_STEP, _history)
+        return {"step": step, "series": {p: list(s) for p, s in src.items() if not keys or p in keys}}
+
+
+def history_args(query):
+    """history()'s arguments from a query string: ?long, ?year, ?keys=… (repeated)."""
+    q = urllib.parse.parse_qs(query, keep_blank_values=True)
+    return {"long": "long" in q, "year": "year" in q, "keys": set(q.get("keys", [])[:200])}
 
 
 SPARK_POINTS = 30
@@ -1092,11 +1098,6 @@ def check_rules():
 NOTES_MAX = 4000
 
 
-def scan_summary(x):
-    """A container's last scan (agent with `scan`): {critical, high}, else None. cardstate.scan_summary."""
-    return cardstate.scan_summary(x)
-
-
 def fleet_updates(every):
     """`fleet.updates`: every container, on every agent, whose registry has a newer image, as a
     card's list (`list = "fleet.updates"`), host by host; `action` is its UPDATE button when it is
@@ -1111,7 +1112,7 @@ def fleet_updates(every):
                 act = next((b for b in btns.get(c, []) if b.endswith("-update")), None)
                 rows.append({"name": c, "value": "updating…" if x.get("updating") else name, "host": name,
                              "image": x.get("image", ""), "action": act, "updating": x.get("updating") is True,
-                             "scan": scan_summary(x)})
+                             "scan": cardstate.scan_summary(x)})
     return {"updates": rows, "update_count": len(rows), "_t": int(time.time())}
 
 
@@ -1125,7 +1126,7 @@ def publish_agents():
         _data["agents"] = result
         _data["fleet"] = fleet
     _publish({"agents": result, "fleet": fleet})
-    fresh = [] if DEMO else notify.new_updates(fleet["updates"])   # pachet I: "update available"
+    fresh = [] if DEMO else notify.new_updates(fleet["updates"])   # "update available"
     if fresh:
         _log([(notify.updates_text(fresh), False, (None, None, "update_available"))])
     check_rules()
@@ -1534,7 +1535,7 @@ class Handler(BaseHTTPRequestHandler):
         return ((self.headers.get("Host") or "").lower() in ALLOWED_HOSTS or self._device()[0] is not None or self._cli()
                 or self._token_may("read"))
 
-    # --- pachet G: API tokens (api/tokens.py) ---
+    # --- API tokens (api/tokens.py) ---
 
     def _token(self):
         """(id, record) of the API token this request carries (Authorization: Bearer lh_…), or None."""
@@ -1598,7 +1599,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(health())
         if path == "/api/history":   # ?long: 15-minute points over 7 days, ?year: 2-hour ones over a year
             q = self.path.partition("?")[2]
-            return self._json(history(long="long" in q, year="year" in q))
+            return self._json(history(**history_args(q)))
         if path == "/api/uptime":    # ?range=7d: a card's uptime in its panel, as /api/v1/uptime gives the app
             return self._json(uptime(7 * 86400 if "range=7d" in self.path.partition("?")[2] else 86400))
         if path == "/api/events":   # every kept event, newest first: the day's timeline
@@ -1688,7 +1689,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:   # a module's bug: logged here, never a stack trace to the page
             print(f"route {method} {path} failed: {e!r}", flush=True)
             return self._json({"ok": False, "error": "failed"}, 500)
-        if method == "GET" and code == 303:   # routes.redirect(): OIDC's callback (package F)
+        if method == "GET" and code == 303:   # routes.redirect(): OIDC's callback
             self.send_response(303)
             self.send_header("Location", answer["location"])
             self.send_header("Cache-Control", "no-store")
@@ -1732,7 +1733,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(found[0]) if found else self._json({"error": "no such game server"}, 404)
         if path == "/api/v1/history":
             q = self.path.partition("?")[2]
-            return self._json(history(long="long" in q, year="year" in q))
+            return self._json(history(**history_args(q)))
         if path == "/api/v1/sparks":
             return self._json(sparks())
         if path == "/api/v1/uptime":
@@ -1880,7 +1881,7 @@ class Handler(BaseHTTPRequestHandler):
         return ADMIN.is_on() and self._admin_ok() and self._unlocked()
 
     def _may_manage(self):
-        """_may_manage_now(), heard once per request by the audit log (api/audit.py, pachet G)."""
+        """_may_manage_now(), heard once per request by the audit log (api/audit.py)."""
         ok = self._may_manage_now()
         audit.heard(self, ok)
         return ok
@@ -2554,7 +2555,7 @@ if __name__ == "__main__":
     threading.Thread(target=watch_config, daemon=True, name="config").start()
     threading.Thread(target=watch_lock, daemon=True, name="lock").start()
     notify.start()
-    import api.backup   # pachet I: the daily backup, and its failures as news
+    import api.backup   # the daily backup, and its failures as news
     api.backup.start(lambda text, bad: _log([(text, bad, (None, None, "backup_failed" if bad else None))]))
     if screen.enabled():
         print(f"screen: Fully Kiosk at {screen.URL}" + ("" if TOPOLOGY.get("night") else " (idle: no [night] in config.toml)"), flush=True)

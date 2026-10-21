@@ -1,4 +1,4 @@
-"""⚙ > Security (package F): the session length, the PIN's idle time, the networks, single sign-on,
+"""⚙ > Security: the session length, the PIN's idle time, the networks, single sign-on,
 and two rows of ⚙ > System's Danger zone.
 
     POST /api/security/get            what the section shows (no secrets: only whether one is set)

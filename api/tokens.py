@@ -20,7 +20,6 @@ A name, an optional expiry, and when and from where it was last used. Kept in th
 All three behind ⚙'s guard (the admin, unlocked; or an admin token, or the labhud command).
 """
 
-import hashlib
 import hmac
 import re
 import secrets
@@ -28,6 +27,7 @@ import threading
 import time
 
 import store
+import util
 from routes import route
 
 KEY = "api_tokens"
@@ -44,17 +44,12 @@ _lock = threading.Lock()
 _used = {}                             # id -> when "last used" was last written
 
 
-def _hash(s):
-    return hashlib.sha256(s.encode()).hexdigest()
-
-
 def enabled():
     return store.enabled()
 
 
 def clean_name(name):
-    name = re.sub(r"\s+", " ", str(name or "")).strip()[:40]
-    return name if NAME.fullmatch(name) else ""
+    return util.clean_name(name, NAME)
 
 
 def allows(scope, needed):
@@ -92,7 +87,7 @@ def make(name, scope, days=None, now=None):
         while tid in tokens:
             tid = secrets.token_hex(4)
         token = PREFIX + secrets.token_urlsafe(32)
-        rec = {"name": name, "scope": scope, "hash": _hash(token), "made": now,
+        rec = {"name": name, "scope": scope, "hash": util.sha256_hex(token), "made": now,
                "expires": now + days * 86400 if days else 0, "last": 0, "ip": ""}
         tokens[tid] = rec
         store.save(KEY, tokens)
@@ -104,7 +99,7 @@ def lookup(token, ip="", now=None):
     so how long this takes says nothing about which (or whether one) matched. Marks it used."""
     if not isinstance(token, str) or not TOKEN.fullmatch(token) or not store.enabled():
         return None
-    given = _hash(token)
+    given = util.sha256_hex(token)
     now = now or time.time()
     found = None
     for tid, rec in _all().items():

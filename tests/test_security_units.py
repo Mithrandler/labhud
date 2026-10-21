@@ -1,4 +1,4 @@
-"""[admin] settings (package F): the client's address behind trusted proxies, admin_networks, the session length, and their checks in config.py."""
+"""[admin] settings: the client's address behind trusted proxies, admin_networks, the session length, and their checks in config.py."""
 
 import ipaddress
 import unittest

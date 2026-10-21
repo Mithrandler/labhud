@@ -75,7 +75,7 @@ REGISTRY_HOST_RE = re.compile(r"[a-z0-9]([a-z0-9.-]{0,58}[a-z0-9])?(:[0-9]{1,5})
 DOCKER_HUB_NAMES = ("docker.io", "index.docker.io", "registry-1.docker.io", "hub.docker.com")
 BOOKMARK_KEYS = {"group", "name", "url"}
 NOTIFY_KEYS = {"via", "quiet_from", "quiet_to", "email", "gotify", "events"}   # the last three: notify.check()
-ADMIN_KEYS = {"session_hours", "trusted_proxies", "admin_networks", "oidc"}   # package F (_admin)
+ADMIN_KEYS = {"session_hours", "trusted_proxies", "admin_networks", "oidc"}
 OIDC_KEYS = {"issuer", "client_id", "allow", "allow_groups", "redirect_uri", "scopes"}
 NOTIFY_VIA = ("ntfy", "app", "both")
 # The formats whose numbers get a sparkline (the last hours, behind the value)
@@ -430,7 +430,7 @@ def _secure_url(u, path=False):
 
 
 def _admin(ck, raw):
-    """[admin] (package F, ⚙ > Security): session_hours (1 to 720: how long a browser stays
+    """[admin] (⚙ > Security): session_hours (1 to 720: how long a browser stays
     signed in without use), trusted_proxies and admin_networks (lists of networks), and
     [admin.oidc] for single sign-on: issuer, client_id, allow (user names or emails) and/or
     allow_groups; the client secret is LABHUD_OIDC_CLIENT_SECRET (secrets.env)."""

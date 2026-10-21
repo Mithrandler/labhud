@@ -31,6 +31,7 @@ import time
 import urllib.parse
 
 import store
+import util
 
 STORE_KEY = "admin"
 ENV_KEY = "LABHUD_ADMIN"
@@ -60,10 +61,6 @@ def told(user, how, ok, where="", what=""):
             f(user=str(user or "")[:40], how=how, ok=bool(ok), where=str(where)[:64], what=str(what)[:64])
         except Exception:
             pass
-
-
-def _hash(ticket):
-    return hashlib.sha256(ticket.encode()).hexdigest()
 
 
 def _sign(rec):
@@ -302,7 +299,7 @@ class Admin:
         with self._lock:
             while len(self._sessions) >= MAX_TICKETS:
                 self._sessions.pop(min(self._sessions, key=lambda k: self._sessions[k].get("last", 0)))
-            self._sessions[_hash(t)] = {"id": secrets.token_hex(6), "made": now, "last": now,
+            self._sessions[util.sha256_hex(t)] = {"id": secrets.token_hex(6), "made": now, "last": now,
                                         "where": str(where)[:64], "what": str(what)[:64]}
         self._save()
         return t
@@ -316,7 +313,7 @@ class Admin:
         self._sync(rec)
         if rec is None:
             return None
-        key, now = _hash(ticket), int(self.days())
+        key, now = util.sha256_hex(ticket), int(self.days())
         with self._lock:
             s = self._sessions.get(key)
             if s is None:
@@ -366,7 +363,7 @@ class Admin:
 
     def close(self, ticket):
         with self._lock:
-            found = self._sessions.pop(_hash(ticket or ""), None)
+            found = self._sessions.pop(util.sha256_hex(ticket or ""), None)
         if found:
             self._save()
 

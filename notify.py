@@ -227,10 +227,6 @@ def channel_problem(channel, cfg=None, env=None):
     return "no such channel"
 
 
-def channels_set():
-    return [ch for ch in CHANNELS if channel_problem(ch) is None]
-
-
 def matrix():
     """{event: [channel, …]}: [notify.events], or what it means without it (see the top)."""
     if CFG.get("events") is not None:
@@ -264,10 +260,6 @@ def apply_via(events, via):
         else:
             out[ev] = list(chans)
     return out
-
-
-def to_ntfy():
-    return bool(URL) and not problem() and VIA in ("ntfy", "both")
 
 
 def quiet_now(now=None):

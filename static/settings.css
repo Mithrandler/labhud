@@ -319,14 +319,14 @@
 /* the sign-in dialog (account.js): the mark beside its title */
 #signin .signin-title { display: flex; align-items: center; gap: 10px; }
 #signin .signin-title img { display: block; width: 26px; height: 26px; flex: none; }
-/* package F: the sign-in dialog's single sign-on button, above the password form */
+/* the sign-in dialog's single sign-on button, above the password form */
 #signin .signin-sso { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
 #signin .signin-sso .go { width: 100%; }
 #signin .signin-sso .hint { margin: 2px 0 0; font-size: 11px; color: var(--sub); text-align: center; }
 #signin .box { max-height: calc(100vh - 32px); overflow-y: auto; }   /* the SSO button makes it taller than a wall */
 @media (max-height: 420px) { #signin .signin-sso { margin-bottom: 0; } #signin .signin-sso .go { padding-top: 8px; padding-bottom: 8px; } }
 
-/* --- pachet G: ⚙ > System > API & audit (settings/api.js) --- */
+/* --- ⚙ > System > API & audit (settings/api.js) --- */
 #settings .tok-form, #settings .aud-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
 #settings .tok-form input, #settings .aud-bar input { font: 500 13px/1 var(--font); color: var(--text); background: var(--block);
   border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; min-width: 0; }
@@ -357,7 +357,7 @@
   #settings .aud-row .aud-action { color: var(--text); font-weight: 600; }
 }
 
-/* --- pachet H: ⚙ > Containers > Registries and Vulnerability scan (settings/containers.js) --- */
+/* --- ⚙ > Containers > Registries and Vulnerability scan (settings/containers.js) --- */
 #settings .reg-row, #settings .scan-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 7px 4px;
   border-top: 1px solid var(--line); font-size: 13px; }
 #settings .reg-row b, #settings .scan-row b { min-width: 110px; }
@@ -372,7 +372,7 @@
 #settings .scan-count { font-weight: 600; }
 #settings .scan-row.bad .scan-count { color: var(--red); }
 
-/* --- pachet I: ⚙ > Notifications > Events (the matrix) and ⚙ > System > Backup and restore --- */
+/* --- ⚙ > Notifications > Events (the matrix) and ⚙ > System > Backup and restore --- */
 #settings .ntf-matrix-box { overflow-x: auto; margin: 4px 0 6px; }
 #settings .ntf-matrix { border-collapse: collapse; font-size: 13px; min-width: 100%; }
 #settings .ntf-matrix th, #settings .ntf-matrix td { padding: 5px 6px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }

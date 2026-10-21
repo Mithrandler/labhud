@@ -26,6 +26,7 @@ import time
 import agentproto as P
 import devices
 import store
+import util
 import websock
 
 AGENTS_KEY = "agents"
@@ -106,17 +107,8 @@ def _load():
 
 def new_code(now=None):
     """A one-time pairing code (24 characters), valid PAIR_MINUTES. None without LABHUD_DATA."""
-    if not store.enabled():
-        return None
-    now = now or time.time()
-    code = secrets.token_urlsafe(18)
     with _lock:
-        codes = {h: c for h, c in (store.load(CODES_KEY) or {}).items() if c.get("until", 0) > now}
-        while len(codes) >= MAX_CODES:
-            codes.pop(min(codes, key=lambda h: codes[h]["until"]))
-        codes[P.code_id(code)] = {"until": int(now + PAIR_MINUTES * 60), "secret": P.pair_secret(code)}
-        store.save(CODES_KEY, codes)
-    return code
+        return util.add_code(store, CODES_KEY, lambda code: (P.code_id(code), {"secret": P.pair_secret(code)}), MAX_CODES, PAIR_MINUTES, now)
 
 
 def _take_code(cid, now):
@@ -135,20 +127,13 @@ def _take_code(cid, now):
 # --- the list and what each agent may do ---
 
 def _unique(name, agents, own=None):
-    taken = {a["name"].lower() for aid, a in agents.items() if aid != own}
-    if name.lower() not in taken:
-        return name
-    n = 2
-    while f"{name} {n}".lower() in taken:
-        n += 1
-    return f"{name} {n}"
+    return util.unique_name(name, (a["name"] for aid, a in agents.items() if aid != own))
 
 
 def clean_name(name):
     """An agent's name as shown: trimmed, at most 40 plain characters, never empty. No dots: the
     name is a step of a data path (`agents.<name>.sensors`), so "pve2.lan" becomes "pve2-lan"."""
-    name = re.sub(r"\s+", " ", str(name or "")).strip().replace(".", "-")[:40]
-    return name if devices.NAME.fullmatch(name) else "agent"
+    return util.clean_name(name, devices.NAME, "agent", dots=True)
 
 
 def _save(aid, **fields):
@@ -277,17 +262,13 @@ HOOK_TOKEN = re.compile(r"[A-Za-z0-9_-]{32,64}")
 _hook_last = {}
 
 
-def _hash(token):
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 def new_hook(aid, target):
     """A new secret for one ticked container (the old one, if any, stops working), or None."""
     a = get(aid)
     if not a or target == PRUNE_TARGET or target not in a.get("targets", {}).get("docker", []):
         return None
     token = secrets.token_urlsafe(32)
-    if not _save(aid, hooks=dict(a.get("hooks", {}), **{target: _hash(token)})):
+    if not _save(aid, hooks=dict(a.get("hooks", {}), **{target: util.sha256_hex(token)})):
         return None
     on_change()
     return token
@@ -304,7 +285,7 @@ def hook(token, now=None):
     """(ok, error, agent name, container) for a webhook call."""
     if not HOOK_TOKEN.fullmatch(token or ""):
         return False, "forbidden", "", ""
-    h = _hash(token)
+    h = util.sha256_hex(token)
     for aid, a in _load().items():
         for target, kept in a.get("hooks", {}).items():
             if hmac.compare_digest(kept, h):

@@ -35,6 +35,7 @@ import time
 import urllib.parse
 
 import store
+import util
 
 DEVICES_KEY = "devices"
 CODES_KEY = "pair_codes"
@@ -52,35 +53,22 @@ _lock = threading.Lock()
 _seen = {}                # id -> last time "last seen" was written
 
 
-def _hash(s):
-    return hashlib.sha256(s.encode()).hexdigest()
-
-
 def enabled():
     return store.enabled()
 
 
 def clean_name(name):
     """A device's name as shown in lists: trimmed, at most 40 plain characters, never empty."""
-    name = re.sub(r"\s+", " ", str(name or "")).strip()[:40]
-    return name if NAME.fullmatch(name) else "phone"
+    return util.clean_name(name, NAME, "phone")
 
 
 # --- pairing codes ---
 
 def new_code(name="", now=None):
     """A one-time pairing code, valid PAIR_MINUTES. None without LABHUD_DATA."""
-    if not store.enabled():
-        return None
-    now = now or time.time()
-    code = secrets.token_urlsafe(18)
     with _lock:
-        codes = {h: c for h, c in (store.load(CODES_KEY) or {}).items() if c.get("until", 0) > now}
-        while len(codes) >= MAX_CODES:
-            codes.pop(min(codes, key=lambda h: codes[h]["until"]))
-        codes[_hash(code)] = {"until": int(now + PAIR_MINUTES * 60), "name": clean_name(name) if name else ""}
-        store.save(CODES_KEY, codes)
-    return code
+        return util.add_code(store, CODES_KEY, lambda code: (util.sha256_hex(code), {"name": clean_name(name) if name else ""}),
+                             MAX_CODES, PAIR_MINUTES, now)
 
 
 def pair(code, name, now=None, admin=None):
@@ -91,7 +79,7 @@ def pair(code, name, now=None, admin=None):
     now = now or time.time()
     with _lock:
         codes = store.load(CODES_KEY) or {}
-        entry = codes.pop(_hash(code), None)
+        entry = codes.pop(util.sha256_hex(code), None)
         codes = {h: c for h, c in codes.items() if c.get("until", 0) > now}
         store.save(CODES_KEY, codes)
         if not entry or entry.get("until", 0) <= now:
@@ -104,7 +92,7 @@ def pair(code, name, now=None, admin=None):
         while did in devices:
             did = secrets.token_hex(4)
         secret = secrets.token_urlsafe(32)
-        devices[did] = {"name": name, "hash": _hash(secret), "paired": int(now), "seen": int(now)}
+        devices[did] = {"name": name, "hash": util.sha256_hex(secret), "paired": int(now), "seen": int(now)}
         if admin:
             devices[did]["admin"] = admin
         store.save(DEVICES_KEY, devices)
@@ -112,13 +100,7 @@ def pair(code, name, now=None, admin=None):
 
 
 def _unique(name, devices):
-    taken = {d["name"].lower() for d in devices.values()}
-    if name.lower() not in taken:
-        return name
-    n = 2
-    while f"{name} {n}".lower() in taken:
-        n += 1
-    return f"{name} {n}"
+    return util.unique_name(name, (d["name"] for d in devices.values()))
 
 
 # --- tokens ---
@@ -136,7 +118,7 @@ def lookup(token, now=None):
         return None
     did, secret = m.groups()
     device = (store.load(DEVICES_KEY) or {}).get(did)
-    if not device or not hmac.compare_digest(device.get("hash", ""), _hash(secret)):
+    if not device or not hmac.compare_digest(device.get("hash", ""), util.sha256_hex(secret)):
         return None
     now = now or time.time()
     if now - _seen.get(did, 0) >= SEEN_EVERY:

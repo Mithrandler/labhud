@@ -217,10 +217,10 @@ const LAY_SIZES = [["s", "S · 1×1"], ["m", "M · 2×1"], ["l", "L · 2×2"], [
 let LAY_ICONS = null;   // the icons labhud ships (/api/display/icons), read once
 
 function lay_icon(name) {
-  const i = el("img", "lay-icon");
-  i.src = `/icons/svc/${name}.svg`; i.alt = ""; i.width = 16; i.height = 16;
-  i.addEventListener("error", () => i.remove());
-  return i;
+  // the same lookup as the card's own (a line icon, the service's logo, a plain box), at the size of a chip
+  const box = card_icon(name);
+  box.classList.add("lay-icon");
+  return box;
 }
 
 /** A card's or a page's icon: a text field in place of its name, with the shipped icons offered

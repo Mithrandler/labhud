@@ -49,6 +49,14 @@ class LongHistory(unittest.TestCase):
         server._long["a.cpu"] = collections.deque([1.0, 2.0], maxlen=server.LONG_POINTS)
         self.assertEqual(server.history(long=True), {"step": server.LONG_STEP, "series": {"a.cpu": [1.0, 2.0]}})
 
+    def test_keys_limit_the_series(self):
+        server._long["a.cpu"] = collections.deque([1.0], maxlen=server.LONG_POINTS)
+        server._long["b.cpu"] = collections.deque([2.0], maxlen=server.LONG_POINTS)
+        self.assertEqual(server.history(long=True, keys={"b.cpu"})["series"], {"b.cpu": [2.0]})
+        self.assertEqual(sorted(server.history(long=True, keys=set())["series"]), ["a.cpu", "b.cpu"])
+        self.assertEqual(server.history_args("long&keys=a.cpu&keys=b.cpu"), {"long": True, "year": False, "keys": {"a.cpu", "b.cpu"}})
+        self.assertEqual(server.history_args(""), {"long": False, "year": False, "keys": set()})
+
 
 if __name__ == "__main__":
     unittest.main()

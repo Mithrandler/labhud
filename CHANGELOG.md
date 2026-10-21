@@ -4,6 +4,25 @@ All notable changes to labhud. The format follows [Keep a Changelog](https://kee
 and versions follow [Semantic Versioning](https://semver.org/). Before 1.0.0 the config format may
 still change in a minor version; such changes are listed under **Changed** with what to edit.
 
+## [Unreleased]
+
+### Added
+
+- `GET /api/v1/history` (and `/api/history`) take `?keys=a&keys=b`: only those series, so a card
+  draws its own without the whole lab's history. An older labhud ignores it.
+
+### Fixed
+
+- ⚙ > Dashboard: the icon next to a card's or a page's name (`lay_icon`) was a plain `<img>` of
+  `/icons/svc/<name>.svg`, so a name of a line icon (`vm`, `nas`…) gave a 404; it is the card's
+  own icon now.
+
+### Changed
+
+- Inside: one `util.py` for the hash, the clean name, the free name and the pairing code that the
+  phones, the agents, the API tokens and the single sign-in each had their own copy of; three
+  functions nothing called and one wrapper are gone, and so are the "package F/G/H/I" markers.
+
 ## [0.1.0] - 2026-10-21
 
 First public release: the display as it runs in production, generalized, with what Portainer,

@@ -1,4 +1,4 @@
-"""Package H: registries (api/registries.py) and what an agent's docker update carries
+"""Registries (api/registries.py) and what an agent's docker update carries
 (agents.update_extras / Session.ask): a registry's login only to an agent that understands it,
 only for an image of that registry, sealed, never in an answer; hold_critical only for labhud's
 own scheduled updates on an agent that scans; [[registry]] in config.py."""

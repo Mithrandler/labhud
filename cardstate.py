@@ -350,11 +350,6 @@ def detail_row(d):
     return ["" if name is None else _js(name), _js(value), d.get("bad") is True]
 
 
-def row_bad(d):
-    return not d.get("quiet") and (d.get("bad") is True or (
-        d.get("bad") is not False and bool(re.search(r"failed|\bdown\b|missing|expired", _js(d.get("value")) if d.get("value") is not None else "", re.I))))
-
-
 def summary(c, data):
     """"CPU 12% · RAM 40%": the card's first numbers, or its first list row, in one line."""
     if is_guest(c):

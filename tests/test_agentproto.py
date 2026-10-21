@@ -1,6 +1,7 @@
 """The agent protocol's cryptography (agentproto.py) against the vectors shared with the Go agent
 (docs/agent-protocol-vectors.json), and the reasons a frame is refused."""
 
+import hashlib
 import json
 import os
 import unittest
@@ -10,6 +11,24 @@ from tests.test_smoke import ROOT
 
 with open(os.path.join(ROOT, "docs", "agent-protocol-vectors.json"), encoding="utf-8") as f:
     V = json.load(f)
+
+
+# The agent keeps its own copy (internal/proto/testdata/vectors.json). Changing the vectors here means
+# changing it there, and this sum with them: the two sides cannot drift apart unseen.
+VECTORS_SHA256 = "02cc650cb18cc4bd2e68ed7187ac2eb0ffc61314eb77afb31bda672cd74baf91"
+AGENT_COPY = os.path.join(os.environ.get("LABHUD_AGENT_DIR", os.path.join(ROOT, "..", "labhud-agent")),
+                          "internal", "proto", "testdata", "vectors.json")
+
+
+class SharedWithTheAgent(unittest.TestCase):
+    def test_pinned_sum(self):
+        with open(os.path.join(ROOT, "docs", "agent-protocol-vectors.json"), "rb") as f:
+            self.assertEqual(hashlib.sha256(f.read()).hexdigest(), VECTORS_SHA256)
+
+    @unittest.skipUnless(os.path.exists(AGENT_COPY), "no checkout of labhud-agent (set LABHUD_AGENT_DIR)")
+    def test_agents_copy_is_the_same_file(self):
+        with open(AGENT_COPY, "rb") as a, open(os.path.join(ROOT, "docs", "agent-protocol-vectors.json"), "rb") as b:
+            self.assertEqual(a.read(), b.read())
 
 
 class Vectors(unittest.TestCase):

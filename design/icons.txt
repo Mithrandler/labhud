@@ -1,6 +1,5 @@
 # The service icons labhud ships (static/icons/svc/), from homarr-labs/dashboard-icons (Apache-2.0).
 # One name per line, as dashboard-icons names them; design/icons.py fetches them. Add a name, run it.
-# The sources' own
 adguard-home
 authentik
 beszel

@@ -444,7 +444,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 /* "update available" / "updating…" beside a container's state */
 #panel-body .v .badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 8px; font-size: 10px;
   font-weight: 700; letter-spacing: .03em; color: var(--accent); border: 1px solid var(--accent); vertical-align: 1px; }
-#panel-body .v .badge.bad { color: var(--red); border-color: var(--red); }   /* pachet H: critical CVEs */
+#panel-body .v .badge.bad { color: var(--red); border-color: var(--red); }   /* critical CVEs */
 /* a container's usage and its latest update or crash, under its state; a compose project's title row */
 #panel-body .v .sub { display: block; font-size: 11px; color: var(--muted); }
 #panel-body .row.compose { margin-top: 6px; border-bottom: 1px solid var(--line); }

@@ -45,7 +45,7 @@ function about_settings(s) {
   }).catch(() => facts.appendChild(el("p", "hint", "Could not reach LabHUD.")));
 }
 
-/** Danger zone > Remove every phone and New keys (package F, api/security.py): the typed word goes too. */
+/** Danger zone > Remove every phone and New keys (api/security.py): the typed word goes too. */
 function danger_post(op, word, done) {
   security_post(op, { confirm: word }).then((r) => show_message(r.ok ? done(r) : "✕ " + (r.error === "forbidden" ? "refused" : r.error || "not done")));
 }

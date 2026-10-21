@@ -128,7 +128,7 @@ def prune(path, now=None):
 
 def client_ip(h):
     """The client's address. One place: when the server learns the real client behind a trusted
-    proxy (h._client_ip, package F), this follows it."""
+    proxy (h._client_ip), this follows it."""
     f = getattr(h, "_client_ip", None)
     if callable(f):
         try:

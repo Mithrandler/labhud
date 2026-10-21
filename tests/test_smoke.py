@@ -186,6 +186,14 @@ class DemoServer(unittest.TestCase):
         self.assertIn("opnsense.cpu", h["series"])
         self.assertEqual(len(h["series"]["opnsense.cpu"]), 360)  # the demo's made-up six hours
 
+    def test_history_of_some_keys_only(self):
+        every = json.loads(self.get("/api/v1/history")[2])["series"]
+        some = sorted(every)[:2]
+        got = json.loads(self.get("/api/v1/history?" + "&".join("keys=" + k for k in some))[2])["series"]
+        self.assertEqual(sorted(got), some)
+        self.assertEqual(got[some[0]], every[some[0]])
+        self.assertEqual(json.loads(self.get("/api/v1/history?keys=no.such.key")[2])["series"], {})
+
     def test_uptime_for_the_panel(self):
         day = json.loads(self.get("/api/uptime")[2])
         week = json.loads(self.get("/api/uptime?range=7d")[2])

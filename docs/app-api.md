@@ -261,7 +261,7 @@ token, the `labhud` command) answers `{rows, more, offset, limit, enabled, days}
 
 A bad `from`/`to`/`offset`/`limit` is a 400 with `error`.
 
-## Single sign-on and ⚙ > Security (package F)
+## Single sign-on and ⚙ > Security
 
 ### Config
 
