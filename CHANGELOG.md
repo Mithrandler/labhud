@@ -10,6 +10,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 - `GET /api/v1/history` (and `/api/history`) take `?keys=a&keys=b`: only those series, so a card
   draws its own without the whole lab's history. An older labhud ignores it.
+- **Icons for machines and containers**: about 340 shipped (distros, Windows, the usual homelab
+  apps), and any other icon of the dashboard-icons pack fetched once on the first request and kept
+  in `LABHUD_DATA/icons` (`[display] icons_online = false` never asks). A Proxmox guest gets its
+  OS's icon (or a `icon-<name>` tag's), a container its image's, a game its logo when the pack has
+  it, a card named after a service the service's; `/api/v1/card` containers carry `image` and `icon`.
 - **Update available**: every six hours labhud reads the latest releases of itself, its agent and
   its Android app from GitHub. ⚙ > System > About says "Update available: v0.1.1 · release notes",
   the account button and its Settings entry get a dot, and `/api/brand/about` carries `latest`,
