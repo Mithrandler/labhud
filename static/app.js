@@ -952,6 +952,68 @@ function make_notes() {
   return t;
 }
 
+/** `widget = "clock"`: the time (and the date) in the card's timezone, or the screen's own. Drawn here, no data. */
+function make_clock(c) {
+  const t = el("div", "w-clock");
+  const time = el("div", "w-time"), date = el("div", "w-date");
+  t.append(time, date);
+  const tz = c.timezone || undefined;
+  const draw = () => {
+    const now = new Date();
+    put(time, now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: tz }));
+    put(date, now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", timeZone: tz }));
+  };
+  draw();
+  updaters.push(draw);   // run with every refresh of the page (about every 10 s): no timer of its own to leak
+  return t;
+}
+
+/** The days of a month as rows of seven, Monday first: null for a blank cell. */
+function month_cells(year, month) {
+  const lead = (new Date(year, month, 1).getDay() + 6) % 7;
+  const days = new Date(year, month + 1, 0).getDate();
+  const cells = Array(lead).fill(null).concat(Array.from({ length: days }, (_, i) => i + 1));
+  while (cells.length % 7) cells.push(null);
+  return cells;
+}
+
+/** `widget = "calendar"`: this month, today marked; changes by itself at midnight. */
+function make_calendar() {
+  const box = el("div", "w-cal");
+  let drawn = "";
+  const draw = () => {
+    const now = new Date();
+    if (drawn === now.toDateString()) return;   // only when the day changes
+    drawn = now.toDateString();
+    box.textContent = "";
+    box.appendChild(el("div", "w-cal-title", now.toLocaleDateString([], { month: "long", year: "numeric" })));
+    const grid = el("div", "w-cal-grid");
+    for (const d of [1, 2, 3, 4, 5, 6, 7]) {
+      grid.appendChild(el("span", "w-cal-head", new Date(2024, 0, d).toLocaleDateString([], { weekday: "narrow" })));
+    }
+    for (const d of month_cells(now.getFullYear(), now.getMonth())) {
+      grid.appendChild(el("span", "w-cal-day" + (d === now.getDate() ? " today" : ""), d ? String(d) : ""));
+    }
+    box.appendChild(grid);
+  };
+  draw();
+  updaters.push(draw);
+  return box;
+}
+
+/** `frame = "https://…"`: a page inside the card. Sandboxed, no referrer, loaded when it comes into view;
+    the server's CSP lets through only the origins the config lists. A page that forbids framing stays blank. */
+function make_frame(c) {
+  const f = el("iframe", "w-frame");
+  f.src = c.frame;
+  f.title = c.name;
+  f.loading = "lazy";
+  f.referrerPolicy = "no-referrer";
+  f.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
+  f.style.height = (c.frame_height || 240) + "px";
+  return f;
+}
+
 /** The notes card's panel: the text, and for the admin a box to change it. */
 function notes_panel(body) {
   const n = get("notes") || {};
@@ -1024,6 +1086,9 @@ function make_card(c, node = false) {
   if (c.torrents) body.appendChild(make_torrents(c.torrents));
   if (c.bookmarks) body.appendChild(make_bookmarks(c));
   if (c.notes) body.appendChild(make_notes());
+  if (c.widget === "clock") body.appendChild(make_clock(c));
+  if (c.widget === "calendar") body.appendChild(make_calendar(c));
+  if (c.frame) body.appendChild(make_frame(c));
   if (!body.children.length) n.classList.add("bare");
   n.appendChild(foot);
 

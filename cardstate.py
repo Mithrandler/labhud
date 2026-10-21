@@ -762,6 +762,9 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False, found
             if isinstance(rows, list) else []
     if c.get("notes"):
         out["notes"] = (data.get("notes") or {}).get("text", "")
+    for k in ("widget", "timezone", "frame", "frame_height"):
+        if c.get(k):
+            out[k] = c[k]
     if c.get("bookmarks"):
         out["bookmarks"] = [b for b in topology.get("bookmarks") or [] if c["bookmarks"] is True or b["group"] == c["bookmarks"]]
     if c.get("list") == "fleet.updates":   # the fleet's updates: each with its UPDATE, as the display's panel

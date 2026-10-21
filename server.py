@@ -1415,12 +1415,13 @@ def health():
 # ---------------------------------------------------------------------------------------------
 
 def _csp():
+    """The page's policy. Frames: only the origins of the cards' `frame` (config.py), nothing else."""
+    cards = ((globals().get("TOPOLOGY") or {}).get("cards") or {}).values()
+    origins = sorted({o for group in cards for c in group if (o := config.frame_origin(c.get("frame")))})
+    frames = f"frame-src {' '.join(origins)}; " if origins else ""
     return ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-            f"font-src 'self'; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+            f"font-src 'self'; media-src 'self'; connect-src 'self'; {frames}frame-ancestors 'none'; "
             "base-uri 'none'; form-action 'self'; object-src 'none'")
-
-
-CSP = _csp()
 
 TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -1502,7 +1503,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         # Only this server's own scripts, styles, fonts and media; no frames around it; the
         # browser talks to this server alone (actions included: it forwards them, signed).
-        self.send_header("Content-Security-Policy", CSP)
+        self.send_header("Content-Security-Policy", _csp())
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")

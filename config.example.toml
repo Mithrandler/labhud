@@ -321,6 +321,10 @@ city = "Berlin"              # optional, shown next to the temperature
 
 # Optional: plain links, by group, on a card with `bookmarks = true` (or `bookmarks = "Docs"` for
 # one group) and in the search. A card with `notes = true` shows the text written in its panel.
+# Small cards drawn by the browser: `widget = "clock"` (with `timezone = "Europe/Bucharest"`, else the
+# screen's own) and `widget = "calendar"` (this month). `frame = "https://…"` shows a page inside the card
+# (`frame_height` 120 to 800): the page's CSP lets through only that origin, and a page that forbids
+# framing (X-Frame-Options) stays blank.
 # [[bookmark]]
 # group = "Docs"
 # name = "Proxmox wiki"

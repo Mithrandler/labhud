@@ -8,6 +8,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Small widgets**: a card can be a `widget = "clock"` (own `timezone`), a `widget = "calendar"`, or show a
+  page with `frame = "https://…"`. The browser draws them alone; the CSP lets through only the frame's origin.
 - **Command palette**: the search box (🔍 or `/`) also finds pages, the sections of ⚙ and the cards'
   buttons (`RESTART · web`), best match first; `>` looks only among the commands. The buttons and ⚙
   appear only to who may act (signed in as the admin and unlocked; the admin hands that on with an

@@ -17,6 +17,7 @@ import re
 import sys
 import time
 import tomllib
+import zoneinfo
 
 import alerting
 
@@ -41,7 +42,8 @@ PAGE_KEYS = {"id", "title", "group", "games", "icon", "columns", "density"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag", "hidden"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
              "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links",
-             "agent", "agent_target", "wake", "kind", "bookmarks", "notes", "icon", "size", "hidden"}
+             "agent", "agent_target", "wake", "kind", "bookmarks", "notes", "icon", "size", "hidden",
+             "widget", "timezone", "frame", "frame_height"}
 CARD_KINDS = ("proxmox", "nas", "docker", "vm", "pc")   # cardtype.KINDS: for ⚙ > Pages > Organize by type
 # agent_target = "<capability>:<target>": what a card controls through its agent (agents.py)
 AGENT_TARGET = {"docker": r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
@@ -189,6 +191,49 @@ def _check(ck, where, c):
     return None
 
 
+WIDGETS = ("clock", "calendar")
+FRAME_RE = re.compile(r"^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[^\s\"'<>]*)?$")
+
+
+def frame_origin(url):
+    """"https://host:port" of a frame's address (what the page's frame-src lists), or None."""
+    m = re.match(r"^(https?://[^/]+)", url or "")
+    return m.group(1) if m else None
+
+
+def _widget(ck, where, c, out):
+    """A small card the browser draws alone: widget = "clock" (timezone = "Europe/Bucharest", the
+    screen's own when missing) or "calendar" (the month); frame = "https://…" a page shown inside the
+    card (frame_height = 120 to 800 pixels). Only the frame's own origin is let through by the CSP."""
+    w = ck.opt(where, c, "widget", str, "clock or calendar")
+    if w is not None:
+        if w not in WIDGETS:
+            ck.err(where, f"widget must be one of {', '.join(WIDGETS)}, got {w!r}")
+        else:
+            out["widget"] = w
+    tz = ck.opt(where, c, "timezone", str, "a timezone name such as \"Europe/Bucharest\"")
+    if tz is not None:
+        try:
+            zoneinfo.ZoneInfo(tz)
+            out["timezone"] = tz
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError, OSError):
+            ck.err(where, f"timezone {tz!r} is not a timezone name")
+    fr = ck.opt(where, c, "frame", str, "an http:// or https:// address")
+    if fr is not None:
+        if FRAME_RE.match(fr):
+            out["frame"] = fr
+        else:
+            ck.err(where, "frame must be an http:// or https:// address")
+    fh = c.get("frame_height")
+    if fh is not None:
+        if isinstance(fh, int) and not isinstance(fh, bool) and 120 <= fh <= 800:
+            out["frame_height"] = fh
+        else:
+            ck.err(where, "frame_height must be a whole number from 120 to 800")
+    if "widget" in out and "frame" in out:
+        ck.err(where, "a card is a widget or a frame, not both")
+
+
 def _icon(ck, where, t):
     icon = ck.opt(where, t, "icon", str, "a string")
     if icon is not None and not ICON_RE.match(icon):
@@ -250,6 +295,7 @@ def _card(ck, where, c):
             ck.err(where, 'bookmarks must be true or the name of a [[bookmark]] group')
     if ck.opt(where, c, "notes", bool, "true or false"):
         out["notes"] = True
+    _widget(ck, where, c, out)
     if "metrics" in c:
         ms = c["metrics"]
         if not isinstance(ms, list) or not all(isinstance(m, dict) for m in ms):
