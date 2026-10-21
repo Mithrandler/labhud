@@ -892,4 +892,6 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
     return {"title": topology.get("title") or "LabHUD", "now": int(time.time()), "pages": pages,
             "cards": cards, "problems": problems, "alerts": alerts,
             "theme": {"base": disp.get("base", "oled"), "accent": disp.get("accent", "blue")},
+            "bookmarks": [{"group": b["group"], "name": b["name"], "url": b["url"]} for b in topology.get("bookmarks") or []],
+            "search": (topology.get("search") or {}).get("url") or "",
             **({"role": role} if role else {})}
