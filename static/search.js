@@ -53,6 +53,7 @@ function search_items() {
       }
     }
   });
+  search_containers(out, act);
   for (const b of CFG.bookmarks || []) {
     out.push({ label: b.name, hint: b.group, kind: "link", text: search_norm([b.name, b.group, b.url].join(" ")),
       run: () => window.open(b.url, "_blank", "noopener") });
@@ -69,6 +70,39 @@ function search_items() {
     }
   }
   return out;
+}
+
+/** The containers an agent reports, found by name: Enter opens the panel of the host card that lists them. Their
+    buttons and LOGS are the rows' own (agent_containers in app.js): only when the row has buttons, and as the admin. */
+function search_containers(out, act) {
+  const seen = new Set();
+  const cards = [];
+  CFG.pages.forEach((p, i) => {
+    if (p.games) return;
+    for (const g of p.groups) for (const c of CFG.cards[g.id] || []) {
+      cards.push([i, p, g, c]);
+      const t = /^docker:(.+)$/.exec(c.agent_target || "");
+      if (t && c.agent) seen.add(`${c.agent}/${t[1]}`);   // a container with a card of its own is found as that card
+    }
+  });
+  for (const [i, p, g, c] of cards) {
+    if (!c.agent || c.agent_target || c.game) continue;
+    for (const x of container_rows(c)) {
+      const key = `${c.agent}/${x.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const open = () => { go(i); setTimeout(() => open_panel(c), 50); };
+      out.push({ label: x.name, hint: `container · ${c.agent}`, kind: "chevron_right", text: search_norm(`container docker ${x.name} ${c.agent} ${p.title}`), run: open });
+      if (!act || !signed_in() || !x.card.actions.length) continue;
+      for (const a of x.actions) {
+        const word = action_label(a);
+        out.push({ label: `${word.toLowerCase()} · ${x.name}`, hint: action_danger(a) ? "asks first" : "action", kind: "chevron_right", command: true,
+          text: search_norm(`${word} ${x.name} container ${c.agent}`), run: () => ask_confirmation(x.card, a) });
+      }
+      out.push({ label: `logs · ${x.name}`, hint: "action", kind: "chevron_right", command: true, text: search_norm(`logs ${x.name} container ${c.agent}`),
+        run: () => { read_logs(c.agent, x.name); open(); } });
+    }
+  }
 }
 
 function search_open() {
