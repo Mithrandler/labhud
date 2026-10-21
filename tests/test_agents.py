@@ -548,6 +548,51 @@ class PruneAndHistory(Server):
         self.assertEqual(self.post_json(f"/action/agent-{aid}-stacks-web-down", {}, origin)[0], 403)
         c.close()
 
+    def test_stack_from_git(self):
+        """The server fetches the compose file from the repository and seals it: the token is not in the agent's frame, the answer or the audit."""
+        import http.server
+
+        seen = {}
+
+        class Repo(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen["path"], seen["auth"] = self.path, self.headers.get("Authorization")
+                body = b"services:\n  web:\n    image: nginx\n"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        repo = http.server.HTTPServer(("127.0.0.1", 0), Repo)
+        threading.Thread(target=repo.serve_forever, daemon=True).start()
+        self.addCleanup(repo.server_close)
+        self.addCleanup(repo.shutdown)
+        c, session, aid, key = self.pair(name="gitbox")
+        origin = f"http://{self.host}"
+        self.manage("caps", {"id": aid, "caps": ["stacks"]})
+        c.read_signed(key, session)
+        git = {"repo": f"http://127.0.0.1:{repo.server_port}/o/r", "branch": "main", "path": "web/compose.yaml", "token": "tok-secret-1234"}
+        answer = {}
+        t = threading.Thread(target=lambda: answer.update(r=self.post_json("/api/setup/stack-run", {"agent": "gitbox", "verb": "deploy", "name": "web", "git": git}, origin)))
+        t.start()
+        cmd = c.read_signed(key, session)
+        while cmd.get("type") != "command":
+            cmd = c.read_signed(key, session)
+        c.send_signed(key, session, aid, {"type": "result", "cmd": cmd["cmd"], "ok": True, "output": "up"})
+        t.join(5)
+        self.assertEqual(seen, {"path": "/o/r/raw/branch/main/web/compose.yaml", "auth": "Bearer tok-secret-1234"})
+        opened = json.loads(P.unseal(key, session, cmd["cmd"], cmd["files"]["nonce"], cmd["files"]["box"], P.MAX_SEALED_FILES))
+        self.assertEqual(opened, {"compose": "services:\n  web:\n    image: nginx\n"})
+        self.assertNotIn("tok-secret", json.dumps(cmd) + str(answer["r"][1]))
+        # a refused address is a 400 before anything goes to the agent
+        bad = self.post_json("/api/setup/stack-run", {"agent": "gitbox", "verb": "deploy", "name": "web", "git": dict(git, path="../x")}, origin)
+        self.assertEqual(bad[0], 400)
+        self.assertNotIn("tok-secret", str(bad[1]))
+        c.close()
+
     def test_history(self):
         c, session, aid, key = self.pair(name="histbox")
         for ev in ({"text": "web updated (1.2 → 1.3)", "bad": False, "cap": "docker", "target": "web",

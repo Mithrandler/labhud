@@ -26,6 +26,8 @@ only `admin` and `pin` work, as with init.py.
     labhud agent stack <agent> [list]              the compose stacks the agent keeps (agent with `stacks` ticked)
     labhud agent stack <agent> show|redeploy|restart|down <name>
     labhud agent stack <agent> deploy <name> <compose.yaml> [<env-file>|-]
+    labhud agent stack <agent> deploy-git <name> <repo-url> <path> [<branch>]   the compose file from a git repository
+                                                   (a private one: the token in LABHUD_GIT_TOKEN, used once)
                                                    deploy; no env file keeps the host's .env, "-" removes it
     labhud agent schedule <agent> <container> on|off   update it on its own, in the window
     labhud agent window daily|mon,thu <HH:MM>      when those updates run (labhud's local time)
@@ -323,6 +325,11 @@ def agent(args):
         if len(args) == 6:
             body["env"] = "" if args[5] == "-" else open(args[5], encoding="utf-8").read()
         return print(setup("stack-run", body).get("output", ""))
+    if sub == ["stack"] and len(args) in (6, 7) and args[2] == "deploy-git":
+        git = {"repo": args[4], "path": args[5] if len(args) > 5 else "", "branch": args[6] if len(args) > 6 else "main"}
+        if os.environ.get("LABHUD_GIT_TOKEN"):
+            git["token"] = os.environ["LABHUD_GIT_TOKEN"]
+        return print(setup("stack-run", {"agent": args[1], "verb": "deploy", "name": args[3], "git": git}).get("output", ""))
     if sub == ["inventory"] and len(args) == 2:
         inv = setup("inventory", {"agent": args[1]})
         gb = lambda n: f"{n / (1 << 30):.2f} GB" if n >= 1 << 29 else f"{n / (1 << 20):.0f} MB"   # noqa: E731

@@ -45,6 +45,7 @@ import events
 import lock
 import mqtt
 import defaultboard
+import gitsource
 import layout
 import onboard
 import notify
@@ -2251,8 +2252,17 @@ class Handler(BaseHTTPRequestHandler):
                 if op == "stacks":
                     return self._json({"ok": True, "stacks": agents.stacks_of(aid)})
                 verb, name = str(body.get("verb") or ""), str(body.get("name") or "")
-                ok, error, output = agents.stack(aid, verb, name, body.get("compose"), body.get("env"))
-                audit.record(self, "stack", f"{verb} {a['name']}/{name}", ok)
+                compose, source = body.get("compose"), ""
+                if body.get("git") is not None and verb == "deploy":   # the file from a repository; the token is used once, never kept
+                    g = body["git"] if isinstance(body["git"], dict) else {}
+                    try:
+                        compose = gitsource.fetch(g.get("repo"), g.get("branch") or "main", g.get("path"), g.get("token") or None)
+                    except ValueError as e:
+                        audit.record(self, "stack", f"{verb} {a['name']}/{name} from git", False)
+                        return self._json({"ok": False, "error": str(e)}, 400)
+                    source = f" from {g['repo']}@{g.get('branch') or 'main'}:{g['path']}"
+                ok, error, output = agents.stack(aid, verb, name, compose, body.get("env"))
+                audit.record(self, "stack", f"{verb} {a['name']}/{name}{source}", ok)
                 print(f"setup: stack {name} on {a['name']}: {verb} by {who}: {'ok' if ok else error}", flush=True)
                 if verb != "show":
                     _log([(f"{a['name']}: stack {name} {verb}" + (" done" if ok else f" failed: {error}"), not ok)])

@@ -947,6 +947,17 @@ function agent_stacks_row(a, box) {
   const compose = el("textarea", "stack-text");
   compose.placeholder = "compose.yaml";
   compose.spellcheck = false;
+  // or the compose file from a git repository: the server fetches it; the token is used once and never kept
+  const repo = el("input", "agent-filter");
+  repo.placeholder = "or from git: https://git.example/owner/name";
+  const branch = el("input", "agent-filter");
+  branch.placeholder = "branch (main)";
+  const gpath = el("input", "agent-filter");
+  gpath.placeholder = "path in the repository, e.g. web/compose.yaml";
+  const token = el("input", "agent-filter");
+  token.type = "password";
+  token.autocomplete = "off";
+  token.placeholder = "token, for a private repository (not saved)";
   const env = el("textarea", "stack-text stack-env");
   env.placeholder = ".env: KEY=value lines (empty keeps the one on the host)";
   env.spellcheck = false;
@@ -967,17 +978,20 @@ function agent_stacks_row(a, box) {
   };
   go.addEventListener("click", () => {
     const nm = name.value.trim();
-    if (!nm || !compose.value.trim()) return put(note, "a name and a compose file");
-    put($("#confirm-text"), `Deploy the stack ${nm} on ${a.name}? A compose file can do anything the Docker socket can.`);
-    ask([["DEPLOY", () => run("deploy", nm, { compose: compose.value, env: noenv_box.checked ? "" : env.value ? env.value : undefined })
-      .then((r) => { if (r.ok) { env.value = ""; stacks_load(); } })]]);
+    const from_git = repo.value.trim() !== "";
+    if (!nm || (from_git ? !gpath.value.trim() : !compose.value.trim())) return put(note, from_git ? "a name, the repository and the path" : "a name and a compose file");
+    put($("#confirm-text"), `Deploy the stack ${nm} on ${a.name}${from_git ? " from " + repo.value.trim() : ""}? A compose file can do anything the Docker socket can.`);
+    const source = from_git ? { git: { repo: repo.value.trim(), branch: branch.value.trim() || "main", path: gpath.value.trim(), token: token.value || undefined } } : { compose: compose.value };
+    ask([["DEPLOY", () => run("deploy", nm, Object.assign(source, { env: noenv_box.checked ? "" : env.value ? env.value : undefined }))
+      .then((r) => { if (r.ok) { env.value = ""; token.value = ""; stacks_load(); } })]]);
   });
-  editor.append(name, compose, env, noenv, go, note);
+  editor.append(name, compose, repo, branch, gpath, token, env, noenv, go, note);
   const edit = (nm) => {
     editor.hidden = false;
     name.value = nm;
     compose.value = "";
     env.value = "";
+    repo.value = branch.value = gpath.value = token.value = "";
     noenv_box.checked = false;
     if (!nm) return;
     setup_post("stack-run", { agent: a.name, verb: "show", name: nm }).then((r) => {
