@@ -496,7 +496,7 @@ class PruneAndHistory(Server):
         t.join(5)
         got = json.loads(answer["r"][1])
         self.assertTrue(got["ok"])
-        self.assertEqual(got["images"][0], {"id": "abc", "tags": ["nginx:1"], "size": 100, "created": 5, "used": 0, "dangling": False})
+        self.assertEqual(got["images"][0], {"id": "abc", "tags": ["nginx:1"], "size": 100, "created": 5, "used": 0, "dangling": False, "used_by": []})
         self.assertEqual(got["more"], {"images": 3})
         self.assertEqual(got["totals"], {"images": 100, "unused_images": 100, "volumes": 0})
         # the second look is served from the cache: no command goes to the agent
@@ -635,7 +635,7 @@ class PruneRules(unittest.TestCase):
         for verb in agents.HOST_VERBS:
             self.assertTrue(agents.allowed("a1b2c3d4", "docker", verb, "images"), verb)
             self.assertFalse(agents.allowed("a1b2c3d4", "docker", verb, "jellyfin"), verb)
-        self.assertEqual(set(agents.HOST_VERBS), set(agents.CLEAN.values()) | {"inventory"})
+        self.assertEqual(set(agents.HOST_VERBS), set(agents.CLEAN.values()) | {"inventory", "rm-image", "rm-network", "rm-volume", "pull", "network-inspect"})
 
     def test_images_takes_prune_only(self):
         self.assertTrue(agents.allowed("a1b2c3d4", "docker", "prune", "images"))

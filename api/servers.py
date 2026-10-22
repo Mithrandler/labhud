@@ -40,6 +40,8 @@ NEEDS = {
     "session": "admin", "hosts": "read", "containers": "read", "action": "act", "logs": "read",
     "inspect": "read", "stats": "read", "stream-open": "read", "stream-read": "read", "stream-close": "read",
     "stream-input": "admin", "stream-resize": "admin", "audit-verify": "admin",
+    "images": "read", "volumes": "read", "networks": "read", "network": "read", "volume-ls": "read", "volume-read": "read",
+    "pull": "act", "rm": "admin", "clean": "admin", "volume-access": "admin",
 }
 SESSION_IDLE = 900            # s without a call before the interactive session ends
 FAILS = 8                     # refusals within WINDOW from one address before it is blocked
@@ -344,6 +346,219 @@ def _stream(op):
 
 for _op in ("stream-open", "stream-read", "stream-close", "stream-input", "stream-resize"):
     _stream(_op)
+
+
+# --- images, volumes, networks (the host's Docker, "Unused images" ticked for the host) ---
+
+HINT = "tick “Unused images” for this host in Settings > Hosts and agents"
+KINDS = {"image": "rm-image", "volume": "rm-volume", "network": "rm-network"}
+LIST_MAX = 300
+READ_MAX = 64 << 10
+
+
+def _inventory(body, fresh=False):
+    aid, a = _agent(body)
+    if not a:
+        return None, None, None, (404, {"ok": False, "error": "no such host"})
+    ok, error, inv = agents.inventory(aid, fresh=fresh)
+    if not ok:
+        return None, None, None, (502, {"ok": False, "error": HINT if error == "not allowed" else _s(error, 200) or "failed"})
+    return aid, a, inv, None
+
+
+def _ticked_volumes(a):
+    return {t[len(agents.VOLUME_PREFIX):] for t in a.get("targets", {}).get("docker", []) if t.startswith(agents.VOLUME_PREFIX)}
+
+
+@_guarded("images")
+def images(h, body):
+    aid, a, inv, err = _inventory(body, fresh=bool(body.get("fresh")))
+    if err:
+        return err
+    return 200, {"ok": True, "images": inv["images"], "more": inv["more"].get("images", 0), "totals": inv["totals"]}
+
+
+@_guarded("volumes")
+def volumes(h, body):
+    aid, a, inv, err = _inventory(body, fresh=bool(body.get("fresh")))
+    if err:
+        return err
+    open_ = _ticked_volumes(a)
+    return 200, {"ok": True, "volumes": [dict(v, browse=v["name"] in open_) for v in inv["volumes"]],
+                 "more": inv["more"].get("volumes", 0), "totals": inv["totals"]}
+
+
+@_guarded("networks")
+def networks(h, body):
+    aid, a, inv, err = _inventory(body, fresh=bool(body.get("fresh")))
+    if err:
+        return err
+    return 200, {"ok": True, "networks": inv["networks"], "more": inv["more"].get("networks", 0)}
+
+
+@_guarded("network")
+def network(h, body):
+    aid, a, inv, err = _inventory(body)
+    if err:
+        return err
+    name = body.get("name")
+    if not isinstance(name, str) or not any(n["name"] == name for n in inv["networks"]):
+        return 404, {"ok": False, "error": "no such network on this host"}
+    ok, error, text = agents.read(aid, "docker", "network-inspect", agents.PRUNE_TARGET, wait=30, arg=name)
+    if not ok:
+        return 502, {"ok": False, "error": _s(error, 200) or "failed"}
+    try:
+        raw = json.loads(text)
+        if not isinstance(raw, dict):
+            raise ValueError
+        links = [{"name": _s(c.get("name"), 128), "ipv4": _s(c.get("ipv4"), 40)} for c in (raw.get("containers") or [])[:100] if isinstance(c, dict)]
+    except (ValueError, TypeError, AttributeError):
+        return 502, {"ok": False, "error": "the agent's answer was not a network"}
+    return 200, {"ok": True, "network": {"name": _s(raw.get("name"), 128), "driver": _s(raw.get("driver"), 40), "scope": _s(raw.get("scope"), 20),
+                                        "internal": raw.get("internal") is True, "containers": links}}
+
+
+def _target_object(inv, kind, name):
+    """The object `name` in the host's own current list (never what the client says it is), or None."""
+    if kind == "image":
+        return next((i for i in inv["images"] if name == i["id"] or name in i["tags"]), None)
+    return next((x for x in inv["volumes" if kind == "volume" else "networks"] if x["name"] == name), None)
+
+
+@_guarded("rm")
+def rm(h, body):
+    kind, name, confirm = body.get("kind"), body.get("name"), body.get("confirm")
+    if kind not in KINDS or not isinstance(name, str) or not agents.arg_ok(KINDS[kind], name):
+        return 400, {"ok": False, "error": "kind is image, volume or network, and name one of its objects"}
+    aid, a, inv, err = _inventory(body, fresh=True)
+    if err:
+        return err
+    obj = _target_object(inv, kind, name)
+    if obj is None:
+        return 404, {"ok": False, "error": "that is not in this host's list"}
+    if confirm != name:
+        return 400, {"ok": False, "error": "type the name to confirm"}
+    if obj.get("builtin"):
+        return 400, {"ok": False, "error": "a built-in network is never removed"}
+    if obj.get("used"):
+        return 409, {"ok": False, "error": "in use by " + (", ".join(obj.get("used_by") or []) or "a container") + ": remove that first"}
+    ok, error = agents.command(aid, "docker", KINDS[kind], agents.PRUNE_TARGET, wait=60, arg=name)
+    audit.record(h, f"servers/rm-{kind}", f"{a['name']}/{name}", ok)
+    print(f"servers: rm {kind} {a['name']}/{name} by {h._who()}: {'ok' if ok else error}", flush=True)
+    agents.inventory(aid, fresh=True)      # the next list is the host's, not a kept one
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+@_guarded("pull")
+def pull(h, body):
+    aid, a = _agent(body)
+    image = body.get("image")
+    if not a or not isinstance(image, str) or not agents.arg_ok("pull", image):
+        return 400, {"ok": False, "error": "agent and an image such as nginx:1.27"}
+    ok, error = agents.command(aid, "docker", "pull", agents.PRUNE_TARGET, wait=600, arg=image)
+    audit.record(h, "servers/pull", f"{a['name']}/{image}", ok)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": HINT if error == "not allowed" else _s(error, 200) or "failed"})
+
+
+@_guarded("clean")
+def clean(h, body):
+    aid, a = _agent(body)
+    what, confirm = body.get("what"), body.get("confirm")
+    if not a or what not in agents.CLEAN:
+        return 400, {"ok": False, "error": "what is one of " + ", ".join(agents.CLEAN)}
+    if confirm != what:
+        return 400, {"ok": False, "error": "type " + what + " to confirm"}
+    ok, error, text = agents.clean(aid, what)
+    audit.record(h, f"servers/clean-{what}", a["name"], ok)
+    agents.inventory(aid, fresh=True)
+    return (200, {"ok": True, "text": _s(text, 400)}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+@_guarded("volume-access")
+def volume_access(h, body):
+    aid, a, inv, err = _inventory(body)
+    if err:
+        return err
+    name, on = body.get("volume"), body.get("on") is True
+    if not isinstance(name, str) or not any(v["name"] == name for v in inv["volumes"]):
+        return 404, {"ok": False, "error": "no such volume on this host"}
+    if not agents.set_volume_access(aid, name, on):
+        return 400, {"ok": False, "error": "not changed"}
+    audit.record(h, "servers/volume-access", f"{a['name']}/{name} {'on' if on else 'off'}", True)
+    return 200, {"ok": True, "browse": on}
+
+
+def _volume(body):
+    aid, a = _agent(body)
+    vol = body.get("volume")
+    path = agents.clean_path(body.get("path") or "")
+    if not a or not isinstance(vol, str) or not agents.NAME_ARG.fullmatch(vol) or path is None:
+        return None, None, None, None, (400, {"ok": False, "error": "agent, volume and a path inside it"})
+    if vol not in _ticked_volumes(a):
+        return None, None, None, None, (403, {"ok": False, "error": "this volume is not opened for browsing", "needs_access": True})
+    return aid, a, vol, path, None
+
+
+def _secret_name(name):
+    n = name.lower().rsplit("/", 1)[-1]
+    dotenv = n == ".env" or n.endswith(".env") or n.startswith(".env.")
+    secret = dotenv or any(w in n for w in ("key", "secret", "token", "passw", "credential", "id_rsa", "id_ed25519", "id_ecdsa")) \
+        or n.endswith((".pem", ".p12", ".pfx")) or n.startswith("id_")
+    return secret, dotenv
+
+
+@_guarded("volume-ls")
+def volume_ls(h, body):
+    aid, a, vol, path, err = _volume(body)
+    if err:
+        return err
+    ok, error, text = agents.read(aid, "docker", "volume-ls", agents.VOLUME_PREFIX + vol, wait=40, arg=path)
+    if not ok:
+        return 502, {"ok": False, "error": _s(error, 200) or "failed"}
+    try:
+        raw = json.loads(text)
+        rows = [{"name": _s(e.get("name"), 255), "dir": e.get("dir") is True, "link": e.get("link") is True,
+                 "size": int(_n(e.get("size"))), "mtime": int(_n(e.get("mtime"), 0, 4e9))}
+                for e in (raw.get("entries") or [])[:LIST_MAX] if isinstance(e, dict) and "/" not in str(e.get("name"))]
+        rows = [r for r in rows if r["name"]]
+    except (ValueError, TypeError, AttributeError):
+        return 502, {"ok": False, "error": "the agent's answer was not a listing"}
+    audit.record(h, "servers/volume-ls", f"{a['name']}/{vol}{path}", True)
+    return 200, {"ok": True, "path": path, "entries": rows, "truncated": raw.get("truncated") is True or len(raw.get("entries") or []) > LIST_MAX}
+
+
+@_guarded("volume-read")
+def volume_read(h, body):
+    aid, a, vol, path, err = _volume(body)
+    if err:
+        return err
+    if path == "/":
+        return 400, {"ok": False, "error": "a file, not the root"}
+    ok, error, text = agents.read(aid, "docker", "volume-read", agents.VOLUME_PREFIX + vol, wait=40, arg=path)
+    if not ok:
+        return 502, {"ok": False, "error": _s(error, 200) or "failed"}
+    try:
+        raw = json.loads(text)
+        if not isinstance(raw, dict):
+            raise ValueError
+    except ValueError:
+        return 502, {"ok": False, "error": "the agent's answer was not a file"}
+    secret, dotenv = _secret_name(path)
+    body_text = raw.get("text") if isinstance(raw.get("text"), str) else ""
+    masked = raw.get("masked") is True
+    if secret and not dotenv:           # whatever the agent sent, nothing of such a file is shown
+        body_text, masked = "", True
+    elif dotenv:                        # names only, whatever the agent sent
+        body_text = "\n".join(l.split("=", 1)[0] + "=••••" if "=" in l and not l.lstrip().startswith("#") else l for l in body_text.split("\n"))
+        masked = True
+    audit.record(h, "servers/volume-read", f"{a['name']}/{vol}{path}", True)
+    return 200, {"ok": True, "file": {"path": path, "size": int(_n(raw.get("size"))), "text": _s_text(body_text), "binary": raw.get("binary") is True,
+                                       "truncated": raw.get("truncated") is True, "masked": masked}}
+
+
+def _s_text(v):
+    """A file's text: kept as it is but for control characters other than newline and tab, and cut at the limit."""
+    return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "�", v)[:READ_MAX] if isinstance(v, str) else ""
 
 
 @_guarded("audit-verify")

@@ -45,7 +45,8 @@ MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this mu
 
 VERBS = {
     "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect",
-               "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats"),
+               "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats",
+               "rm-image", "rm-network", "rm-volume", "pull", "network-inspect", "volume-ls", "volume-read"),
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
@@ -59,12 +60,20 @@ CAPS = ("sensors",) + tuple(VERBS) + ("scan",)
 # what an agent may say it understands beyond v1's first messages (hello.features)
 FEATURES = ("registry-auth",)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats"),
+READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats",
+                    "rm-image", "rm-network", "rm-volume", "pull", "network-inspect", "volume-ls", "volume-read"),
          "stacks": VERBS["stacks"], "terminal": VERBS["terminal"]}   # compose answers with its output: only ⚙ > Containers > Stacks asks
 # the host's Docker (its images, volumes and networks), ticked as this target, which is no container
 # and takes none of a container's verbs, as the host verbs take no container (the agent checks the same)
 PRUNE_TARGET = "images"
-HOST_VERBS = ("inventory", "prune", "prune-dangling", "prune-networks", "prune-volumes")
+HOST_VERBS = ("inventory", "prune", "prune-dangling", "prune-networks", "prune-volumes",
+              "rm-image", "rm-network", "rm-volume", "pull", "network-inspect")
+# a volume ticked for browsing is the target "volume:<name>"; the two volume verbs are for those and nothing else
+VOLUME_PREFIX = "volume:"
+VOLUME_VERBS = ("volume-ls", "volume-read")
+IMAGE_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,199}")
+NAME_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+MAX_PATH = 400
 # what cleans what: the name the admin sends -> the verb (api: /api/setup/prune {agent, what})
 CLEAN = {"images": "prune", "dangling": "prune-dangling", "networks": "prune-networks", "volumes": "prune-volumes"}
 HISTORY_KEY = "agent_history"
@@ -74,12 +83,38 @@ EVENT_OF = {"update": "update_done", "crash": "container_stopped", "oom": "conta
 HISTORY_PER_TARGET = 10
 
 
+def clean_path(p):
+    """A path in a volume as the agent takes it ("/", "/a/b"), or None: no "..", no control characters, not too long."""
+    if not isinstance(p, str) or len(p) > MAX_PATH or any(ord(c) < 32 or ord(c) == 127 for c in p):
+        return None
+    parts = p.split("/")
+    if ".." in parts:
+        return None
+    return "/" + "/".join(x for x in parts if x not in ("", "."))
+
+
+def arg_ok(verb, arg):
+    """The argument has the shape its verb takes, and a verb that takes none gets none (the agent checks the same)."""
+    if not isinstance(arg, str):
+        return False
+    if verb in ("rm-image", "pull"):
+        return bool(IMAGE_ARG.fullmatch(arg))
+    if verb in ("rm-network", "rm-volume", "network-inspect"):
+        return bool(NAME_ARG.fullmatch(arg))
+    if verb == "volume-ls":
+        return clean_path(arg) is not None
+    if verb == "volume-read":
+        c = clean_path(arg)
+        return c is not None and c != "/"
+    return arg == ""
+
+
 def acts(cap):
     """The verbs of a capability that are buttons (everything but the reads)."""
     return tuple(v for v in VERBS[cap] if v not in READS.get(cap, ()))
 
 TARGET = {
-    "docker": re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}"),
+    "docker": re.compile(r"(volume:)?[A-Za-z0-9][A-Za-z0-9_.-]{0,127}"),
     "systemd": re.compile(r"[A-Za-z0-9:_.@-]{1,250}\.(service|timer|socket|target|mount|path)"),
     "host": re.compile(r"host"),
     "wol": re.compile(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}"),
@@ -342,8 +377,25 @@ def set_targets(aid, cap, targets):
     a = get(aid)
     if not a:
         return False
+    if cap == "docker":   # the volumes ticked for browsing have their own switch (set_volume_access)
+        targets = [t for t in targets if not t.startswith(VOLUME_PREFIX)] + \
+                  [t for t in a.get("targets", {}).get("docker", []) if t.startswith(VOLUME_PREFIX)]
     all_targets = dict(a.get("targets", {}), **{cap: sorted(set(targets))})
     if not _save(aid, targets=all_targets):
+        return False
+    _send_allow(aid)
+    return True
+
+
+def set_volume_access(aid, volume, on):
+    """Ticks (or unticks) one volume for browsing, read only. False for an unknown agent or a bad name."""
+    a = get(aid)
+    if not a or not isinstance(volume, str) or not NAME_ARG.fullmatch(volume) or len(a.get("targets", {}).get("docker", [])) >= MAX_TARGETS:
+        return False
+    key = VOLUME_PREFIX + volume
+    now = list(a.get("targets", {}).get("docker", []))
+    new = sorted(set(now) | {key}) if on else [t for t in now if t != key]
+    if new != now and not _save(aid, targets=dict(a.get("targets", {}), docker=new)):
         return False
     _send_allow(aid)
     return True
@@ -379,9 +431,17 @@ def remove(aid):
     return a
 
 
+def _docker_kinds(verb, target):
+    """The verb and the target are of one kind: a container, the host's Docker ("images"), or a volume."""
+    is_volume = target.startswith(VOLUME_PREFIX)
+    if (verb in VOLUME_VERBS) != is_volume:
+        return False
+    return is_volume or (verb in HOST_VERBS) == (target == PRUNE_TARGET)
+
+
 def allowed(aid, cap, verb, target):
     a = get(aid)
-    if cap == "docker" and (verb in HOST_VERBS) != (target == PRUNE_TARGET):
+    if cap == "docker" and not _docker_kinds(verb, target):
         return False
     if cap == "terminal" and target == PRUNE_TARGET:
         return False
@@ -407,7 +467,7 @@ def _wings(a, cap, names):
 
 def _containers(a, names):
     """The ticked docker targets that are containers (not the images' target)."""
-    return [n for n in _wings(a, "docker", names) if n != PRUNE_TARGET]
+    return [n for n in _wings(a, "docker", names) if n != PRUNE_TARGET and not n.startswith(VOLUME_PREFIX)]
 
 
 def listing():
@@ -433,7 +493,8 @@ def listing():
                     "prune": "docker" in a.get("caps", []) and PRUNE_TARGET in a.get("targets", {}).get("docker", []),
                     "auto": auto_targets(a), "hooks": sorted(a.get("hooks", {})),
                     "stacks": stacks_of(aid) if "stacks" in a.get("found", []) else {},
-                    "targets": {c: _wings(a, c, v) for c, v in a.get("targets", {}).items()},
+                    "targets": {c: [t for t in _wings(a, c, v) if not t.startswith(VOLUME_PREFIX)] for c, v in a.get("targets", {}).items()},
+                    "volumes": sorted(t[len(VOLUME_PREFIX):] for t in a.get("targets", {}).get("docker", []) if t.startswith(VOLUME_PREFIX)),
                     "choices": {c: v for c, v in found.items() if c in a.get("found", [])},
                     "labels": labels})
     return sorted(out, key=lambda a: a["paired"])
@@ -588,17 +649,17 @@ def action_text(name):
 
 # --- commands ---
 
-def command(aid, cap, verb, target, wait=COMMAND_WAIT, auto=False):
+def command(aid, cap, verb, target, wait=COMMAND_WAIT, auto=False, arg=""):
     """(ok, error): sends one command and waits for its result. `auto`: labhud's own scheduled
-    update (it may be held back for new critical CVEs)."""
-    if not allowed(aid, cap, verb, target):
+    update (it may be held back for new critical CVEs). `arg`: the object a verb names (rm-image)."""
+    if not allowed(aid, cap, verb, target) or not arg_ok(verb, arg):
         return False, "not allowed"
-    return read(aid, cap, verb, target, wait, auto)[:2]
+    return read(aid, cap, verb, target, wait, auto, arg)[:2]
 
 
-def read(aid, cap, verb, target, wait=COMMAND_WAIT, auto=False):
+def read(aid, cap, verb, target, wait=COMMAND_WAIT, auto=False, arg=""):
     """(ok, error, output): one command and its result's output (a read verb's text, else "")."""
-    if not allowed(aid, cap, verb, target):
+    if not allowed(aid, cap, verb, target) or not arg_ok(verb, arg):
         return False, "not allowed", ""
     s = _live.get(aid)
     if not s:
@@ -607,7 +668,7 @@ def read(aid, cap, verb, target, wait=COMMAND_WAIT, auto=False):
         extra, seal = update_extras(aid, target, auto)
         if extra or seal:
             return s.ask(dict({"type": "command", "cap": cap, "verb": verb, "target": target}, **extra), wait, seal)
-    return s.command(cap, verb, target, wait)
+    return s.command(cap, verb, target, wait, arg) if arg else s.command(cap, verb, target, wait)
 
 
 INVENTORY_KEEP = 20    # seconds an inventory is reused (opening the screen twice does not ask the host twice)
@@ -636,14 +697,15 @@ def inventory(aid, fresh=False):
         return False, "the agent's answer was not an inventory", None
     s = lambda v, n=200: v[:n] if isinstance(v, str) else ""   # noqa: E731
     rows = lambda k: [x for x in raw.get(k) or [] if isinstance(x, dict)][:100]   # noqa: E731
+    names = lambda x: [s(n, 128) for n in (x.get("used_by") or [])[:8] if isinstance(n, str)] if isinstance(x.get("used_by"), list) else []   # noqa: E731
     out = {
         "images": [{"id": s(x.get("id"), 64), "tags": [s(t) for t in (x.get("tags") or [])[:8] if isinstance(t, str)],
                     "size": _count(x.get("size")), "created": _count(x.get("created")), "used": _count(x.get("used")),
-                    "dangling": x.get("dangling") is True} for x in rows("images")],
+                    "dangling": x.get("dangling") is True, "used_by": names(x)} for x in rows("images")],
         "volumes": [{"name": s(x.get("name")), "driver": s(x.get("driver"), 40), "size": _count(x.get("size"), -1),
-                     "used": _count(x.get("used")), "anonymous": x.get("anonymous") is True} for x in rows("volumes")],
+                     "used": _count(x.get("used")), "anonymous": x.get("anonymous") is True, "used_by": names(x)} for x in rows("volumes")],
         "networks": [{"name": s(x.get("name")), "driver": s(x.get("driver"), 40), "scope": s(x.get("scope"), 20),
-                      "used": _count(x.get("used")), "builtin": x.get("builtin") is True} for x in rows("networks")],
+                      "used": _count(x.get("used")), "builtin": x.get("builtin") is True, "used_by": names(x)} for x in rows("networks")],
         "more": {k: _count(v) for k, v in (raw.get("more") or {}).items()
                  if k in ("images", "volumes", "networks")} if isinstance(raw.get("more"), dict) else {},
     }
@@ -979,8 +1041,11 @@ class Session:
             pass
         self.ws.close(1000, reason)
 
-    def command(self, cap, verb, target, wait):
-        return self.ask({"type": "command", "cap": cap, "verb": verb, "target": target}, wait)
+    def command(self, cap, verb, target, wait, arg=""):
+        msg = {"type": "command", "cap": cap, "verb": verb, "target": target}
+        if arg:
+            msg["arg"] = arg
+        return self.ask(msg, wait)
 
     def ask(self, message, wait, seal=None, files=None):
         """Sends a command or an update and waits for its result: (ok, error, output). `seal`:

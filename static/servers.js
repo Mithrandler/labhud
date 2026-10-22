@@ -9,7 +9,7 @@ const LOG_LINES = 1000;
 const $ = (id) => document.getElementById(id);
 const S = { hosts: [], host: null, tab: "overview", rows: [], filter: "", sheet: null, timer: 0 };
 const TABS = [["overview", "Overview", true], ["containers", "Containers", true], ["stacks", "Stacks", false],
-              ["images", "Images", false], ["volumes", "Volumes", false], ["networks", "Networks", false],
+              ["images", "Images", true], ["volumes", "Volumes", true], ["networks", "Networks", true],
               ["vms", "VMs & LXC", false], ["host", "Host", false]];
 
 function el(tag, cls, text) {
@@ -167,6 +167,9 @@ async function draw_view() {
   if (!h) return;
   if (S.tab === "overview") return overview(v, h);
   if (S.tab === "containers") return containers(v, h);
+  if (S.tab === "images") return objects(v, "images", images_view);
+  if (S.tab === "volumes") return objects(v, "volumes", volumes_view);
+  if (S.tab === "networks") return objects(v, "networks", networks_view);
 }
 
 function overview(v, h) {
@@ -399,6 +402,180 @@ async function shell_view(body, c) {
   term.onResize(({ cols, rows }) => post("/api/servers/stream-resize", { id: r.id, cols, rows }));
   term.focus();
   follow(s, gen, r.id, (buf) => term.write(buf), (why) => { status.textContent = "ended: " + why; term.write("\r\n[" + why + "]\r\n"); s.stream = null; });
+}
+
+// ---- the host's Docker: images, volumes, networks (needs "Unused images" ticked for the host) ----
+
+const used_text = (used, by) => !used ? "unused" : !by || !by.length ? "used by " + used : "used by " + by.join(", ") + (used > by.length ? " +" + (used - by.length) : "");
+
+/** The word typed before something goes: resolves with true only when it is exactly [word]. */
+async function typed(title, word, button) {
+  const a = await ask(title, [["Type  " + word + "  to confirm", "text", "word"]], button);
+  return !!a && a.values[0] === word;
+}
+
+/** A filter and a table for one kind of object, loaded again after a change. */
+async function objects(v, op, render) {
+  const bar = el("div", "bar"), said = el("div", "msg bad"), table = el("table");
+  const f = el("input"); f.type = "search"; f.placeholder = "Filter"; f.value = S.filter;
+  bar.appendChild(f);
+  v.append(bar, said, table);
+  let data = [];
+  const load = async (fresh) => {
+    const r = await call(op, { agent: S.host, fresh: !!fresh });
+    said.textContent = r.ok ? "" : r.error || "could not load";
+    if (r.ok) { data = r[op]; draw(); }
+  };
+  const draw = () => { table.textContent = ""; render(table, data, f.value.trim().toLowerCase(), load, said); };
+  f.addEventListener("input", () => { S.filter = f.value; draw(); });
+  bar.appendChild(btn("Refresh", "", () => load(true)));
+  if (op === "images") {
+    bar.append(btn("Pull image…", "", async () => {
+      const a = await ask("Pull an image", [["Image, e.g. nginx:1.27", "text", "ref"]], "Pull");
+      if (!a) return;
+      said.textContent = "Pulling " + a.values[0] + "…";
+      const r = await call("pull", { agent: S.host, image: a.values[0] });
+      said.textContent = r.ok ? "" : "pull: " + (r.error || "failed");
+      load(true);
+    }));
+    for (const [what, label] of [["images", "Clean unused"], ["dangling", "Clean untagged"]]) {
+      bar.appendChild(btn(label, "", async () => {
+        if (!(await typed(label + "?", what, "Clean"))) return;
+        const r = await call("clean", { agent: S.host, what, confirm: what });
+        said.textContent = r.ok ? r.text : "clean: " + (r.error || "failed");
+        load(true);
+      }));
+    }
+  }
+  await load(false);
+}
+
+function head_row(t, labels) {
+  const tr = el("tr");
+  for (const c of labels) tr.appendChild(el("th", c === "Size" ? "num" : "", c));
+  t.appendChild(tr);
+}
+function row_of(t, cells, onclick, bad) {
+  const tr = el("tr", "row");
+  cells.forEach((c, i) => tr.appendChild(el("td", i === cells.length - 1 && cells.length === 3 ? "num" : i ? "muted" : "", c)));
+  if (bad) tr.firstChild.classList.add("warn-text");
+  tr.addEventListener("click", onclick);
+  t.appendChild(tr);
+}
+
+function images_view(t, rows, q, reload, said) {
+  head_row(t, ["Image", "Used", "Size"]);
+  const title = (i) => i.tags[0] || i.id;
+  for (const i of rows.filter((x) => !q || x.id.includes(q) || x.tags.some((g) => g.toLowerCase().includes(q))).sort((a, b) => b.size - a.size)) {
+    row_of(t, [title(i) + (i.tags.length > 1 ? "  +" + (i.tags.length - 1) : ""), used_text(i.used, i.used_by), bytes(i.size)], () => open_object(i.tags[0] || i.id, [
+      ["Id", i.id], ["Size", bytes(i.size)], ["Used", used_text(i.used, i.used_by)]], i.tags.length ? i.tags : [i.id], i.used ? "in use" : "", async (n) => {
+      if (!(await typed("Remove " + n + "?", n, "Remove"))) return;
+      const r = await call("rm", { agent: S.host, kind: "image", name: n, confirm: n });
+      said.textContent = r.ok ? "" : "remove: " + (r.error || "failed");
+      close_sheet(); reload(true);
+    }, [["Pull again", async () => { const r = await call("pull", { agent: S.host, image: i.tags[0] }); said.textContent = r.ok ? "" : "pull: " + (r.error || "failed"); reload(true); }]], !i.tags.length), !i.used);
+  }
+}
+
+function networks_view(t, rows, q, reload, said) {
+  head_row(t, ["Network", "Used", "Driver"]);
+  for (const n of rows.filter((x) => !q || x.name.toLowerCase().includes(q))) {
+    row_of(t, [n.name + (n.builtin ? "  (built in)" : ""), used_text(n.used, n.used_by), n.driver], async () => {
+      open_object(n.name, [["Driver", n.driver], ["Scope", n.scope], ["Used", used_text(n.used, n.used_by)]], n.builtin ? [] : [n.name], n.used ? "in use" : n.builtin ? "built in: never removed" : "", async (name) => {
+        if (!(await typed("Remove " + name + "?", name, "Remove"))) return;
+        const r = await call("rm", { agent: S.host, kind: "network", name, confirm: name });
+        said.textContent = r.ok ? "" : "remove: " + (r.error || "failed");
+        close_sheet(); reload(true);
+      }, [], false, async (box) => {
+        const r = await call("network", { agent: S.host, name: n.name });
+        if (!r.ok) return box.appendChild(el("p", "msg bad", r.error || "failed"));
+        const dl = el("dl");
+        for (const c of r.network.containers) dl.append(el("dt", "", c.name), el("dd", "", c.ipv4));
+        box.appendChild(r.network.containers.length ? dl : el("p", "muted", "No container is on it."));
+      });
+    }, !n.used && !n.builtin);
+  }
+}
+
+function volumes_view(t, rows, q, reload, said) {
+  head_row(t, ["Volume", "Used", "Size"]);
+  for (const x of rows.filter((v) => !q || v.name.toLowerCase().includes(q)).sort((a, b) => b.size - a.size)) {
+    row_of(t, [x.name + (x.browse ? "  · browsable" : ""), used_text(x.used, x.used_by), x.size < 0 ? "–" : bytes(x.size)], () => {
+      open_object(x.name, [["Driver", x.driver], ["Used", used_text(x.used, x.used_by)]], [x.name], x.used ? "in use" : "", async (name) => {
+        if (!(await typed("Remove " + name + "?", name, "Remove"))) return;
+        const r = await call("rm", { agent: S.host, kind: "volume", name, confirm: name });
+        said.textContent = r.ok ? "" : "remove: " + (r.error || "failed");
+        close_sheet(); reload(true);
+      }, [], false, (box) => {
+        const sw = el("label", "", "");
+        const cb = el("input"); cb.type = "checkbox"; cb.checked = x.browse;
+        sw.append(cb, document.createTextNode(" Browse its files (read only; secrets are hidden)"));
+        const area = el("div");
+        box.append(sw, area);
+        const show = () => { area.textContent = ""; if (cb.checked) browse(area, x.name, "/"); };
+        cb.addEventListener("change", async () => {
+          const r = await call("volume-access", { agent: S.host, volume: x.name, on: cb.checked });
+          if (!r.ok) { cb.checked = !cb.checked; return notice(r.error || "refused"); }
+          x.browse = cb.checked; show();
+        });
+        show();
+      });
+    }, !x.used);
+  }
+}
+
+/** A volume's folders and files, read only: a path across the top. */
+async function browse(area, volume, path) {
+  area.textContent = "";
+  const crumbs = el("div", "bar");
+  const parts = path.split("/").filter(Boolean);
+  crumbs.appendChild(btn("/", "", () => browse(area, volume, "/")));
+  parts.forEach((p, i) => crumbs.appendChild(btn(p, "", () => browse(area, volume, "/" + parts.slice(0, i + 1).join("/")))));
+  const list = el("div"), body = el("pre", "out");
+  body.hidden = true;
+  area.append(crumbs, list, body);
+  const r = await call("volume-ls", { agent: S.host, volume, path });
+  if (!r.ok) return list.appendChild(el("p", "msg bad", r.error || "failed"));
+  const t = el("table");
+  for (const e of r.entries) {
+    const tr = el("tr", "row");
+    tr.append(el("td", "", (e.dir ? "▸ " : "") + e.name), el("td", "num muted", e.dir ? "" : bytes(e.size)));
+    tr.addEventListener("click", async () => {
+      const to = (path === "/" ? "" : path) + "/" + e.name;
+      if (e.dir) return browse(area, volume, to);
+      if (e.link) return;
+      const f = await call("volume-read", { agent: S.host, volume, path: to });
+      body.hidden = false;
+      body.textContent = !f.ok ? f.error || "failed" : f.file.masked && !f.file.text ? "Looks like a secret: its content is not shown." : f.file.binary ? "A binary file." : f.file.text;
+    });
+    t.appendChild(tr);
+  }
+  list.appendChild(t);
+  if (r.truncated) list.appendChild(el("p", "muted", "More than this is in the folder."));
+}
+
+/** A sheet for one object: facts, Remove for each of [names], extra buttons, and [more] for what loads. */
+function open_object(title, facts, names, why, remove, extra, untagged, more) {
+  close_sheet();
+  S.sheet = { alive: true, stream: null, term: null, gen: 0 };
+  const sh = $("sheet");
+  sh.hidden = false;
+  sh.appendChild(el("h2", "", title));
+  const dl = el("dl");
+  for (const [k, val] of facts) dl.append(el("dt", "", k), el("dd", "", val));
+  sh.appendChild(dl);
+  const acts = el("div", "actions");
+  for (const n of names) {
+    const b = btn("Remove " + n, "danger", () => remove(n));
+    b.disabled = !!why;
+    acts.appendChild(b);
+  }
+  for (const [label, fn] of extra || []) acts.appendChild(btn(label, "", fn));
+  acts.appendChild(btn("Close", "", close_sheet));
+  sh.appendChild(acts);
+  if (why) sh.appendChild(el("p", "muted", why + (why === "in use" ? ": remove what uses it first." : "")));
+  if (untagged) sh.appendChild(el("p", "muted", "Untagged layer: removed by its id."));
+  if (more) { const box = el("div"); sh.appendChild(box); more(box); }
 }
 
 // ---- start ----

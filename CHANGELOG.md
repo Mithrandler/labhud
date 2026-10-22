@@ -12,6 +12,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **Servers** (first slice): a zone for the hosts' Docker at `/servers` and in the app's new Servers tab: the hosts with their containers running/total, CPU and memory; per host Overview and Containers (filter, state, CPU/memory); a container opens a sheet with Start/Stop/Restart/Update (stop and update ask for the name), its live log, Inspect, Stats and a shell. API: `POST /api/servers/{session,hosts,containers,action,logs,inspect,stats,stream-*,audit-verify}`; agent verb `stats` (needs labhud-agent 0.1.2).
 - **Security of Servers**: HTTPS only (403 on plain HTTP), three levels on the token scopes, a session of 15 minutes, 8 refusals in a minute block an address (429), `[admin] servers_networks` to limit where it acts from, a strict page (no inline script or style), answers rebuilt field by field, and a **hash chain in the audit log** (`prev`, `h`) checked by `POST /api/servers/audit-verify`. See `docs/security.md` and `docs/threat-model.md`.
 
+- **Servers, second slice**: Images, Volumes and Networks per host, with what uses each (`used_by`), Remove (the name typed, checked against the host's own list, never forced), Pull, clean unused / untagged, a network's containers, and a volume's files read only once the admin opens that volume (folders, a file's first 64 KB; files that look like secrets show nothing). API: `POST /api/servers/{images,volumes,networks,network,rm,pull,clean,volume-access,volume-ls,volume-read}`; a command may carry `arg` (needs labhud-agent 0.1.2).
+
 ### Fixed
 - **`GET /api/discover/list` answered 500** when the Proxmox data held an entry that is not a node (or a guest that is not an object): such entries are skipped.
 

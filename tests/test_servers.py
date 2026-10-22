@@ -109,6 +109,234 @@ class Base(DemoServer):
         return got, t
 
 
+INVENTORY = {
+    "images": [{"id": "aaaa11112222", "tags": ["nginx:1.27"], "size": 142000000, "created": 5, "used": 2, "dangling": False, "used_by": ["web", "web2"]},
+               {"id": "bbbb33334444", "tags": ["alpine:3.18"], "size": 7000000, "created": 4, "used": 0, "dangling": False},
+               {"id": "cccc55556666", "tags": [], "size": 88000000, "created": 3, "used": 0, "dangling": True}],
+    "volumes": [{"name": "pgdata", "driver": "local", "size": 900000, "used": 1, "anonymous": False, "used_by": ["db"]},
+                {"name": "spare", "driver": "local", "size": 10, "used": 0, "anonymous": False}],
+    "networks": [{"name": "bridge", "driver": "bridge", "scope": "local", "used": 0, "builtin": True},
+                 {"name": "proxy", "driver": "bridge", "scope": "local", "used": 2, "builtin": False, "used_by": ["web", "gitea"]},
+                 {"name": "old_default", "driver": "bridge", "scope": "local", "used": 0, "builtin": False}],
+}
+
+
+def serve(c, key, session, aid, answers):
+    """The agent's side for a whole test: every command is answered from `answers` (verb -> result fields, or a function of
+    the command); every message that arrives is kept in `log`. Returns (log, stop)."""
+    log, stop = [], threading.Event()
+    c.s.settimeout(30)
+
+    def loop():
+        while not stop.is_set():
+            try:
+                m = c.read_signed(key, session)
+            except Exception:
+                return
+            if m is None:
+                return
+            log.append(m)
+            if m.get("type") == "command":
+                a = answers.get(m["verb"], {})
+                reply = a(m) if callable(a) else a
+                c.send_signed(key, session, aid, dict({"type": "result", "cmd": m["cmd"], "ok": True}, **reply))
+    threading.Thread(target=loop, daemon=True).start()
+    return log, stop
+
+
+class Objects(Base):
+    def host_with_images(self, name, extra=None, **kw):
+        c, session, aid, key = self.make_host(name, docker=kw.pop("docker", ("web", "images")), **kw)
+        answers = {"inventory": {"output": json.dumps(INVENTORY)}, **(extra or {})}
+        log, stop = serve(c, key, session, aid, answers)
+        self.addCleanup(stop.set)
+        self.addCleanup(c.close)
+        return aid, log
+
+    def commands(self, log, verb):
+        return [m for m in log if m.get("type") == "command" and m["verb"] == verb]
+
+    def test_the_lists_come_from_the_hosts_own_inventory(self):
+        self.session()
+        self.host_with_images("lister2")
+        status, r, _ = self.api("images", {"agent": "lister2"})
+        self.assertEqual(status, 200, r)
+        self.assertEqual([i["id"] for i in r["images"]], ["aaaa11112222", "bbbb33334444", "cccc55556666"])
+        self.assertEqual(r["images"][0]["used_by"], ["web", "web2"])
+        status, r, _ = self.api("volumes", {"agent": "lister2"})
+        self.assertEqual({v["name"]: v["browse"] for v in r["volumes"]}, {"pgdata": False, "spare": False})
+        status, r, _ = self.api("networks", {"agent": "lister2"})
+        self.assertEqual([n["name"] for n in r["networks"]], ["bridge", "proxy", "old_default"])
+
+    def test_without_the_hosts_docker_ticked_the_lists_say_what_to_tick(self):
+        self.session()
+        self.host_with_images("unticked", docker=("web",))
+        status, r, _ = self.api("images", {"agent": "unticked"})
+        self.assertEqual(status, 502)
+        self.assertIn("Unused images", r["error"])
+
+    def test_network_detail_is_rebuilt(self):
+        self.session()
+        raw = {"name": "proxy", "driver": "bridge", "scope": "local", "internal": False, "evil": "<x>",
+               "containers": [{"name": "gitea", "ipv4": "172.20.0.3"}, "junk", {"name": "traefik", "ipv4": "172.20.0.2", "extra": 1}]}
+        self.host_with_images("netter", {"network-inspect": {"output": json.dumps(raw)}})
+        status, r, _ = self.api("network", {"agent": "netter", "name": "proxy"})
+        self.assertEqual(status, 200, r)
+        self.assertEqual([c["name"] for c in r["network"]["containers"]], ["gitea", "traefik"])
+        self.assertNotIn("evil", r["network"])
+        self.assertEqual(self.api("network", {"agent": "netter", "name": "nope"})[0], 404)
+
+    def test_remove_needs_the_name_typed_and_an_object_in_the_hosts_own_list(self):
+        self.session()
+        aid, log = self.host_with_images("remover")
+        body = {"agent": "remover", "kind": "image", "name": "alpine:3.18"}
+        self.assertEqual(self.api("rm", dict(body, confirm="alpine"))[0], 400)           # the wrong name typed
+        self.assertEqual(self.api("rm", body)[0], 400)                                   # none typed
+        self.assertEqual(self.api("rm", dict(body, name="ghost:1", confirm="ghost:1"))[0], 404)   # not in the list
+        self.assertEqual(self.commands(log, "rm-image"), [])                             # nothing was sent
+        status, r, _ = self.api("rm", dict(body, confirm="alpine:3.18"))
+        self.assertEqual((status, r["ok"]), (200, True), r)
+        sent = self.commands(log, "rm-image")
+        self.assertEqual([(m["cap"], m["target"], m["arg"]) for m in sent], [("docker", "images", "alpine:3.18")])
+
+    def test_what_is_in_use_and_the_built_in_network_are_refused_before_the_agent(self):
+        self.session()
+        aid, log = self.host_with_images("keeper")
+        status, r, _ = self.api("rm", {"agent": "keeper", "kind": "image", "name": "nginx:1.27", "confirm": "nginx:1.27"})
+        self.assertEqual(status, 409)
+        self.assertIn("web", r["error"])
+        status, r, _ = self.api("rm", {"agent": "keeper", "kind": "volume", "name": "pgdata", "confirm": "pgdata"})
+        self.assertEqual(status, 409)
+        self.assertEqual(self.api("rm", {"agent": "keeper", "kind": "network", "name": "bridge", "confirm": "bridge"})[0], 400)
+        self.assertEqual(self.api("rm", {"agent": "keeper", "kind": "network", "name": "proxy", "confirm": "proxy"})[0], 409)
+        for verb in ("rm-image", "rm-volume", "rm-network"):
+            self.assertEqual(self.commands(log, verb), [], verb)
+        self.assertEqual(self.api("rm", {"agent": "keeper", "kind": "network", "name": "old_default", "confirm": "old_default"})[0], 200)
+        self.assertEqual(self.api("rm", {"agent": "keeper", "kind": "volume", "name": "spare", "confirm": "spare"})[0], 200)
+        self.assertEqual(self.api("rm", {"agent": "keeper", "kind": "image", "name": "cccc55556666", "confirm": "cccc55556666"})[0], 200)
+
+    def test_bad_kinds_and_names_are_refused(self):
+        self.session()
+        self.host_with_images("badrm")
+        for body in ({"kind": "container", "name": "web"}, {"kind": "image", "name": "-f"}, {"kind": "image", "name": "a b"},
+                     {"kind": "volume", "name": "../etc"}, {"kind": "image"}, {}):
+            self.assertEqual(self.api("rm", dict(body, agent="badrm", confirm=body.get("name", "")))[0], 400, body)
+
+    def test_pull_validates_the_image_and_needs_act(self):
+        self.session()
+        aid, log = self.host_with_images("puller")
+        self.assertEqual(self.api("pull", {"agent": "puller", "image": "nginx:1.27"})[0], 200)
+        self.assertEqual([m["arg"] for m in self.commands(log, "pull")], ["nginx:1.27"])
+        for bad in ("", "-q", "a b", "x;y", "../x"):
+            self.assertEqual(self.api("pull", {"agent": "puller", "image": bad})[0], 400, bad)
+
+    def test_clean_asks_for_the_word_typed(self):
+        self.session()
+        aid, log = self.host_with_images("cleaner", {"prune-dangling": {"output": "freed 88 MB (1 untagged layers)"}})
+        self.assertEqual(self.api("clean", {"agent": "cleaner", "what": "dangling"})[0], 400)
+        self.assertEqual(self.api("clean", {"agent": "cleaner", "what": "dangling", "confirm": "images"})[0], 400)
+        self.assertEqual(self.api("clean", {"agent": "cleaner", "what": "everything", "confirm": "everything"})[0], 400)
+        self.assertEqual(self.commands(log, "prune-dangling"), [])
+        status, r, _ = self.api("clean", {"agent": "cleaner", "what": "dangling", "confirm": "dangling"})
+        self.assertEqual((status, r["ok"]), (200, True))
+        self.assertIn("freed", r["text"])
+
+    def test_only_the_admin_level_removes_cleans_or_opens_a_volume(self):
+        self.session()
+        self.host_with_images("leveler")
+        read, act = Scopes.token(self, "read"), Scopes.token(self, "act")
+        calls = [("rm", {"agent": "leveler", "kind": "image", "name": "alpine:3.18", "confirm": "alpine:3.18"}),
+                 ("clean", {"agent": "leveler", "what": "dangling", "confirm": "dangling"}),
+                 ("volume-access", {"agent": "leveler", "volume": "pgdata", "on": True})]
+        for tok in (read, act):
+            for op, body in calls:
+                self.assertEqual(self.api(op, body, ticket=False, origin=False, token=tok)[0], 403, op)
+        self.assertEqual(self.api("pull", {"agent": "leveler", "image": "nginx:1"}, ticket=False, origin=False, token=read)[0], 403)
+        self.assertEqual(self.api("pull", {"agent": "leveler", "image": "nginx:1"}, ticket=False, origin=False, token=act)[0], 200)
+        self.assertEqual(self.api("images", {"agent": "leveler"}, ticket=False, origin=False, token=read)[0], 200)
+
+
+class Volumes(Objects):
+    LS = {"path": "/", "entries": [{"name": "base", "dir": True, "size": 0, "mtime": 1700000000},
+                                   {"name": "a/b", "dir": False, "size": 1, "mtime": 1}, {"name": "PG_VERSION", "dir": False, "size": 3, "mtime": 1},
+                                   {"name": "", "dir": False, "size": 1, "mtime": 1}, "junk"]}
+
+    def opened(self, name, extra=None):
+        aid, log = self.host_with_images(name, extra)
+        self.assertEqual(self.api("volume-access", {"agent": name, "volume": "pgdata", "on": True})[0], 200)
+        return aid, log
+
+    def test_a_volume_is_not_browsable_until_it_is_opened(self):
+        self.session()
+        self.host_with_images("closed", {"volume-ls": {"output": json.dumps(self.LS)}})
+        status, r, _ = self.api("volume-ls", {"agent": "closed", "volume": "pgdata", "path": "/"})
+        self.assertEqual((status, r.get("needs_access")), (403, True))
+        status, r, _ = self.api("volume-read", {"agent": "closed", "volume": "pgdata", "path": "/PG_VERSION"})
+        self.assertEqual(status, 403)
+
+    def test_opening_a_volume_reaches_the_agent_as_a_target_and_survives_a_save_of_the_container_ticks(self):
+        self.session()
+        aid, log = self.opened("opener", {"volume-ls": {"output": json.dumps(self.LS)}})
+        self.assertTrue(self.wait_for(lambda: any(m.get("type") == "allow" and "volume:pgdata" in m["targets"].get("docker", []) for m in log)))
+        self.assertEqual(self.api("volumes", {"agent": "opener"})[1]["volumes"][0]["browse"], True)
+        # the ⚙ list of container ticks is saved: the volume stays open (and the saved list may not open volumes by itself)
+        self.manage("targets", {"id": aid, "cap": "docker", "targets": ["web", "images", "volume:spare"]})
+        listed = next(x for x in self.manage("list")[1]["agents"] if x["id"] == aid)
+        self.assertEqual(listed["volumes"], ["pgdata"])
+        self.assertNotIn("volume:pgdata", listed["targets"]["docker"])
+        self.assertEqual(self.api("volume-access", {"agent": "opener", "volume": "ghost", "on": True})[0], 404)
+        self.assertEqual(self.api("volume-access", {"agent": "opener", "volume": "pgdata", "on": False})[1]["browse"], False)
+        self.assertEqual(self.api("volume-ls", {"agent": "opener", "volume": "pgdata", "path": "/"})[0], 403)
+
+    def test_the_listing_is_rebuilt_and_the_command_carries_the_clean_path(self):
+        self.session()
+        aid, log = self.opened("lsbox", {"volume-ls": {"output": json.dumps(self.LS)}})
+        status, r, _ = self.api("volume-ls", {"agent": "lsbox", "volume": "pgdata", "path": "base//./16384/"})
+        self.assertEqual(status, 200, r)
+        self.assertEqual([e["name"] for e in r["entries"]], ["base", "PG_VERSION"])      # no name with a slash, none empty, no junk
+        sent = self.commands(log, "volume-ls")
+        self.assertEqual([(m["target"], m["arg"]) for m in sent], [("volume:pgdata", "/base/16384")])
+
+    def test_a_path_that_climbs_is_refused_before_the_agent(self):
+        self.session()
+        aid, log = self.opened("climber")
+        for p in ("/../etc", "/a/../../b", "..", "/a\nb", "/" + "a" * 500):
+            self.assertEqual(self.api("volume-ls", {"agent": "climber", "volume": "pgdata", "path": p})[0], 400, p)
+            self.assertEqual(self.api("volume-read", {"agent": "climber", "volume": "pgdata", "path": p})[0], 400, p)
+        self.assertEqual(self.api("volume-read", {"agent": "climber", "volume": "pgdata", "path": "/"})[0], 400)
+        self.assertEqual(self.api("volume-ls", {"agent": "climber", "volume": "../x", "path": "/"})[0], 400)
+        self.assertEqual(self.commands(log, "volume-ls") + self.commands(log, "volume-read"), [])
+
+    def test_a_file_is_read_and_a_secret_is_not_shown_whatever_the_agent_sent(self):
+        self.session()
+        files = {"/conf/app.ini": {"path": "/conf/app.ini", "size": 12, "text": "a=1\nb=2\n"},
+                 "/id_rsa": {"path": "/id_rsa", "size": 99, "text": "-----BEGIN PRIVATE KEY-----"},
+                 "/.env": {"path": "/.env", "size": 40, "text": "# c\nDB_PASSWORD=hunter2\nTZ=UTC"},
+                 "/api_token.txt": {"path": "/api_token.txt", "size": 5, "text": "abcde", "masked": False}}
+        aid, log = self.opened("filer", {"volume-read": lambda m: {"output": json.dumps(files[m["arg"]])}})
+
+        def read(p):
+            return self.api("volume-read", {"agent": "filer", "volume": "pgdata", "path": p})
+        status, r, _ = read("/conf/app.ini")
+        self.assertEqual((status, r["file"]["text"], r["file"]["masked"]), (200, "a=1\nb=2\n", False))
+        for p in ("/id_rsa", "/api_token.txt"):
+            f = read(p)[1]["file"]
+            self.assertEqual((f["text"], f["masked"]), ("", True), p)
+        f = read("/.env")[1]["file"]
+        self.assertTrue(f["masked"])
+        self.assertNotIn("hunter2", f["text"])
+        self.assertIn("DB_PASSWORD=••••", f["text"])
+        self.assertIn("# c", f["text"])
+
+    def test_the_audit_log_names_what_was_looked_at(self):
+        self.session()
+        aid, log = self.opened("looked", {"volume-ls": {"output": json.dumps(self.LS)}})
+        self.api("volume-ls", {"agent": "looked", "volume": "pgdata", "path": "/base"})
+        text = audit_text(self.data)
+        self.assertIn("servers/volume-access", text)
+        self.assertIn("looked/pgdata/base", text)
+
+
 class Gate(Base):
     def audit_text(self):
         return audit_text(self.data)
@@ -424,6 +652,44 @@ class FakeHandler:
 
     def _who(self):
         return "admin"
+
+
+class ArgumentRules(unittest.TestCase):
+    """What labhud checks of a command's argument and target before it sends one (the agent checks the same)."""
+
+    def test_arguments(self):
+        ok = [("rm-image", "nginx:1.27"), ("rm-image", "0a1b2c3d4e5f"), ("pull", "ghcr.io/org/app@sha256:abc"), ("rm-volume", "pgdata"),
+              ("rm-network", "media_default"), ("network-inspect", "proxy"), ("volume-ls", ""), ("volume-ls", "/a/b"), ("volume-read", "/f.txt"),
+              ("restart", ""), ("logs", "")]
+        for verb, arg in ok:
+            self.assertTrue(agents.arg_ok(verb, arg), (verb, arg))
+        bad = [("rm-image", ""), ("rm-image", "-f"), ("rm-image", "a b"), ("rm-volume", "../x"), ("rm-network", "a/b"), ("pull", "x;y"),
+               ("volume-ls", "/../x"), ("volume-read", ""), ("volume-read", "/"), ("volume-read", "/a/../../b"), ("restart", "x"),
+               ("stats", "--all"), ("inventory", "x"), ("volume-ls", "/a\x00b"), ("volume-ls", None), ("rm-image", 5)]
+        for verb, arg in bad:
+            self.assertFalse(agents.arg_ok(verb, arg), (verb, arg))
+
+    def test_clean_path(self):
+        for src, want in (("", "/"), ("/", "/"), ("a", "/a"), ("/a//b/", "/a/b"), ("/a/./b", "/a/b"), ("//a", "/a")):
+            self.assertEqual(agents.clean_path(src), want, src)
+        for src in ("/..", "a/../b", "/a\nb", "x" * 401, 5, None):
+            self.assertIsNone(agents.clean_path(src), src)
+
+    def test_the_kinds_of_verb_and_target_do_not_mix(self):
+        ok = [("restart", "web"), ("rm-image", "images"), ("pull", "images"), ("network-inspect", "images"), ("prune", "images"),
+              ("volume-ls", "volume:pg"), ("volume-read", "volume:pg")]
+        for verb, target in ok:
+            self.assertTrue(agents._docker_kinds(verb, target), (verb, target))
+        bad = [("restart", "images"), ("restart", "volume:pg"), ("rm-image", "web"), ("pull", "web"), ("volume-ls", "web"),
+               ("volume-ls", "images"), ("stats", "volume:pg"), ("logs", "volume:pg"), ("prune", "volume:pg"), ("rm-volume", "volume:pg")]
+        for verb, target in bad:
+            self.assertFalse(agents._docker_kinds(verb, target), (verb, target))
+
+    def test_a_volume_target_is_a_docker_target_and_not_a_terminal_one(self):
+        self.assertTrue(agents.TARGET["docker"].fullmatch("volume:pgdata"))
+        self.assertFalse(agents.TARGET["terminal"].fullmatch("volume:pgdata"))
+        self.assertFalse(agents.TARGET["docker"].fullmatch("volume:"))
+        self.assertFalse(agents.TARGET["docker"].fullmatch("volume:../x"))
 
 
 class GateUnits(unittest.TestCase):

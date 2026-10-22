@@ -259,6 +259,9 @@ rules than the rest:
   start it again.
 - **Stop and update ask for the container's name typed.** A shell needs the admin, a PIN set and typed, and the
   container ticked for Terminal in Hosts and agents.
+- **The host's images, volumes and networks** need "Unused images" ticked for the host. Removing one is admin level, asks for its name typed, is
+  checked against the host's own list, and is never forced. A volume's files are read only after the admin opens that volume (one by one,
+  audited); files that look like secrets show nothing.
 - **Refusals are counted.** 8 in a minute from one address block it for 60 s, then longer each time.
 - **`[admin] servers_networks`** (a list of networks, optional): act and admin calls only from those addresses.
 - **Strict page**: no inline script or style, `frame-ancestors 'none'`, `no-referrer`, `no-store`.

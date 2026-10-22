@@ -54,3 +54,5 @@ dt { color: var(--muted); } dd { margin: 0; word-break: break-all; white-space: 
 .modal input { width: 100%; }
 .msg { min-height: 1.3em; margin-top: 8px; } .msg.bad { color: var(--bad); }
 @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } nav#hosts { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); } }
+.warn-text { color: var(--warn); }
+label { display: block; margin: 8px 0; }
