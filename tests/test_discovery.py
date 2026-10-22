@@ -55,6 +55,11 @@ class Candidates(unittest.TestCase):
         keys = [c["key"] for c in discovery.candidates(topology(), DATA)]
         self.assertEqual(keys, ["pve:pve/101", "docker:n1/redis"])   # not 100, not the template, not web
 
+    def test_odd_entries_in_the_data_are_skipped(self):
+        data = {"proxmox": {"pve": {"guests": {"101": {"name": "db"}, "102": 5}}, "_ts": 1700000000, "down": None}}
+        keys = [c["key"] for c in discovery.candidates(topology(), data)]
+        self.assertEqual(keys, ["pve:pve/101"])
+
     def test_scan_results(self):
         found = [{"source": "jellyfin", "url": "http://192.0.2.5:8096", "configured": False},
                  {"source": "gitea", "url": "http://192.0.2.6:3000", "configured": True}]

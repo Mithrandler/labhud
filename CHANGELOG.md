@@ -9,6 +9,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 ### Added
 - **Renaming an agent** from the app: `POST /api/agents/rename` {id, name} (the name is trimmed, cleaned like any agent name and made unique; the answer says what it became).
 
+### Fixed
+- **`GET /api/discover/list` answered 500** when the Proxmox data held an entry that is not a node (or a guest that is not an object): such entries are skipped.
+
 ## [0.1.14] - 2026-10-22
 
 ### Changed

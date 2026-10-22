@@ -34,8 +34,10 @@ def candidates(topology, data, scan_found=(), dismissed=()):
     have_src = {c["id"] for c in cards}
     out = []
     for node, ans in sorted(((data or {}).get("proxmox") or {}).items()):
-        for vmid, g in sorted(((ans or {}).get("guests") or {}).items(), key=lambda kv: int(kv[0])):
-            if g.get("template") or (node, int(vmid)) in have_pve:
+        if not isinstance(ans, dict):  # a node that did not answer, or a non-node entry
+            continue
+        for vmid, g in sorted((ans.get("guests") or {}).items(), key=lambda kv: int(kv[0])):
+            if not isinstance(g, dict) or g.get("template") or (node, int(vmid)) in have_pve:
                 continue
             out.append({"key": f"pve:{node}/{vmid}", "kind": "pve", "name": g.get("name") or str(vmid),
                         "detail": f"{node} · {vmid}" + (f" · {g['os']}" if g.get("os") else "")})
