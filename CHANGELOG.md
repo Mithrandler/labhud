@@ -6,6 +6,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- **The wall's cards on one grid, like the app's tiles**: every small card (a guest) is the same height, with always three bars (CPU, RAM, disk as a share; the used and total size on hover) and its uptime as a chip beside the name instead of a row of its own; a big card (a host with its rings, a NAS: two rows high) takes its section's whole row; the page's edges have the same gap as the space between cards. A card row is 100 px (88 in the compact density).
+
 ### Added
 - **Backup job (Proxmox)** in the Scheduler: a host's ticked guests, a storage and a mode (snapshot, suspend, stop) are backed up with vzdump, one after the other, in a thread of their own; the result is written into the job and sent as a notification. It needs the agent's new verb `vzdump` (labhud-agent) and, on the token, `VM.Backup` and `Datastore.AllocateSpace` (`install-agent.sh --pve-backup`, opt-in, documented).
 - **Servers > Host**: pending OS updates in the summary ("12 pending (3 security): libssl3, …", from the agent's `apt-get -s`), and the agent's own history (updates, crashes, out-of-memory kills) in *Activity*, marked as the agent's.

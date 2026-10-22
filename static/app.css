@@ -226,10 +226,10 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
    at a desk (desk_view) it scrolls. */
 #content {
   --cell: 150px;   /* a cell's least width at zoom 1 */
-  --row: 54px;     /* a card row's least height */
+  --row: 100px;    /* a card row's least height: a small card (name, three bars) is exactly one; a big one is two */
   --gap: var(--space-2);
   position: fixed; left: 0; right: 0; top: var(--topbar); bottom: var(--strip);
-  padding: var(--space-2) var(--space-2) var(--space-1);
+  padding: var(--gap);   /* the same gap at the edges as between the cards */
   overflow: hidden;   /* the wall: nothing scrolls, everything must fit at a glance */
 }
 #content.scroll { overflow-y: auto; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
@@ -289,6 +289,8 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 }
 .card .spec { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .head .dot { width: 8px; height: 8px; }
+/* how long a guest has been up, beside its name (the small cards are all the same height: three bars and this) */
+.card .head .uptime { flex: none; font-size: var(--text-xs); color: var(--muted); background: var(--block); border-radius: 999px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
 .card .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
 .card.bare .body { display: none; }
 
@@ -742,7 +744,7 @@ body.flash::after { content: ""; position: fixed; inset: 0; z-index: 95; pointer
 .card[data-size="s"] .pairs.hero .vl { font-size: var(--text-lg); }
 
 /* ⚙ density: only the spacing changes; layout() refits the page. */
-body.density-compact #content { --gap: var(--space-1); --row: 44px; }
+body.density-compact #content { --gap: var(--space-1); --row: 88px; }
 body.density-compact .card { padding: 6px 8px; gap: var(--space-1); }
 body.density-compact .card .body, body.density-compact .bars { gap: 3px; }
 body.density-compact .sec-title { margin-bottom: var(--space-1); }
