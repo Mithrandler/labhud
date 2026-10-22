@@ -6,7 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-10-22
+
 ### Changed
+- **The agent labhud installs is 0.1.11** (the `vzdump` verb and the pending-updates count; `agents/agent-release.json` pins its two builds by SHA-256).
 - **The wall's cards on one grid, like the app's tiles**: every small card (a guest) is the same height, with always three bars (CPU, RAM, disk as a share; the used and total size on hover) and its uptime as a chip beside the name instead of a row of its own; a big card (a host with its rings, a NAS: two rows high) takes its section's whole row; the page's edges have the same gap as the space between cards. A card row is 100 px (88 in the compact density).
 
 ### Added
@@ -796,7 +799,8 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/Mithrandler/labhud/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/Mithrandler/labhud/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/Mithrandler/labhud/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/Mithrandler/labhud/compare/v0.1.11...v0.1.12

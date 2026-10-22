@@ -599,6 +599,12 @@ let layoutWatch = null;    // a ResizeObserver: the content box or the page chan
 /** A card's place in the grid: [columns, rows] in cells. */
 const SIZES = { s: [1, 1], m: [2, 1], l: [2, 2], xl: [4, 2] };
 
+/** How many of its section's `k` columns a card takes: a big card (two rows high: a host with its rings, a NAS) the
+    whole row, the others the width of their size, never more than the section has. */
+function card_span([w, h], k) {
+  return h >= 2 ? k : Math.min(w, k);
+}
+
 /** The card's size: the config's `size` (or a container's `labhud.size`), else one guessed from
     what it shows. `large = true` is an older word for "big": it gets the size its numbers need
     (a host with seven numbers 2×2, a router with four 2×1, a backup server with two 1×1), not
@@ -807,8 +813,7 @@ function layout() {
       const k = Math.min(cols, ks ? ks[j] : cols);
       it.s.style.setProperty("--k", String(k));
       it.cards.forEach((c, i) => {
-        // a big card (two rows high: a host with its rings, a NAS) takes its section's whole row; the small ones are one cell
-        const w = String(it.dims[i][1] >= 2 ? k : Math.min(it.dims[i][0], k));
+        const w = String(card_span(it.dims[i], k));
         if (c.dataset.w !== w) c.dataset.w = w;
         if (c.dataset.h !== String(it.dims[i][1])) c.dataset.h = String(it.dims[i][1]);
       });
