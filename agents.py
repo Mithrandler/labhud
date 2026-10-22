@@ -45,7 +45,7 @@ MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this mu
 
 VERBS = {
     "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect",
-               "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow"),
+               "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats"),
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
@@ -59,7 +59,7 @@ CAPS = ("sensors",) + tuple(VERBS) + ("scan",)
 # what an agent may say it understands beyond v1's first messages (hello.features)
 FEATURES = ("registry-auth",)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow"),
+READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats"),
          "stacks": VERBS["stacks"], "terminal": VERBS["terminal"]}   # compose answers with its output: only ⚙ > Containers > Stacks asks
 # the host's Docker (its images, volumes and networks), ticked as this target, which is no container
 # and takes none of a container's verbs, as the host verbs take no container (the agent checks the same)
@@ -437,6 +437,11 @@ def listing():
                     "choices": {c: v for c, v in found.items() if c in a.get("found", [])},
                     "labels": labels})
     return sorted(out, key=lambda a: a["paired"])
+
+
+def state_of(aid):
+    """A copy of the last `state` an agent sent (without the type and the clock), {} when none."""
+    return {k: v for k, v in (_state.get(aid) or {}).items() if k not in ("type", "_t")}
 
 
 def snapshot():

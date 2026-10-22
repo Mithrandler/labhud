@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<title>LabHUD · Servers</title>
+<link rel="stylesheet" href="/servers.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">LabHUD</a>
+  <span class="sep">/</span>
+  <strong>Servers</strong>
+  <span class="grow"></span>
+  <span id="session" class="hint"></span>
+</header>
+<div id="warn" class="banner" hidden></div>
+<div class="layout">
+  <nav id="hosts" aria-label="Hosts"></nav>
+  <main>
+    <div id="tabs" class="tabs" role="tablist"></div>
+    <section id="view"></section>
+  </main>
+</div>
+<div id="sheet" class="sheet" hidden></div>
+<div id="modal" class="modal" hidden></div>
+<script src="/servers.js"></script>
+</body>
+</html>

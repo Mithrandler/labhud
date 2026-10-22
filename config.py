@@ -91,7 +91,7 @@ REGISTRY_HOST_RE = re.compile(r"[a-z0-9]([a-z0-9.-]{0,58}[a-z0-9])?(:[0-9]{1,5})
 DOCKER_HUB_NAMES = ("docker.io", "index.docker.io", "registry-1.docker.io", "hub.docker.com")
 BOOKMARK_KEYS = {"group", "name", "url"}
 NOTIFY_KEYS = {"via", "quiet_from", "quiet_to", "email", "gotify", "events"}   # the last three: notify.check()
-ADMIN_KEYS = {"session_hours", "trusted_proxies", "admin_networks", "oidc"}
+ADMIN_KEYS = {"session_hours", "trusted_proxies", "admin_networks", "servers_networks", "oidc"}
 OIDC_KEYS = {"issuer", "client_id", "allow", "allow_groups", "redirect_uri", "scopes"}
 NOTIFY_VIA = ("ntfy", "app", "both")
 # The formats whose numbers get a sparkline (the last hours, behind the value)
@@ -494,10 +494,11 @@ def _secure_url(u, path=False):
 
 def _admin(ck, raw):
     """[admin] (⚙ > Security): session_hours (1 to 720: how long a browser stays
-    signed in without use), trusted_proxies and admin_networks (lists of networks), and
+    signed in without use), trusted_proxies, admin_networks and servers_networks (lists of networks: servers_networks are
+    the only ones the zone Servers acts from, empty = as admin_networks says), and
     [admin.oidc] for single sign-on: issuer, client_id, allow (user names or emails) and/or
     allow_groups; the client secret is LABHUD_OIDC_CLIENT_SECRET (secrets.env)."""
-    out = {"session": 30 * 86400, "trusted_proxies": [], "admin_networks": [], "oidc": None}
+    out = {"session": 30 * 86400, "trusted_proxies": [], "admin_networks": [], "servers_networks": [], "oidc": None}
     ad = raw.get("admin")
     if ad is None:
         return out
@@ -512,6 +513,7 @@ def _admin(ck, raw):
         out["session"] = hours * 3600
     out["trusted_proxies"] = _cidrs(ck, "admin", ad, "trusted_proxies")
     out["admin_networks"] = _cidrs(ck, "admin", ad, "admin_networks")
+    out["servers_networks"] = _cidrs(ck, "admin", ad, "servers_networks")
     oc = ad.get("oidc")
     if oc is None:
         return out

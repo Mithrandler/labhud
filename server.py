@@ -58,7 +58,7 @@ import store
 import thresholds
 import websock
 from sources import push
-from api import audit, tokens
+from api import audit, servers, tokens
 
 # print() writes the text and the newline separately, so two threads logging at once glued their
 # lines together ("kept across restarts in /datawarning: ..."). One lock around each whole line.
@@ -1482,6 +1482,9 @@ def _csp():
             f"font-src 'self'; media-src 'self'; connect-src 'self'; {frames}frame-ancestors 'none'; "
             "base-uri 'none'; form-action 'self'; object-src 'none'")
 
+SERVERS_CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; "
+               "font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'")
+
 TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8", ".woff2": "font/woff2",
@@ -1562,7 +1565,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         # Only this server's own scripts, styles, fonts and media; no frames around it; the
         # browser talks to this server alone (actions included: it forwards them, signed).
-        self.send_header("Content-Security-Policy", _csp())
+        strict = self.path.startswith(("/servers", "/api/servers/"))
+        # The zone Servers: nothing inline, never cached (logs and a terminal are in what it sends).
+        self.send_header("Content-Security-Policy", SERVERS_CSP if strict else _csp())
+        if strict:
+            cache = "no-store"
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
@@ -1702,6 +1709,10 @@ class Handler(BaseHTTPRequestHandler):
             path = "/status.html"
         if path == "/edit":
             path = "/edit.html"
+        if path in ("/servers", "/servers.html", "/servers.js", "/servers.css"):
+            if not servers.page_ok(self):
+                return self._json({"error": "Servers is only served over HTTPS"}, 403)
+            path = "/servers.html" if path == "/servers" else path
         return self._static(path)
 
     def do_POST(self):
@@ -1782,10 +1793,13 @@ class Handler(BaseHTTPRequestHandler):
             audit.record(self, path.removeprefix("/api/"), "", False)
             return self._json({"ok": False, "error": "forbidden"}, 403)
         try:
-            code, answer = fn(self, body)
+            res = fn(self, body)
         except Exception as e:   # a module's bug: logged here, never a stack trace to the page
             print(f"route {method} {path} failed: {e!r}", flush=True)
             return self._json({"ok": False, "error": "failed"}, 500)
+        if res is None:   # the handler answered itself (api/servers.py hands a stream to _live_stream)
+            return None
+        code, answer = res
         if method == "GET" and code == 303:   # routes.redirect(): OIDC's callback
             self.send_response(303)
             self.send_header("Location", answer["location"])

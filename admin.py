@@ -381,11 +381,13 @@ class Admin:
 #   client itself, whatever it writes in that header.
 # admin_networks: the only networks the admin may sign in from and act from (empty = anywhere).
 #   The CLI beside the server (loopback, its own key) is not concerned.
+# servers_networks: the only networks the zone Servers (api/servers.py) acts from, on top of
+#   admin_networks (empty = no further limit).
 # oidc: single sign-on (api/oidc.py); None when not set.
 
 MIN_SESSION = 3600
 MAX_SESSION = 30 * 86400
-SETTINGS = {"session": IDLE, "trusted_proxies": (), "admin_networks": (), "oidc": None}
+SETTINGS = {"session": IDLE, "trusted_proxies": (), "admin_networks": (), "servers_networks": (), "oidc": None}
 
 
 def configure(cfg):
@@ -397,6 +399,7 @@ def configure(cfg):
     SETTINGS.update(session=min(max(int(cfg.get("session") or IDLE), MIN_SESSION), MAX_SESSION),
                     trusted_proxies=nets(cfg.get("trusted_proxies")),
                     admin_networks=nets(cfg.get("admin_networks")),
+                    servers_networks=nets(cfg.get("servers_networks")),
                     oidc=cfg.get("oidc") or None)
 
 
@@ -435,6 +438,11 @@ def network_ok(ip, networks=None):
     """May the admin sign in and act from `ip`? Anywhere when admin_networks is empty."""
     networks = SETTINGS["admin_networks"] if networks is None else networks
     return not networks or _within(_addr(ip), networks)
+
+
+def servers_network_ok(ip):
+    """May the zone Servers act from `ip`? Anywhere when servers_networks is empty."""
+    return network_ok(ip, SETTINGS["servers_networks"])
 
 
 def oidc_on():

@@ -66,7 +66,7 @@ class AuditTests(unittest.TestCase):
             lines = f.readlines()
         self.assertEqual(len(lines), 1)
         e = json.loads(lines[0])
-        self.assertEqual(set(e.keys()), {"ts", "who", "action", "target", "ip", "ua", "ok"})
+        self.assertEqual(set(e.keys()), {"ts", "who", "action", "target", "ip", "ua", "ok", "prev", "h"})
         self.assertEqual(e["ts"], time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)))
         self.assertEqual(e["who"], "admin")
         self.assertEqual(e["action"], "setup/save-text")
@@ -221,3 +221,87 @@ class AuditTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChainTests(unittest.TestCase):
+    """The hash chain: entry by entry, across days and restarts; changed or removed lines are found."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        p = mock.patch.dict(os.environ, {"LABHUD_DATA": self.tmp})
+        p.start()
+        self.addCleanup(p.stop)
+        audit._tail.update(path=None, h=None)
+        self.t0 = time.time()
+
+    def _write(self, n, start=0):
+        for i in range(start, start + n):
+            audit.write("admin", f"servers/restart", f"web-{i}", "10.0.0.1", "ua", True, now=self.t0 + i)
+
+    def _file(self):
+        d = os.path.join(self.tmp, "audit")
+        return os.path.join(d, os.listdir(d)[0])
+
+    def test_empty_and_intact_logs_verify(self):
+        self.assertEqual(audit.verify(), (True, 0, ""))
+        self._write(5)
+        self.assertEqual(audit.verify(), (True, 5, ""))
+
+    def test_each_entry_names_the_one_before(self):
+        self._write(3)
+        with open(self._file(), encoding="utf-8") as f:
+            rows = [json.loads(x) for x in f]
+        self.assertEqual(rows[0]["prev"], "")
+        self.assertEqual(rows[1]["prev"], rows[0]["h"])
+        self.assertEqual(rows[2]["prev"], rows[1]["h"])
+        self.assertEqual(len({r["h"] for r in rows}), 3)
+
+    def test_the_chain_goes_on_after_a_restart(self):
+        self._write(2)
+        audit._tail.update(path=None, h=None)     # a new process reads the newest h from the files
+        self._write(2, start=2)
+        self.assertEqual(audit.verify(), (True, 4, ""))
+
+    def test_a_changed_entry_is_found_at_its_line(self):
+        self._write(4)
+        path = self._file()
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+        e = json.loads(lines[2])
+        e["target"] = "someone-else"
+        lines[2] = json.dumps(e, separators=(",", ":")) + "\n"
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        ok, checked, broken = audit.verify()
+        self.assertFalse(ok)
+        self.assertEqual(checked, 2)
+        self.assertIn("line 3", broken)
+        self.assertIn("changed", broken)
+
+    def test_an_entry_taken_out_of_the_middle_is_found(self):
+        self._write(4)
+        path = self._file()
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+        del lines[1]
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        ok, _, broken = audit.verify()
+        self.assertFalse(ok)
+        self.assertIn("not the one before", broken)
+
+    def test_entries_from_before_the_chain_are_skipped(self):
+        d = os.path.join(self.tmp, "audit")
+        os.makedirs(d)
+        day = time.strftime("%Y-%m-%d", time.gmtime(self.t0))
+        with open(os.path.join(d, day + ".jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": "2026-01-01T00:00:00Z", "who": "admin", "action": "old", "target": "",
+                                "ip": "", "ua": "", "ok": True}) + "\n")
+        self._write(2)
+        self.assertEqual(audit.verify(), (True, 2, ""))
+
+    def test_the_listing_does_not_show_the_hashes(self):
+        self._write(1)
+        rows, _ = audit.query()
+        self.assertEqual(set(rows[0]), {"ts", "who", "action", "target", "ip", "ua", "ok"})

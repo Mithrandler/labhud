@@ -10,6 +10,11 @@ than KEEP_DAYS are deleted as the day turns). Every entry has the same fields:
 (api/tokens.py), "cli" (the labhud command beside the server) or "anonymous". Never a password,
 a ticket, a token or a code: what is written is the path, a card's action name, a token's name.
 
+Each entry also carries `prev` (the previous entry's `h`) and `h` (SHA-256 of `prev` and the entry), a
+chain that verify() walks: an entry changed or taken out of the middle breaks it at that line. It does
+not show that the newest entries were cut off or the whole log deleted; entries from before the chain
+have neither field and are skipped.
+
 Where it is heard, once each, so nothing else in labhud has to remember it:
 - server._may_manage, the guard of everything ⚙ does (heard()): the path as `action`, the guard's
   answer as `ok`. Reads that ⚙ makes all the time (QUIET) are written only when refused;
@@ -22,6 +27,7 @@ Where it is heard, once each, so nothing else in labhud has to remember it:
         token, the labhud command).
 """
 
+import hashlib
 import json
 import os
 import re
@@ -51,6 +57,8 @@ QUIET = frozenset({
 _lock = threading.Lock()
 _pruned = {"day": ""}
 _full = {"day": ""}
+_tail = {"path": None, "h": None}     # the newest entry's h, read from the files at the first write (per folder)
+HASHED = ("ts", "who", "action", "target", "ip", "ua", "ok")
 
 
 def configure(cfg):
@@ -79,6 +87,34 @@ def _clip(v, n):
     return re.sub(r"[\x00-\x1f\x7f]", " ", str(v if v is not None else ""))[:n]
 
 
+def _link(prev, entry):
+    """SHA-256 of the previous hash and the entry's own fields, as compact JSON in a fixed order."""
+    body = json.dumps({k: entry.get(k) for k in HASHED}, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256((prev + "\n" + body).encode("utf-8")).hexdigest()
+
+
+def _newest_h(path):
+    """The h of the newest chained entry in the files ("" when there is none yet)."""
+    try:
+        days = sorted((m.group(1) for m in map(DAY_FILE.fullmatch, os.listdir(path)) if m), reverse=True)
+    except OSError:
+        return ""
+    for day in days:
+        try:
+            with open(os.path.join(path, day + ".jsonl"), encoding="utf-8") as f:
+                lines = f.readlines()
+        except OSError:
+            continue
+        for line in reversed(lines):
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(e, dict) and isinstance(e.get("h"), str):
+                return e["h"]
+    return ""
+
+
 def write(who, action, target="", ip="", ua="", ok=True, now=None):
     """Appends one entry. Never raises: the log must not stop what it records."""
     now = now or time.time()
@@ -89,10 +125,11 @@ def write(who, action, target="", ip="", ua="", ok=True, now=None):
     entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "who": _clip(who, LIMITS["who"]),
              "action": _clip(action, LIMITS["action"]), "target": _clip(target, LIMITS["target"]),
              "ip": _clip(ip, LIMITS["ip"]), "ua": _clip(ua, LIMITS["ua"]), "ok": bool(ok)}
-    line = json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n"
     name = os.path.join(path, day + ".jsonl")
     with _lock:
         try:
+            if _tail["path"] != path:
+                _tail["path"], _tail["h"] = path, _newest_h(path)
             if _pruned["day"] != day:
                 _pruned["day"] = day
                 prune(path, now)
@@ -101,9 +138,13 @@ def write(who, action, target="", ip="", ua="", ok=True, now=None):
                     _full["day"] = day
                     print(f"audit: {name} is {MAX_DAY_BYTES >> 20} MB, nothing more is written today", flush=True)
                 return False
+            entry["prev"] = _tail["h"]
+            entry["h"] = _link(_tail["h"], entry)
+            line = json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n"
             fd = os.open(name, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as f:
                 f.write(line)
+            _tail["h"] = entry["h"]
         except OSError as e:
             print(f"audit: not written: {e}", flush=True)
             return False
@@ -251,6 +292,42 @@ def query(who="", action="", ok=None, since="", until="", offset=0, limit=100):
                 return rows, True
             rows.append({k: e.get(k, "" if k != "ok" else False) for k in ("ts", "who", "action", "target", "ip", "ua", "ok")})
     return rows, False
+
+
+def verify():
+    """(ok, checked, broken): walks every chained entry, oldest first. `broken` is "" or where the
+    chain stops holding ("2026-10-18.jsonl line 12: changed" / "...: not the one before"). The first
+    chained entry is the anchor (what came before it may have been pruned)."""
+    path = folder()
+    if not path:
+        return True, 0, ""
+    try:
+        days = sorted(m.group(1) for m in map(DAY_FILE.fullmatch, os.listdir(path)) if m)
+    except OSError:
+        return True, 0, ""
+    last, checked = None, 0
+    with _lock:
+        for day in days:
+            try:
+                with open(os.path.join(path, day + ".jsonl"), encoding="utf-8") as f:
+                    lines = f.readlines()
+            except OSError:
+                continue
+            for n, line in enumerate(lines, 1):
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    if last is not None:
+                        return False, checked, f"{day}.jsonl line {n}: not readable"
+                    continue
+                if not isinstance(e, dict) or not isinstance(e.get("h"), str):
+                    continue    # from before the chain
+                if last is not None and e.get("prev") != last:
+                    return False, checked, f"{day}.jsonl line {n}: not the one before"
+                if _link(str(e.get("prev") or ""), e) != e["h"]:
+                    return False, checked, f"{day}.jsonl line {n}: changed"
+                last, checked = e["h"], checked + 1
+    return True, checked, ""
 
 
 def parse(qs):

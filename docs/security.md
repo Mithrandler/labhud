@@ -245,6 +245,29 @@ instead (`init.py pair`, or ⚙ > Devices > Phones > Pair a phone) and then send
 - The app reaches labhud the same way a browser would: keep it on the LAN or behind a VPN. Pairing
   does not make it safe to expose the port to the internet.
 
+## Servers (`/servers` and the app's Servers tab)
+
+The hosts' Docker, with live logs and a shell. It is the part of labhud that can stop a container, so it has more
+rules than the rest:
+
+- **HTTPS only.** Over plain HTTP the page and its API answer 403, whoever asks; the app refuses to use Servers on a
+  server added with `http://`. (`LABHUD_SERVERS_HTTP=on` lifts this for tests and demos: do not set it.)
+- **Three levels on the token scopes.** `read` lists, reads logs, inspects, shows stats and follows a log; `act` also
+  starts, stops, restarts and updates; `admin` opens a shell, starts the session and checks the audit chain. A browser
+  or a phone signed in as the admin has them all, but acting needs the PIN typed (when there is one).
+- **A session of its own**, started with the PIN and ended after 15 minutes without a call; the next call says to
+  start it again.
+- **Stop and update ask for the container's name typed.** A shell needs the admin, a PIN set and typed, and the
+  container ticked for Terminal in Hosts and agents.
+- **Refusals are counted.** 8 in a minute from one address block it for 60 s, then longer each time.
+- **`[admin] servers_networks`** (a list of networks, optional): act and admin calls only from those addresses.
+- **Strict page**: no inline script or style, `frame-ancestors 'none'`, `no-referrer`, `no-store`.
+- **The audit log is chained**: each entry holds the hash of the previous one; Servers' *check* tells whether the chain
+  holds. It does not show that the newest entries were removed or the whole log deleted: keep a copy elsewhere.
+
+What the agent may do is still what the admin ticked, checked again by the agent. See the threat model for what each
+rule is for.
+
 ## Reporting a problem
 
 Open an issue on GitHub. For anything that should not be public, use GitHub's private

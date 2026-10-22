@@ -67,7 +67,8 @@ class ConfigAdmin(unittest.TestCase):
         return " ".join(e.exception.problems)
 
     def test_defaults(self):
-        self.assertEqual(self.load(""), {"session": 30 * 86400, "trusted_proxies": [], "admin_networks": [], "oidc": None})
+        self.assertEqual(self.load(""), {"session": 30 * 86400, "trusted_proxies": [], "admin_networks": [],
+                                                  "servers_networks": [], "oidc": None})
 
     def test_session_hours(self):
         self.assertEqual(self.load('[admin]\nsession_hours = 12\n')["session"], 12 * 3600)
@@ -81,6 +82,11 @@ class ConfigAdmin(unittest.TestCase):
             self.load('[admin]\nadmin_networks = ["192.168.1.7/24", "10.0.0.1"]\n')["admin_networks"],
             ["192.168.1.0/24", "10.0.0.1/32"],
         )
+
+    def test_servers_networks(self):
+        self.assertEqual(
+            self.load('[admin]\nservers_networks = ["192.0.2.7/24"]\n')["servers_networks"], ["192.0.2.0/24"])
+        self.assertIn("not an address", self.problems('[admin]\nservers_networks = ["nope"]\n'))
 
     def test_trusted_proxies_garbage(self):
         self.assertIn("not an address", self.problems('[admin]\ntrusted_proxies = ["nope"]\n'))

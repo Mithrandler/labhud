@@ -136,6 +136,25 @@ HTTP (`setupmode.py`).
 | A webhook URL leaks (a CI log) | it updates one ticked container, as its UPDATE would, at most once in 30 s; a new URL in ⚙ ends it; labhud keeps only its hash | that container pulled and made again |
 | Command injection through a target | targets have a strict shape, checked in labhud and in the agent; each verb is one API call | nothing |
 
+### The zone Servers (`/servers`, `/api/servers/*`)
+
+The hosts' Docker, in the app and in the browser. Every route goes through one gate (`api/servers.py` `_gate`) and
+declares the level it needs in one table (`NEEDS`); a test fails if a route is missing from it.
+
+| attack | stopped by | left over |
+|---|---|---|
+| Reading or acting over plain HTTP, from someone on the LAN | Servers answers 403 to anything not over TLS (the page, its script and style too), also to a signed-in admin; the app refuses an `http://` server for it | `LABHUD_SERVERS_HTTP=on` (tests, a demo) lifts it: never in use |
+| A web page of another site calls it with the admin's ticket | the page's own origin is required (`_same_page`), except for a token or the command line, which carry their own secret | nothing |
+| A read token, or a stolen phone that only looks, restarts a container | three levels on the token scopes: `read` (lists, logs, inspect, stats, live log), `act` (start, stop, restart, update), `admin` (shell, the session, the audit check); a refusal is written to the audit log | an `act` token can restart what is ticked: that is its price |
+| Guessing the admin or a token against it | 8 refusals in a minute block that address for 60 s, then 120 s, up to 15 minutes (429 with the wait); a session that ended is not counted | an attacker with many addresses |
+| A session left open on a screen | with a browser or a phone the session starts only after the PIN, and ends after 15 minutes without a call (401, start again with the PIN); the PIN's own ticket ends after 2 | what an open session does in those minutes |
+| Acting from an address that should not | `[admin] servers_networks` (optional): act and admin calls only from those networks; the command beside the server is not concerned | reading is not limited by it |
+| A shell opened by a token, or without the PIN | `stream-open` for a shell needs the admin level and `_may_terminal` (a browser or a phone signed in as the admin, a PIN set and typed); input and resize need the admin level; nothing the shell says is kept | what the admin does in it |
+| A host's answer carries markup, giant text or a secret | the answers are rebuilt field by field with limits (`inspect`, `stats`, the lists); a label whose name looks like a secret loses its value whatever the agent sent, and variables give names only; the pages put everything in with `textContent` | nothing |
+| Script injection into the page | the CSP has no inline script or style and no `eval`, `frame-ancestors 'none'`, `no-referrer`, `no-store`; a test fails on an inline script, style, handler or `innerHTML` in the page's files | the terminal's own library may style itself less than it would |
+| A name picked wrongly stops or updates the wrong container | stop and update ask for the container's name typed; the server only takes a name of the right shape that the agent has ticked, and the agent checks again | nothing |
+| The audit log is edited afterwards | each entry carries the hash of the one before (`prev`, `h`); `POST /api/servers/audit-verify` walks the chain and names the first line that does not hold | cutting off the newest entries, or deleting the whole log, is not seen |
+
 ### Availability
 
 | attack | stopped by | left over |

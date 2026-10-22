@@ -9,6 +9,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 ### Added
 - **Renaming an agent** from the app: `POST /api/agents/rename` {id, name} (the name is trimmed, cleaned like any agent name and made unique; the answer says what it became).
 
+- **Servers** (first slice): a zone for the hosts' Docker at `/servers` and in the app's new Servers tab: the hosts with their containers running/total, CPU and memory; per host Overview and Containers (filter, state, CPU/memory); a container opens a sheet with Start/Stop/Restart/Update (stop and update ask for the name), its live log, Inspect, Stats and a shell. API: `POST /api/servers/{session,hosts,containers,action,logs,inspect,stats,stream-*,audit-verify}`; agent verb `stats` (needs labhud-agent 0.1.2).
+- **Security of Servers**: HTTPS only (403 on plain HTTP), three levels on the token scopes, a session of 15 minutes, 8 refusals in a minute block an address (429), `[admin] servers_networks` to limit where it acts from, a strict page (no inline script or style), answers rebuilt field by field, and a **hash chain in the audit log** (`prev`, `h`) checked by `POST /api/servers/audit-verify`. See `docs/security.md` and `docs/threat-model.md`.
+
 ### Fixed
 - **`GET /api/discover/list` answered 500** when the Proxmox data held an entry that is not a node (or a guest that is not an object): such entries are skipped.
 
