@@ -736,6 +736,31 @@ class Hooks(unittest.TestCase):
         self.assertTrue(agents.remove_hook("a1b2c3d4", "web"))
         self.assertEqual(agents.hook(newer, now=900)[1], "forbidden")
 
+    def test_a_stack_hook_syncs_only_that_stack_once_in_30s_and_only_its_hash_kept(self):
+        a = agents.store.load(agents.AGENTS_KEY)
+        a["a1b2c3d4"]["caps"] = ["docker", "stacks"]
+        a["a1b2c3d4"]["stack_sources"] = {"site": {"repo": "https://git.example/o/n", "branch": "main", "path": "c.yaml"}}
+        agents.store.save(agents.AGENTS_KEY, a)
+        self.assertIsNone(agents.new_stack_hook("a1b2c3d4", "other"))   # a stack with no source has no hook
+        token = agents.new_stack_hook("a1b2c3d4", "site")
+        self.assertNotIn(token, json.dumps(agents.store.load(agents.AGENTS_KEY)))
+        synced, real = [], agents._sync_from_hook
+        done = threading.Event()
+        agents._sync_from_hook = lambda aid, name: (synced.append((aid, name)), done.set())
+        try:
+            self.assertEqual(agents.hook(token, now=100), (True, "", "n", "site"))
+            self.assertTrue(done.wait(5))
+            self.assertEqual(agents.hook(token, now=110)[1], "too soon: once in 30 s")
+            self.assertEqual(agents.hook(token, now=131)[0], True)
+            self.assertEqual(agents.hook("x" * 43)[1], "forbidden")
+            self.assertEqual(synced[0], ("a1b2c3d4", "site"))
+            newer = agents.new_stack_hook("a1b2c3d4", "site")   # a new one stops the old one
+            self.assertEqual(agents.hook(token, now=500)[1], "forbidden")
+            self.assertEqual(agents.hook(newer, now=900)[0], True)
+        finally:
+            agents._sync_from_hook = real
+            time.sleep(0.2)
+
 
 class Versions(unittest.TestCase):
     def test_newer(self):
