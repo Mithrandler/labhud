@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-22
+
+Needs nothing new from labhud-agent (0.1.1). App 0.1.23 reads `node` and `guest_counts`.
+
 ### Added
 
 - **A machine's numbers as rings on the wall**: a large card (and every Proxmox host) shows CPU, RAM and disk as rings with the temperature inside, the GPU as one double ring (load outside, video memory inside); the glance tiles use small rings too, and a section with a single tile takes the whole row in portrait.
@@ -756,7 +760,8 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/Mithrandler/labhud/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/Mithrandler/labhud/compare/v0.1.1...v0.1.11
 [0.1.1]: https://github.com/Mithrandler/labhud/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Mithrandler/labhud/releases/tag/v0.1.0
