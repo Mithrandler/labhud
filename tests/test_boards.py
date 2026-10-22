@@ -190,6 +190,8 @@ class Routes(unittest.TestCase):
         self.assertEqual(managed.read_config()["roles"], {"viewer": {"pages": ["main"], "view": "glance"}})
         boards.save_roles(self.h, {"role": "viewer", "pages": []})
         self.assertEqual(managed.read_config()["roles"], {"viewer": {"view": "glance"}})
+        got = boards.read_roles(self.h, {})[1]   # what the ⚙ form draws from
+        self.assertEqual((got["roles"], got["views"]), ({"viewer": []}, {"viewer": "glance"}))
         self.assertEqual(boards.save_role_view(self.h, {"role": "viewer", "view": "wide"})[0], 400)
         self.assertEqual(boards.save_role_view(self.h, {"role": "root", "view": "full"})[0], 400)
         self.assertEqual(boards.save_role_view(self.h, {"role": "viewer", "view": ""})[0], 200)

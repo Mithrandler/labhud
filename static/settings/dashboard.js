@@ -157,15 +157,15 @@ function board_theme_settings(s) {
   s.append(bases, accents, msg);
 }
 
-/** [roles.<role>] pages: one row of page ticks per role (POST /api/boards/roles). */
+/** [roles.<role>] pages and view: a row of page ticks and a row of "opens as" per role (POST /api/boards/roles, /role-view). */
 function role_pages(s) {
   const pages = (CFG && CFG.pages) || [];
   const msg = el("span", "device-seen", "");
   s.appendChild(msg);
   fetch("/api/boards/roles", { headers: admin_headers({}) }).then((r) => r.json()).then((r) => {
-    if (r.ok) draw(r.roles || {}); else msg.textContent = signed_in() ? (r.error || "Not read") : "Sign in as the admin to see and change them.";
+    if (r.ok) draw(r.roles || {}, r.views || {}); else msg.textContent = signed_in() ? (r.error || "Not read") : "Sign in as the admin to see and change them.";
   }).catch(() => { msg.textContent = "Not read"; });
-  const draw = (roles) => { for (const role of ["viewer", "operator", "admin"]) {
+  const draw = (roles, views) => { for (const role of ["viewer", "operator", "admin"]) {
     const row = el("div", "choices");
     row.appendChild(el("span", "lbl", role[0].toUpperCase() + role.slice(1)));
     const chosen = new Set(roles[role] || []);
@@ -178,6 +178,16 @@ function role_pages(s) {
       row.appendChild(b);
     }
     s.insertBefore(row, msg);
+    const vrow = el("div", "choices");
+    vrow.appendChild(el("span", "lbl", "Opens as"));
+    for (const [v, label] of [["", "App decides"], ["glance", "Glance"], ["actions", "Actions"], ["full", "Full"]]) {
+      const b = el("button", "choice small" + ((views[role] || "") === v ? " on" : ""), label);
+      b.type = "button";
+      b.addEventListener("click", () => board_post("/api/boards/role-view", { role, view: v })
+        .then((r) => { if (r.ok) location.reload(); else msg.textContent = r.error || "Not saved"; }));
+      vrow.appendChild(b);
+    }
+    s.insertBefore(vrow, msg);
   } };
 }
 
