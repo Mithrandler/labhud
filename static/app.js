@@ -1538,11 +1538,17 @@ function game_card(sv, i) {
   };
 }
 
-/** A game's icon: the service icons have a few games; the rest get the line icon. */
+/** A game's icon: its own logo (minecraft, rust), steam's for the games that are on Steam, else the gamepad.
+    The same choice as cardtype.game_icon (the server's `icon` wins when it sends one). */
+const GAME_STEAM = ["counter", "cs16", "cs2", "csgo", "valheim", "palworld", "terraria", "7-days", "7days", "enshrouded",
+  "nitrox", "subnautica", "gta", "fivem", "ark", "factorio", "satisfactory", "garry", "dayz", "conan",
+  "left-4", "half-life", "team-fortress", "zombie", "deathmatch"];
 function game_icon(sv) {
+  if (sv.icon) return sv.icon;
   const name = norm(sv.game || sv.name);
   for (const g of ["minecraft", "rust"]) if (name.includes(g)) return g;
-  return "games";
+  const text = `${sv.game || ""} ${sv.name || ""}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return GAME_STEAM.some((f) => text.includes(f)) ? "steam" : "games";
 }
 
 /** A games page: the cards come live from the server list at `path` (Pterodactyl), so it has no

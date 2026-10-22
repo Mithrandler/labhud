@@ -174,3 +174,20 @@ def icon_for(name="", *, os=None, image=None, game=None, tags=()):
             if c in shipped():
                 return c
     return ""
+
+
+# Games with no logo of their own in the icon set (dashboard-icons has only minecraft, rust and steam) get steam's;
+# anything else a game server is called gets the gamepad line icon. Fragments of the slugified game + name.
+GAME_STEAM = ("counter", "cs16", "cs2", "csgo", "valheim", "palworld", "terraria", "7-days", "7days", "enshrouded",
+              "nitrox", "subnautica", "gta", "fivem", "ark", "factorio", "satisfactory", "garry", "dayz", "conan",
+              "left-4", "half-life", "team-fortress", "zombie", "deathmatch")
+
+
+def game_icon(game="", name=""):
+    """The icon of a game server: its own logo when the set has one, else steam's for the games that are on
+    Steam, else "games" (the gamepad). Never empty. static/app.js game_icon() makes the same choice."""
+    own = icon_for(game or "", game=game) or icon_for(name or "")
+    if own:
+        return own
+    text = re.sub(r"[^a-z0-9]+", "-", f"{game} {name}".lower()).strip("-")
+    return "steam" if any(f in text for f in GAME_STEAM) else "games"

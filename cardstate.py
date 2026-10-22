@@ -828,7 +828,7 @@ def game(sv, i, data, topology, actions_on=False, full=False):
            "uptime": round(sv.get("uptime_s") or 0), "map": q.get("map") if q else None,
            "version": q.get("version") if q else None,
            "actions": [_action(a, c, topology.get("actions") or {}) for a in useful_actions(c, data, actions_on)]}
-    out["icon"] = cardtype.icon_for(sv.get("game") or "", game=sv.get("game")) or cardtype.icon_for(sv.get("name") or "")
+    out["icon"] = cardtype.game_icon(sv.get("game") or "", sv.get("name") or "")
     if full:
         out["who"] = [n for n in (q.get("names") or []) if isinstance(n, str)] if q else []
     return out

@@ -167,6 +167,15 @@ class IconFor(unittest.TestCase):
             with self.subTest(**{"case": repr(kwargs)}):
                 self.assertEqual(cardtype.icon_for(**kwargs), expected)
 
+    def test_game_servers_always_get_an_icon(self):
+        for game, name, expected in (("Minecraft", "mc", "minecraft"), ("Rust", "Carbon", "rust"),
+                                     ("Valheim Vanilla", "Pykeron Valheim World", "steam"),
+                                     ("Counter-Strike 1.6", "Zombie Plague", "steam"), ("", "CS2 Deathmatch", "steam"),
+                                     ("Palworld", "pal", "steam"), ("Terraria", "t", "steam"), ("7 Days to Die", "", "steam"),
+                                     ("Some Unknown Game", "x", "games"), ("", "", "games")):
+            with self.subTest(game=game, name=name):
+                self.assertEqual(cardtype.game_icon(game, name), expected)
+
     def test_the_icons_the_containers_and_games_carry(self):
         import cardstate
         data = {"agents": {"h": {"containers": {"tv": {"state": "running", "image": "lscr.io/linuxserver/sonarr:latest"}}}}}
@@ -174,6 +183,7 @@ class IconFor(unittest.TestCase):
         self.assertEqual((box["icon"], box["image"]), ("sonarr", "lscr.io/linuxserver/sonarr:latest"))
         game = cardstate.game({"id": "g1", "game": "Minecraft", "state": "running"}, 0, {}, {"actions": {}})
         self.assertEqual(game["icon"], "minecraft")
+        self.assertEqual(cardstate.game({"id": "g2", "game": "Valheim", "state": "running"}, 0, {}, {"actions": {}})["icon"], "steam")
 
 
 class IconCache(unittest.TestCase):

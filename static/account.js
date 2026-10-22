@@ -141,16 +141,18 @@ function account_click() {
   const head = el("div", "head");
   head.append(el("b", null, ADMIN_USER), el("span", null, "Admin · signed in on this browser"));
   m.appendChild(head);
-  const item = (label, run, extra) => {
-    const b = el("button", "item" + (extra ? " " + extra : ""), label);
+  const item = (label, run, extra, icon) => {
+    const b = el("button", "item" + (extra ? " " + extra : ""));
+    if (icon) b.appendChild(icon_svg(icon, 16));
+    b.appendChild(el("span", null, label));
     b.type = "button";
     b.setAttribute("role", "menuitem");
     b.addEventListener("click", () => { close_account_menu(); run(); });
     m.appendChild(b);
   };
-  item("Settings", () => open_settings(), UPDATE_TAG ? "has-update" : "");
+  item("Settings", () => open_settings(), UPDATE_TAG ? "has-update" : "", "settings");
   m.appendChild(el("div", "sep"));
-  item("Sign out", sign_out, "out");
+  item("Sign out", sign_out, "out", "power");
   m.hidden = false;
   render_account();
   touched();

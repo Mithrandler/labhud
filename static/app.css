@@ -156,6 +156,8 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #account-menu .head span { font-size: 11px; color: var(--muted); }
 #account-menu .item { appearance: none; border: 0; background: transparent; color: var(--text); text-align: left;
   font: 500 14px/1 var(--font); padding: 11px 10px; border-radius: 6px; cursor: pointer; }
+#account-menu .item { display: flex; align-items: center; gap: 10px; width: 100%; }
+#account-menu .item svg { flex: none; }
 #account-menu .item:hover, #account-menu .item:focus-visible { background: var(--block); }
 #account-menu .item.out { color: var(--red); }
 #account-menu .sep { height: 1px; background: var(--line); margin: 4px 6px; }
