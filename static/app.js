@@ -1088,7 +1088,7 @@ function make_card(c, node = false) {
 
   let sevs = [];   // functions that say each number's severity, for the card's edge
   if (guest) sevs = guest_rows(c, body, chips);
-  if (c.metrics) sevs = make_metrics(c.metrics, body, foot);
+  if (c.metrics) sevs = make_metrics(c.metrics, body, foot, !!c.large || String(c.panel || "").startsWith("host:"));
   if (c.list) body.appendChild(make_list(c.list, c.limit || 6));
   if (c.torrents) body.appendChild(make_torrents(c.torrents));
   if (c.bookmarks) body.appendChild(make_bookmarks(c));
@@ -1170,6 +1170,86 @@ function bar_row(label) {
   };
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** An SVG circle arc: `r` its radius in a 36 x 36 box, `w` its stroke. fill(p) sets how much of it is drawn. */
+function ring_arc(svg, r, w) {
+  const mk = (cls_name) => {
+    const c = document.createElementNS(SVG_NS, "circle");
+    c.setAttribute("cx", "18"); c.setAttribute("cy", "18"); c.setAttribute("r", String(r));
+    c.setAttribute("fill", "none"); c.setAttribute("stroke-width", String(w));
+    c.setAttribute("class", cls_name);
+    svg.appendChild(c);
+    return c;
+  };
+  mk("track");
+  const arc = mk("arc");
+  const len = 2 * Math.PI * r;
+  arc.setAttribute("stroke-dasharray", `0 ${len}`);
+  arc.setAttribute("transform", "rotate(-90 18 18)");
+  return (p, sev) => {
+    const share = p == null ? 0 : Math.max(0, Math.min(100, p)) / 100;
+    arc.setAttribute("stroke-dasharray", `${(share * len).toFixed(1)} ${len.toFixed(1)}`);
+    cls(arc, "warn", sev === "warn");
+    cls(arc, "crit", sev === "crit");
+  };
+}
+
+/** The label of a ring's kind: "cpu", "gpu", or "" (RAM, disk, other shares). */
+function ring_kind(label) { const t = String(label).toLowerCase(); return /\bcpu/.test(t) ? "cpu" : /\bgpu/.test(t) ? "gpu" : ""; }
+
+/** A machine's percentages as rings: the number in the middle, the temperature of the same part under
+    it (a "CPU" celsius number goes into the CPU ring), the label beneath. A GPU (a `gpuN_temp`
+    sensor) is one ring with the load outside and the video memory in a thinner ring inside.
+    `used` holds the specs a ring took (the temperatures), so the card does not show them twice. */
+function make_rings(bars, rest) {
+  const box = el("div", "rings");
+  const used = new Set(), rings_sevs = [];
+  const temps = rest.filter(([, , fmt]) => fmt === "celsius");
+  const add = (label, spec_path, fmt, temp, extra) => {
+    const cell = el("div", "ring");
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 36 36");
+    const outer = ring_arc(svg, 15.5, extra ? 3 : 3.4);
+    const inner = extra ? ring_arc(svg, 10.8, 2) : null;
+    const mid = el("div", "mid");
+    const vl = el("span", "vl", "—");
+    const tv = temp ? el("span", "tv", "") : null;
+    mid.append(vl);
+    if (tv) mid.append(tv);
+    cell.append(svg, mid, el("div", "lbl", label));
+    box.appendChild(cell);
+    let sev = "";
+    updaters.push(() => {
+      const v = get(spec_path);
+      const share = pct(fmt, v);
+      put(vl, share == null ? "—" : Math.round(share) + "%");
+      cell.title = format(v, fmt);
+      sev = severity(spec_path, fmt, v);
+      outer(pct(fmt, v), sev);
+      cls(cell, "warn", sev === "warn"); cls(cell, "crit", sev === "crit");
+      if (tv) { const t = get(temp[0]); put(tv, typeof t === "number" ? Math.round(t) + "°" : ""); }
+      if (inner) { const m = get(extra); inner(typeof m === "number" ? m : null, ""); }
+    });
+    rings_sevs.push(() => sev);
+    return cell;
+  };
+  for (const [path, label, fmt] of bars) {
+    const kind = ring_kind(label);
+    const temp = kind ? temps.find((t) => ring_kind(t[1]) === kind && !used.has(t) && !/gpu\d+_temp$/.test(t[0])) : null;
+    if (temp) used.add(temp);
+    add(label, path, fmt, temp, null);
+  }
+  for (const t of temps) {
+    const m = /^(.*\.gpu\d+)_temp$/.exec(t[0]);
+    if (!m || used.has(t)) continue;
+    used.add(t);
+    const n = t[0].match(/gpu(\d+)_temp/)[1];
+    add("GPU" + (temps.filter((x) => /gpu\d+_temp$/.test(x[0])).length > 1 ? Number(n) + 1 : ""), m[1] + "_util", "percent", t, m[1] + "_mem");
+  }
+  return { box, used, rings_sevs };
+}
+
 /** A Proxmox guest: CPU and RAM as bars, its disk as a chip. RAM is NOT coloured by percentage:
     Proxmox computes it as `total - MemFree`, page cache included, and any Linux machine that ran
     for a day reaches ~95% without any problem. The only signal that means something is PSI: how
@@ -1204,11 +1284,17 @@ function guest_rows(c, body, chips) {
 
 /** A card's numbers: shares as bar rows, the rest in pairs (one alone is the card's big number).
     The first number with a trend draws its last hours as a sparkline in the foot. */
-function make_metrics(specs, body, foot) {
+function make_metrics(specs, body, foot, ringed = false) {
   const bars = specs.filter(([, , fmt]) => is_bar(fmt));
-  const rest = specs.filter(([, , fmt]) => !is_bar(fmt));
+  let rest = specs.filter(([, , fmt]) => !is_bar(fmt));
   const sevs = [];
-  if (bars.length) {
+  if (ringed && bars.length >= 2) {
+    // a machine's shares as rings, each with its temperature inside; the GPU's load and video memory in one
+    const { box, used, rings_sevs } = make_rings(bars, rest);
+    body.appendChild(box);
+    rest = rest.filter((s) => !used.has(s));
+    sevs.push(...rings_sevs);
+  } else if (bars.length) {
     const box = el("div", "bars");
     for (const [path, label, fmt] of bars) {
       const row = bar_row(label);
