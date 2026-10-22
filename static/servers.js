@@ -231,12 +231,24 @@ function close_sheet() {
   S.sheet = null;
   $("sheet").hidden = true;
   $("sheet").textContent = "";
+  document.body.classList.remove("locked");
 }
+/** Shows the sheet: the page underneath stays put (no scrolling) and an X in the corner closes it. */
+function show_sheet() {
+  const sh = $("sheet");
+  sh.hidden = false;
+  sh.scrollTop = 0;
+  document.body.classList.add("locked");
+  const x = btn("\u2715", "sheet-x", close_sheet);
+  x.setAttribute("aria-label", "Close");
+  sh.appendChild(x);
+  return sh;
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.sheet) close_sheet(); });
 function open_sheet(c) {
   close_sheet();
   S.sheet = { c, alive: true, stream: null, term: null };
-  const sh = $("sheet");
-  sh.hidden = false;
+  const sh = show_sheet();
   sh.append(el("h2", "", c.name), el("div", "muted", c.image + " · " + c.state));
   const acts = el("div", "actions");
   for (const verb of ["start", "stop", "restart", "update"]) {
@@ -558,8 +570,7 @@ async function browse(area, volume, path) {
 function open_object(title, facts, names, why, remove, extra, untagged, more) {
   close_sheet();
   S.sheet = { alive: true, stream: null, term: null, gen: 0 };
-  const sh = $("sheet");
-  sh.hidden = false;
+  const sh = show_sheet();
   sh.appendChild(el("h2", "", title));
   const dl = el("dl");
   for (const [k, val] of facts) dl.append(el("dt", "", k), el("dd", "", val));

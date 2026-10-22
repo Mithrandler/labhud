@@ -56,3 +56,6 @@ dt { color: var(--muted); } dd { margin: 0; word-break: break-all; white-space: 
 @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } nav#hosts { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); } }
 .warn-text { color: var(--warn); }
 label { display: block; margin: 8px 0; }
+body.locked { overflow: hidden; }
+.sheet { overscroll-behavior: contain; }
+.sheet-x { position: sticky; top: 0; float: right; z-index: 1; width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 16px; }
