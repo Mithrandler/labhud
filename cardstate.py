@@ -909,4 +909,5 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
             "containers": boxes,
             "bookmarks": [{"group": b["group"], "name": b["name"], "url": b["url"]} for b in topology.get("bookmarks") or []],
             "search": (topology.get("search") or {}).get("url") or "",
-            **({"role": role} if role else {})}
+            **({"role": role} if role else {}),
+            **({"view": topology["role_views"][role]} if role in (topology.get("role_views") or {}) else {})}

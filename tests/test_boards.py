@@ -182,6 +182,32 @@ class Routes(unittest.TestCase):
         out = layout.apply(raw, pages)
         self.assertNotIn("roles", out)
 
+    def test_role_view_kept_beside_the_pages_and_checked(self):
+        managed.take_over()
+        self.assertEqual(boards.save_role_view(self.h, {"role": "viewer", "view": "glance"})[0], 200)
+        self.assertEqual(managed.read_config()["roles"], {"viewer": {"view": "glance"}})
+        boards.save_roles(self.h, {"role": "viewer", "pages": ["main"]})
+        self.assertEqual(managed.read_config()["roles"], {"viewer": {"pages": ["main"], "view": "glance"}})
+        boards.save_roles(self.h, {"role": "viewer", "pages": []})
+        self.assertEqual(managed.read_config()["roles"], {"viewer": {"view": "glance"}})
+        self.assertEqual(boards.save_role_view(self.h, {"role": "viewer", "view": "wide"})[0], 400)
+        self.assertEqual(boards.save_role_view(self.h, {"role": "root", "view": "full"})[0], 400)
+        self.assertEqual(boards.save_role_view(self.h, {"role": "viewer", "view": ""})[0], 200)
+        self.assertNotIn("roles", managed.read_config())
+
+    def test_state_carries_the_view_of_the_role(self):
+        import cardstate
+        topo = {"title": "x", "pages": [], "cards": {}, "roles": {}, "role_views": {"viewer": "glance"}}
+        self.assertEqual(cardstate.state(topo, {}, role="viewer").get("view"), "glance")
+        self.assertNotIn("view", cardstate.state(topo, {}, role="admin"))
+        self.assertNotIn("view", cardstate.state(topo, {}))
+
+    def test_dropping_a_page_keeps_the_view(self):
+        raw = Layout.raw(self)
+        raw["roles"] = {"viewer": {"pages": ["main"], "view": "glance"}}
+        pages = [{"id": "other", "title": "O", "groups": [{"id": "g", "title": "G", "cards": ["a", "b"]}]}]
+        self.assertEqual(layout.apply(raw, pages)["roles"], {"viewer": {"view": "glance"}})
+
 
 if __name__ == "__main__":
     unittest.main()

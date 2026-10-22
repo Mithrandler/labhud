@@ -63,7 +63,10 @@ THEME_ACCENTS = ("blue", "green", "orange", "red", "violet", "cyan", "pink", "ye
 ACCENT_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 # What a role (an API token's scope, a paired phone) sees: [roles.<role>] pages = ["id", ...]
 ROLE_NAMES = ("viewer", "operator", "admin")
-ROLE_KEYS = {"pages"}
+ROLE_KEYS = {"pages", "view"}
+# How the app opens for a role (its default, the phone may still change it): the glance tiles only,
+# the glance with the action buttons, or everything.
+ROLE_VIEWS = ("glance", "actions", "full")
 # The marks where a resource (CPU, RAM, disk: a percentage) turns orange, then red
 DEFAULT_MARKS = (80, 92)
 STRIP_KEYS = {"code", "name", "card", "ip", "wan"}
@@ -1027,7 +1030,7 @@ def _validate(raw, path):
                 ck.err("display", f"accent must be one of {', '.join(THEME_ACCENTS)} or a #rrggbb colour, got {accent!r}")
             else:
                 display["accent"] = accent.lower()
-    roles = _roles(ck, raw, page_ids)
+    roles, role_views = _roles(ck, raw, page_ids)
 
     registries = _registries(ck, raw)
     alert_rules = _alert_rules(ck, raw, [c for cs in cards.values() for c in cs])
@@ -1064,7 +1067,7 @@ def _validate(raw, path):
     return {"title": title or DEFAULT_TITLE, "pages": pages, "actions": actions, "maintenance": maintenance, "alerts": alerts, "cards": cards, "strip": strip, "quiet_hours": quiet, "skip_sources": skip,
             "weather": weather, "night": night, "calm": calm, "lock": lock, "public": public_page,
             "alert_rules": alert_rules, "notify": notify_cfg, "search": search, "bookmarks": bookmarks,
-            "display": display, "roles": roles, "admin": admin_cfg, "update": update_cfg, "audit": audit_cfg, "registries": registries,
+            "display": display, "roles": roles, "role_views": role_views, "admin": admin_cfg, "update": update_cfg, "audit": audit_cfg, "registries": registries,
             "marks": {k: v for cs in cards.values() for c in cs for k, v in (c.get("marks") or {}).items()},
             "trends": [] if sparklines is False else sorted({
                 m[0] for cs in cards.values() for c in cs for m in c.get("metrics", []) + c.get("charts", [])
@@ -1115,16 +1118,17 @@ def _registries(ck, raw):
 
 
 def _roles(ck, raw, page_ids):
-    """[roles.<viewer|operator|admin>] pages = [page ids]: the pages that role sees in /api/v1/state.
-    A role without a table sees every page. -> {role: [page ids]}"""
+    """[roles.<viewer|operator|admin>] pages = [page ids]: the pages that role sees in /api/v1/state;
+    view = "glance" | "actions" | "full": how the app opens for it. A role without a table sees
+    every page, one without `pages` too. -> ({role: [page ids]}, {role: view})"""
     if "roles" not in raw:
-        return {}
+        return {}, {}
     rt = raw["roles"]
     if not isinstance(rt, dict):
         ck.err("top level", "roles must be written as [roles.viewer], [roles.operator] and [roles.admin] tables")
-        return {}
+        return {}, {}
     ck.unknown("roles", rt, set(ROLE_NAMES))
-    out = {}
+    out, views = {}, {}
     for name in ROLE_NAMES:
         if name not in rt:
             continue
@@ -1134,7 +1138,15 @@ def _roles(ck, raw, page_ids):
             ck.err(where, f"must be a [{where}] table")
             continue
         ck.unknown(where, t, ROLE_KEYS)
+        view = t.get("view")
+        if view is not None:
+            if view not in ROLE_VIEWS:
+                ck.err(where, f"view must be one of {', '.join(ROLE_VIEWS)}, got {view!r}")
+            else:
+                views[name] = view
         pages = t.get("pages")
+        if pages is None and view is not None:
+            continue
         if not isinstance(pages, list) or not pages or not all(isinstance(p, str) for p in pages):
             ck.err(where, "pages must be a list of page ids (at least one)")
             continue
@@ -1143,7 +1155,7 @@ def _roles(ck, raw, page_ids):
             ck.err(where, f"page {', '.join(repr(m) for m in missing)} does not exist")
             continue
         out[name] = list(dict.fromkeys(pages))
-    return out
+    return out, views
 
 
 def public(topology):

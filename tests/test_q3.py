@@ -95,6 +95,14 @@ class Roles(unittest.TestCase):
         self.assertIn("roles", refused(CFG + '\n[roles.boss]\npages = ["main"]\n'))
         self.assertIn("unknown", refused(CFG + '\n[roles.viewer]\npages = ["main"]\ncolour = 1\n'))
 
+    def test_view_per_role(self):
+        t = load(CFG + '\n[roles.viewer]\nview = "glance"\n[roles.operator]\npages = ["main"]\nview = "actions"\n')
+        self.assertEqual(t["roles"], {"operator": ["main"]})
+        self.assertEqual(t["role_views"], {"viewer": "glance", "operator": "actions"})
+        self.assertEqual(cardstate.state(t, {}, role="viewer")["view"], "glance")
+        self.assertEqual(len(cardstate.state(t, {}, role="viewer")["pages"]), 2)   # no pages: every page
+        self.assertIn("view must be", refused(CFG + '\n[roles.viewer]\nview = "huge"\n'))
+
     def test_state_by_role(self):
         t = load(CFG + self.ROLES)
         self.assertEqual([p["id"] for p in cardstate.state(t, {}, role="viewer")["pages"]], ["main"])

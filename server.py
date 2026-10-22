@@ -45,6 +45,7 @@ import events
 import lock
 import mqtt
 import defaultboard
+import discovery
 import gitsource
 import layout
 import onboard
@@ -1075,6 +1076,8 @@ def loop():
             _log(events.changes(name, before, result, TOPOLOGY))
             if name == "agents":
                 check_rules()
+            if name == "proxmox":
+                tell_discovered()
             if not DEMO and "unavailable" not in result:
                 every_card = [c for cs in TOPOLOGY["cards"].values() for c in cs]
                 past = WATCH.check(every_card, lambda p: thresholds.lookup(_data, p), name,
@@ -1169,6 +1172,29 @@ def fleet_updates(every):
     return {"updates": rows, "update_count": len(rows), "_t": int(time.time())}
 
 
+_discovery_at = [0.0]
+
+
+def tell_discovered():
+    """A candidate for a card (discovery.py) seen for the first time becomes one message, to the
+    channels ticked for "discovered" (opt-in), with Add / Ignore for the app. At most every 30 s."""
+    if DEMO or "TOPOLOGY" not in globals() or time.monotonic() - _discovery_at[0] < 30:
+        return
+    _discovery_at[0] = time.monotonic()
+    try:
+        with _lock:
+            data = dict(_data)
+        dismissed = store.load(discovery.STORE_KEY, [])
+        items = discovery.candidates(TOPOLOGY, data, scan.status()["found"], dismissed if isinstance(dismissed, list) else [])
+        fresh = notify.new_discovered(items)
+        if fresh:
+            text = notify.discovered_text(fresh)
+            EVENTS.add(text, False)
+            notify.submit(TOPOLOGY["title"], text, False, event="discovered", extra=notify.discovered_actions(fresh))
+    except Exception as e:  # news about news must not stop the sources
+        print(f"discovery: not told: {e!r}", flush=True)
+
+
 def publish_agents():
     """The agents' state (agents.py) as one more entry of the snapshot: `agents.<name>.…`. When
     what they may do changed the cards' buttons (a tick in ⚙, a guest moved), the displays reload."""
@@ -1182,6 +1208,7 @@ def publish_agents():
     fresh = [] if DEMO else notify.new_updates(fleet["updates"])   # "update available"
     if fresh:
         _log([(notify.updates_text(fresh), False, (None, None, "update_available"))])
+    tell_discovered()
     check_rules()
     if "TOPOLOGY" in globals():
         new = derive(FILE_TOPOLOGY, TOPOLOGY)

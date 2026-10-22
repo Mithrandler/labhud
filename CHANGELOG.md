@@ -8,6 +8,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **Discovery tells you** (⚙ > Alerts, the new event "Something new found", off until ticked): a VM, container or service with no card is one message, once, with Add / Ignore for the app (`actions` in `/api/v1/notifications`, answered through `/api/discover/approve|dismiss`). What was there the first time is taken as known, a dismissed one never tells, and the default board's cards are not news.
+- **Default view per role**: `[roles.<role>] view = "glance" | "actions" | "full"` (`pages` becomes optional), set with `POST /api/boards/role-view` (admin, audited) and answered as `view` in `/api/v1/state` for the app to open that way.
 - **Glance view** (`/?glance=1`): a tile per card with one big number coloured by state, the group's count in a big title, a large clock and weather, and the details (and bigger action buttons) in the panel a tap opens. Nothing else on screen: problems are in the bell.
 
 ## [0.1.11] - 2026-10-22

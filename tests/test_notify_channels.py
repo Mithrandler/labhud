@@ -189,5 +189,62 @@ class Updates(unittest.TestCase):
         self.assertTrue(notify.updates_text([{"host": "a", "name": "x"}, {"host": "b", "name": "y"}]).startswith("2 updates available:"))
 
 
+class Discovered(unittest.TestCase):
+    ITEM = {"key": "docker:n1/redis", "kind": "docker", "name": "redis", "detail": "n1 · redis:7"}
+    OTHER = {"key": "pve:pve/101", "kind": "pve", "name": "db", "detail": "pve · 101"}
+
+    def setUp(self):
+        notify._discovered["seen"] = None
+        self.addCleanup(notify._discovered.__setitem__, "seen", None)
+        p1 = mock.patch("store.load", return_value=None)
+        p2 = mock.patch("store.save")
+        p1.start(); self.addCleanup(p1.stop)
+        p2.start(); self.addCleanup(p2.stop)
+
+    def test_first_time_is_known_then_a_new_one_tells_once(self):
+        self.assertEqual(notify.new_discovered([self.ITEM], now=1000), [])
+        self.assertEqual(notify.new_discovered([self.ITEM, self.OTHER], now=1100), [self.OTHER])
+        self.assertEqual(notify.new_discovered([self.ITEM, self.OTHER], now=1200), [])
+
+    def test_a_dismissed_one_is_no_candidate_so_it_never_tells(self):
+        import discovery
+        data = {"agents": {"n1": {"containers": {"redis": {}, "web": {}}}}}
+        topo = {"cards": {}}
+        notify.new_discovered(discovery.candidates(topo, data), now=1000)
+        data["agents"]["n1"]["containers"]["new"] = {}
+        items = discovery.candidates(topo, data, dismissed=["docker:n1/new"])
+        self.assertEqual(notify.new_discovered(items, now=1100), [])
+
+    def test_the_default_board_tells_nothing(self):
+        import defaultboard
+        import discovery
+        data = {"agents": {"n1": {"containers": {"redis": {}}}}}
+        raw, added = defaultboard.build({"title": "x"}, data)
+        self.assertTrue(added)
+        self.assertEqual(notify.new_discovered([], now=1000), [])
+        topo = {"cards": {"p": [{"id": "redis", "check": None, "agent": "n1", "agent_target": "docker:redis"}]}}
+        self.assertEqual(notify.new_discovered(discovery.candidates(topo, data), now=1100), [])
+
+    def test_forgotten_after_a_month_then_news_again(self):
+        notify.new_discovered([self.ITEM], now=1000)
+        notify.new_discovered([self.OTHER], now=1100)
+        self.assertEqual(notify.new_discovered([self.ITEM], now=1100 + notify.DISCOVERED_FORGET + 5), [self.ITEM])
+
+    def test_opt_in_and_actions_reach_the_outbox(self):
+        notify.CFG["events"] = None
+        notify.VIA = "app"
+        self.assertEqual(notify.route("discovered"), [])
+        notify.CFG["events"] = {"discovered": ["app"]}
+        self.addCleanup(notify.CFG.__setitem__, "events", None)
+        before = len(notify.outbox())
+        notify.deliver("Lab", notify.discovered_text([self.ITEM]), False, event="discovered",
+                       extra=notify.discovered_actions([self.ITEM]))
+        msg = notify.outbox()[-1]
+        self.assertEqual(len(notify.outbox()), before + 1)
+        self.assertEqual([a["id"] for a in msg["actions"]], ["add", "ignore"])
+        self.assertEqual(msg["actions"][0]["body"], {"keys": ["docker:n1/redis"]})
+        self.assertIn("redis", msg["text"])
+
+
 if __name__ == "__main__":
     unittest.main()

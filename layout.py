@@ -183,8 +183,11 @@ def _prune_roles(raw, page_ids):
         return
     for name in list(roles):
         kept = [p for p in (roles[name] or {}).get("pages", []) if p in page_ids]
+        rest = {k: v for k, v in (roles[name] or {}).items() if k != "pages"}
         if kept:
-            roles[name] = {**roles[name], "pages": kept}
+            roles[name] = {**rest, "pages": kept}
+        elif rest:
+            roles[name] = rest   # its view stays
         else:
             del roles[name]
     if not roles:

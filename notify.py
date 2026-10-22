@@ -69,14 +69,15 @@ MUTED = False         # the demo: its made-up news reaches only the app's outbox
 
 # What happens, in ⚙'s order, and who may get it. An event outside the list is an "alert".
 EVENTS = ("alert", "host_down", "container_stopped", "update_available", "update_done",
-          "agent_offline", "admin_login", "backup_failed")
+          "agent_offline", "admin_login", "backup_failed", "discovered")
 EVENT_TEXT = {"alert": "An alert", "host_down": "A host down", "container_stopped": "A container or guest stopped",
               "update_available": "An update available", "update_done": "An update done",
-              "agent_offline": "An agent offline", "admin_login": "An admin sign-in", "backup_failed": "A backup failed"}
+              "agent_offline": "An agent offline", "admin_login": "An admin sign-in", "backup_failed": "A backup failed",
+              "discovered": "Something new found, to add or ignore"}
 CHANNELS = ("app", "ntfy", "email", "webhook", "discord", "gotify")
 # News even when it is not bad (the rest of the good news only with LABHUD_NOTIFY_ALL); and,
 # without [notify.events], sent nowhere until ticked: they were never sent before.
-ALWAYS = frozenset({"update_available", "update_done", "admin_login"})
+ALWAYS = frozenset({"update_available", "update_done", "admin_login", "discovered"})
 # The secrets of each channel, by field: in secrets.env (managed.set_secrets) or the environment.
 SECRETS = {"ntfy": {"url": "LABHUD_NOTIFY_URL", "auth": "LABHUD_NOTIFY_AUTH"},
            "email": {"password": "LABHUD_NOTIFY_SMTP_PASSWORD"},
@@ -285,17 +286,17 @@ def problem():
     return None
 
 
-def submit(title, text, bad, still_true=None, card=None, urgent=True, delay=None, event=None):
+def submit(title, text, bad, still_true=None, card=None, urgent=True, delay=None, event=None, extra=None):
     """Queues one message about `event` (one of EVENTS; "alert" when not given). `still_true`,
     when given, is asked again after `delay` seconds (DELAY by default) and the message is dropped
     if it answers False (the host came back meanwhile). One that is not `urgent` waits for the end
-    of the quiet hours."""
+    of the quiet hours. `extra` is merged into the app's outbox message (the discovery's actions)."""
     event = event if event in EVENTS else "alert"
     if not (bad or ALL or event in ALWAYS) or not route(event):
         return
     due = time.monotonic() + ((DELAY if delay is None else delay) if still_true else 0)
     try:
-        _queue.put_nowait((due, title, text, bad, still_true, card, urgent, event))
+        _queue.put_nowait((due, title, text, bad, still_true, card, urgent, event, extra))
     except queue.Full:
         pass  # a flood of events: the history on the screen still has them
 
@@ -412,7 +413,7 @@ def _error(e, channel, env=None):
     return scrub(str(e), channel, env)[:160] or type(e).__name__
 
 
-def deliver(title, text, bad, card=None, now=None, event="alert", channels=None):
+def deliver(title, text, bad, card=None, now=None, event="alert", channels=None, extra=None):
     """To every channel that gets `event` (or `channels`): the app's outbox (and its wake-up
     call), ntfy, email, the webhooks."""
     now = now or time.time()
@@ -420,7 +421,7 @@ def deliver(title, text, bad, card=None, now=None, event="alert", channels=None)
     if "app" in chans:
         with _outbox_lock:
             mid = max(int(now * 1000), _outbox[-1]["id"] + 1 if _outbox else 0)
-            _outbox.append({"id": mid, "time": int(now), "title": title, "text": text, "bad": bad, "card": card})
+            _outbox.append({"id": mid, "time": int(now), "title": title, "text": text, "bad": bad, "card": card, **(extra or {})})
             del _outbox[:-OUTBOX_SIZE]
         threading.Thread(target=wake_phones, daemon=True, name="push").start()
     for ch in chans:
@@ -523,13 +524,14 @@ def step(waiting, now_mono, now=None):
     for m in ready:
         _, title, text, bad, still_true, card, urgent = m[:7]
         event = m[7] if len(m) > 7 else "alert"
+        extra = m[8] if len(m) > 8 else None
         if still_true and not still_true():
             continue
         if quiet and not urgent:
             _held.append((title, text, bad, card, event))
             del _held[:-200]
             continue
-        deliver(title, text, bad, card, now, event)
+        deliver(title, text, bad, card, now, event, extra=extra)
     if _held and not quiet:
         held = list(_held)
         _held.clear()
@@ -612,6 +614,55 @@ def updates_text(rows):
         return f"Update available: {rows[0].get('name')} on {rows[0].get('host')}"
     names = ", ".join(f"{r.get('name')} ({r.get('host')})" for r in rows[:8])
     return f"{len(rows)} updates available: {names}" + ("…" if len(rows) > 8 else "")
+
+
+DISCOVERED_KEY = "notify_discovered_seen"
+DISCOVERED_FORGET = 30 * 86400   # a candidate gone this long is news again when it comes back
+_discovered = {"seen": None}
+
+
+def new_discovered(items, now=None):
+    """The candidates of discovery.candidates() not told about before, for one message. Kept in the
+    store: a restart says nothing twice, a dismissed one is never a candidate, and the first time
+    ever what is there is taken as known (the default board makes cards of those anyway)."""
+    import store
+    now = int(now or time.time())
+    seen = _discovered["seen"]
+    if seen is None:
+        kept = store.load(DISCOVERED_KEY)
+        seen = kept if isinstance(kept, dict) else None
+    current = [i for i in items if isinstance(i, dict) and i.get("key")]
+    first = seen is None
+    seen = dict(seen or {})
+    changed = first
+    for k in list(seen):
+        if now - seen[k] >= DISCOVERED_FORGET:
+            del seen[k]
+            changed = True
+    fresh = [] if first else [i for i in current if i["key"] not in seen]
+    changed = changed or bool(fresh)
+    for i in current:
+        if i["key"] not in seen or now - seen[i["key"]] > 3600:
+            seen[i["key"]] = now
+            changed = True
+    _discovered["seen"] = seen
+    if changed:
+        store.save(DISCOVERED_KEY, seen)
+    return fresh
+
+
+def discovered_text(items):
+    if len(items) == 1:
+        return f"New: {items[0]['name']} ({items[0].get('detail') or items[0]['kind']}) has no card"
+    names = ", ".join(i["name"] for i in items[:8])
+    return f"{len(items)} new things have no card: {names}" + ("…" if len(items) > 8 else "")
+
+
+def discovered_actions(items):
+    """What the app's outbox message offers: add them as cards, or stop offering them (api/discover.py)."""
+    keys = [i["key"] for i in items][:200]
+    return {"actions": [{"id": "add", "label": "Add", "path": "/api/discover/approve", "body": {"keys": keys}},
+                        {"id": "ignore", "label": "Ignore", "path": "/api/discover/dismiss", "body": {"keys": keys}}]}
 
 
 def start():

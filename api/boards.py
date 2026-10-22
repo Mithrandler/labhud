@@ -88,9 +88,41 @@ def save_theme(h, body):
 @route("GET", "/api/boards/roles", guard="admin")
 def read_roles(h, body):
     try:
-        return 200, {"ok": True, "roles": {k: v.get("pages", []) for k, v in (managed.read_config().get("roles") or {}).items()}}
+        roles = managed.read_config().get("roles") or {}
+        return 200, {"ok": True, "roles": {k: v.get("pages", []) for k, v in roles.items()},
+                     "views": {k: v["view"] for k, v in roles.items() if v.get("view")}}
     except ValueError as e:
         return 409, {"ok": False, "error": str(e)}
+
+
+@route("POST", "/api/boards/role-view")
+def save_role_view(h, body):
+    """{role, view}: how the app opens for `role` (glance / actions / full; "" = the app's own choice)."""
+    role, view = body.get("role"), body.get("view")
+    if role not in config.ROLE_NAMES:
+        return 400, {"ok": False, "error": f"role is one of {', '.join(config.ROLE_NAMES)}"}
+    if view not in ("", *config.ROLE_VIEWS):
+        return 400, {"ok": False, "error": f"view is one of {', '.join(config.ROLE_VIEWS)} (or \"\")"}
+    try:
+        raw = managed.read_config()
+        roles = dict(raw.get("roles") or {})
+        entry = {k: v for k, v in (roles.get(role) or {}).items() if k != "view"}
+        if view:
+            entry["view"] = view
+        if entry:
+            roles[role] = entry
+        else:
+            roles.pop(role, None)
+        if roles:
+            raw["roles"] = roles
+        else:
+            raw.pop("roles", None)
+        managed.save_config(raw)
+    except ValueError as e:
+        _audit(h, "board-role-view", role, False)
+        return 400, {"ok": False, "error": str(e)}
+    _audit(h, "board-role-view", f"{role}: {view or 'the app decides'}")
+    return 200, {"ok": True, "role": role, "view": view}
 
 
 @route("POST", "/api/boards/roles")
@@ -105,8 +137,11 @@ def save_roles(h, body):
     try:
         raw = managed.read_config()
         roles = dict(raw.get("roles") or {})
+        rest = {k: v for k, v in (roles.get(role) or {}).items() if k != "pages"}
         if pages:
-            roles[role] = {**(roles.get(role) or {}), "pages": pages}
+            roles[role] = {**rest, "pages": pages}
+        elif rest:
+            roles[role] = rest   # no pages named: every page, but its view stays
         else:
             roles.pop(role, None)
         if roles:
