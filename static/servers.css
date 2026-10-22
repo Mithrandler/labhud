@@ -64,3 +64,4 @@ textarea.editor { width: 100%; font: 12px/1.45 ui-monospace, monospace; color: v
 .sheet label { color: var(--sub); }
 .sheet label input { display: block; width: min(100%, 520px); margin-top: 4px; }
 .msg { white-space: pre-wrap; }
+tr.sub td { padding: 1px 12px 1px 28px; font-size: 13px; border: 0; }

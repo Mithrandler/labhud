@@ -507,6 +507,12 @@ function networks_view(t, rows, q, reload, said) {
         box.appendChild(r.network.containers.length ? dl : el("p", "muted", "No container is on it."));
       });
     }, !n.used && !n.builtin);
+    const names = (n.used_by || []).slice(0, 12);   // the tree: what is on the network, the IPs are in its sheet
+    names.forEach((c, i) => {
+      const tr = el("tr", "sub"), td = el("td", "muted", (i === names.length - 1 && names.length >= n.used ? "└ " : "├ ") + c);
+      td.colSpan = 3; tr.appendChild(td); t.appendChild(tr);
+    });
+    if (n.used > names.length) { const tr = el("tr", "sub"), td = el("td", "muted", "… +" + (n.used - names.length)); td.colSpan = 3; tr.appendChild(td); t.appendChild(tr); }
   }
 }
 
