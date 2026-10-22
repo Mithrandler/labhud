@@ -1730,7 +1730,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._app_sessions(self.path.rsplit("/", 1)[1], body)
         if self.path == "/api/v1/push":
             return self._app_push()
-        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|remove|update|auto|autoupdate|window|hook|unhook)", self.path)
+        ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|remove|rename|update|auto|autoupdate|window|hook|unhook)", self.path)
         if ag:
             return self._agents_admin(ag.group(1))
         st = re.fullmatch(r"/api/setup/(status|take-over|text|save-text|secrets|catalog|try|layout|layout-save|organize|source-save|source-forget|scan|scan-status|alerts|alerts-save|notify-test|logs|inspect|prune|inventory|stacks|stack-run|stream-open|stream-read|stream-input|stream-resize|stream-close|notes)", self.path)
@@ -2175,6 +2175,12 @@ class Handler(BaseHTTPRequestHandler):
                 host = (self.headers.get("Host") or "").lower()
                 print(f"agent {name}: webhook for {target} made from {self.client_address[0]}", flush=True)
                 return self._json({"ok": True, "url": f"{'https' if TLS_CERT else 'http'}://{host}/api/hook/{token}"})
+        elif op == "rename":   # the name is cleaned and made unique; the answer says what it became
+            new = agents.rename(aid, body.get("name")) if isinstance(body.get("name"), str) else None
+            if not new:
+                return self._json({"ok": False, "error": "not a valid name"}, 400)
+            print(f"agent {name} renamed to {new} from {self.client_address[0]}", flush=True)
+            return self._json({"ok": True, "name": new})
         elif op == "autoupdate":
             ok = agents.set_auto(aid, body.get("targets"))
             what = f"containers updated on their own {body.get('targets')}"

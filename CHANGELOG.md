@@ -6,6 +6,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+- **Renaming an agent** from the app: `POST /api/agents/rename` {id, name} (the name is trimmed, cleaned like any agent name and made unique; the answer says what it became).
+
 ## [0.1.14] - 2026-10-22
 
 ### Changed

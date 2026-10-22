@@ -352,6 +352,16 @@ class Server(DemoServer):
         self.assertIn("bad signature", c.recv_json()["error"])
         c.close()
 
+    def test_rename(self):
+        c, session, aid, key = self.pair(name="before")
+        self.assertEqual(self.manage("rename", {"id": aid, "name": 5})[0], 400)
+        status, data = self.manage("rename", {"id": aid, "name": "  pve2.lan "})
+        self.assertEqual((status, data["name"]), (200, "pve2-lan"))   # trimmed, no dots
+        self.assertEqual(self.listed(aid)["name"], "pve2-lan")
+        self.assertEqual(self.manage("rename", {"id": "nope", "name": "x"})[0], 404)
+        self.manage("remove", {"id": aid})
+        c.close()
+
     def test_caps_targets_and_remove(self):
         c, session, aid, key = self.pair(name="removeme")
         self.assertEqual(self.manage("caps", {"id": aid, "caps": ["docker", "bogus"]})[0], 400)
