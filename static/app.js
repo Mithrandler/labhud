@@ -622,6 +622,7 @@ function make_section(title, cards) {
   h.append(dot, el("span", "t", title), el("span", "rule"), count);
   const grid = el("div", "grid");
   sec.append(h, grid);
+  const checked = cards.filter((c) => c.check);
   updaters.push(() => {
     let bad = false, known = false, up = 0, quiet = 0;
     for (const c of cards) {
