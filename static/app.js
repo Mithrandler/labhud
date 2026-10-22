@@ -1540,6 +1540,67 @@ function glance_gauges(c) {
   return GLANCE_ORDER.map((k) => out.find((g) => g.kind === k)).filter(Boolean);
 }
 
+let glancePage = 0;   // the glance page shown when the tiles do not all fit
+
+/** Everything shown again: no page is hidden, no bar under the tiles. */
+function glance_unpage(host) {
+  host.querySelectorAll(".gbar").forEach((b) => b.remove());
+  for (const t of pageGrid.querySelectorAll(".gtile")) t.style.display = "";
+  for (const s of pageSections) s.style.display = "";
+}
+
+/** Which page each tile of each section lands on, as [[page, page, ...] per section]: tiles [cols] to a row and
+    [t] px tall, a section's title [th(s)] px, [gap] between rows, [avail] px a page holds; a section's title is
+    repeated on every page it continues on. */
+function glance_pack(counts, titles, cols, t, gap, avail) {
+  let page = 0, y = 0;
+  return counts.map((n, si) => {
+    const th = titles[si];
+    let titled = false;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      if (i % cols === 0) {
+        let need = (titled ? 0 : th) + t + gap;
+        if (y + need > avail && y > 0) { page++; y = 0; titled = false; need = th + t + gap; }
+        y += need;
+        titled = true;
+      }
+      out.push(page);
+    }
+    y += gap;
+    return out;
+  });
+}
+
+/** Tiles of [cols] to a row, [t] px tall, cut into pages that fit [H]; the page shown is `glancePage`,
+    the bar under it moves between them. */
+function glance_page(host, t, cols, gap, H) {
+  const avail = H - 48;
+  const tilesOf = pageSections.map((s) => [...s.querySelectorAll(".gtile")]);
+  const titles = pageSections.map((s) => { const h = s.querySelector(".gtitle"); return (h ? h.offsetHeight : 28) + 6; });
+  const per = glance_pack(tilesOf.map((l) => l.length), titles, cols, t, gap, avail);
+  const pages = [];
+  tilesOf.forEach((tiles, si) => tiles.forEach((tile, i) => pages.push({ tile, sec: pageSections[si], page: per[si][i] })));
+  const page = pages.reduce((m, p) => Math.max(m, p.page), 0);
+  const count = page + 1;
+  glancePage = Math.min(glancePage, count - 1);
+  const bar = el("div", "gbar");
+  const prev = el("button", "gb-btn", "‹"), next = el("button", "gb-btn", "›"), label = el("span", "gb-label");
+  prev.type = next.type = "button";
+  bar.append(prev, label, next);
+  host.appendChild(bar);
+  const show = () => {
+    for (const p of pages) p.tile.style.display = p.page === glancePage ? "" : "none";
+    for (const s of pageSections) s.style.display = pages.some((p) => p.sec === s && p.page === glancePage) ? "" : "none";
+    put(label, `${glancePage + 1} / ${count}`);
+    prev.disabled = glancePage === 0;
+    next.disabled = glancePage === count - 1;
+  };
+  prev.addEventListener("click", () => { touched(); glancePage = Math.max(0, glancePage - 1); show(); });
+  next.addEventListener("click", () => { touched(); glancePage = Math.min(count - 1, glancePage + 1); show(); });
+  show();
+}
+
 /** The cards a glance tile can say something about. A clock, a note or a frame says nothing in one number. */
 function glance_card(c) {
   return !!(c.check || (c.metrics && c.metrics.length));
@@ -1621,6 +1682,7 @@ function mount_glance() {
   pageGrid = el("div", "gpage");
   host.appendChild(pageGrid);
   layoutSign = "";
+  glancePage = 0;
   for (const g of CFG.pages[page].groups) {
     const cards = (CFG.cards[g.id] || []).filter((c) => !is_hidden(g.id, c.id) && glance_card(c));
     if (!cards.length) continue;
@@ -1650,6 +1712,9 @@ function fit_glance() {
   const portrait = W < H;
   cls(pageGrid, "gp2", portrait);
   for (const s of pageSections) cls(s, "one", s.querySelectorAll(".gtile").length === 1);   // a lone tile gets the whole row in portrait
+  glance_unpage(host);
+  const MIN_T = portrait ? 120 : 110;   // a tile smaller than this is not read from across a room: the rest goes on the next page
+  let fits = false;
   for (let t = Math.min(H * 0.6, portrait ? 220 : W * 0.5, 220); ; t *= 0.97) {
     const cols = portrait ? 2 : Math.max(1, Math.floor((W + gap) / (t * 1.4 + gap)));
     pageGrid.style.setProperty("--t", t.toFixed(1) + "px");
@@ -1657,10 +1722,20 @@ function fit_glance() {
       const n = s.querySelectorAll(".gtile").length || 1;
       s.style.setProperty("--c", portrait ? 2 : Math.min(n, cols));
     }
-    if (t < 56 || (pageGrid.scrollHeight <= H + 1 && pageGrid.scrollWidth <= W + 1)) break;
+    fits = pageGrid.scrollHeight <= H + 1 && pageGrid.scrollWidth <= W + 1;
+    if (fits) break;
+    if (t < MIN_T) {
+      // too many for tiles this size: a page at a time, a bar under them
+      const tt = Math.max(t, MIN_T);
+      pageGrid.style.setProperty("--t", tt.toFixed(1) + "px");
+      const c = portrait ? 2 : Math.max(1, Math.floor((W + gap) / (tt * 1.4 + gap)));
+      for (const s of pageSections) s.style.setProperty("--c", portrait ? 2 : Math.min(s.querySelectorAll(".gtile").length || 1, c));
+      glance_page(host, tt, c, gap, H);
+      break;
+    }
   }
   layoutSign = sign;
-  cls(host, "scroll", pageGrid.scrollHeight > H + 1);   // too many cards for even the smallest tile: scroll
+  cls(host, "scroll", false);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2360,7 +2435,7 @@ function open_panel(c) {
   touched();
 }
 
-function close_panel() { panelCard = null; LOGS = {}; $("#panel").hidden = true; }
+function close_panel() { panelCard = null; LOGS = {}; $("#panel").hidden = true; for (const k of Object.keys(panelPages)) delete panelPages[k]; }
 
 /** Sections whose rows are small cards in a grid, 2-3 to a row, not a long list. */
 const GRID_SECTIONS = ["guests", "storage", "backup", "datastores", "gpus"];
@@ -2902,8 +2977,48 @@ function fill_panel() {
   panel_charts(body, c);
   render_actions(c);
   const shown = body.children.length > afterStatus || links.length > 0 || !$("#panel-actions").hidden;
-  if (shown) panel_tabs(body, c);
+  if (shown) { panel_tabs(body, c); paginate_lists(body, c); }
   return shown;
+}
+
+const panelPages = {};   // the page of each list in the open panel, by card, tab and list: it survives the refresh of the numbers
+
+/** The lists of the panel a few at a time: grids of cards 3 rows to a page, plain rows 8, a bar under each list
+    that is longer. A row keeps the boxes opened under it (details, logs) on its page. */
+function paginate_lists(body, c) {
+  const width = body.clientWidth || 360;
+  [...body.querySelectorAll(".list")].forEach((list, li) => {
+    if (list.closest(".details-box") || list.closest(".logs-box")) return;
+    const groups = [];
+    let head = [];   // a stack's line goes with the first container under it
+    for (const n of [...list.children]) {
+      if (n.classList.contains("compose")) head.push(n);
+      else if (n.classList.contains("row") || !groups.length) { groups.push([...head, n]); head = []; }
+      else groups[groups.length - 1].push(n);
+    }
+    const tiled = list.classList.contains("tiles") || list.classList.contains("boxes");
+    const cols = tiled ? Math.max(1, Math.floor((width - 24 + 8) / ((list.classList.contains("boxes") ? 168 : 140) + 8))) : 1;
+    const per = tiled ? cols * 3 : 8;
+    if (groups.length <= per) return;
+    const count = Math.ceil(groups.length / per);
+    const key = `${c.id}|${li}`;
+    let cur = Math.min(panelPages[key] || 0, count - 1);
+    const bar = el("div", "pbar");
+    const prev = el("button", "pb-btn", "‹"), next = el("button", "pb-btn", "›"), label = el("span", "pb-label");
+    prev.type = next.type = "button";
+    bar.append(prev, label, next);
+    list.after(bar);
+    const show = () => {
+      groups.forEach((g, i) => { const on = Math.floor(i / per) === cur; for (const n of g) n.style.display = on ? "" : "none"; });
+      put(label, `${cur + 1} / ${count}`);
+      prev.disabled = cur === 0;
+      next.disabled = cur === count - 1;
+      panelPages[key] = cur;
+    };
+    prev.addEventListener("click", (ev) => { ev.stopPropagation(); cur = Math.max(0, cur - 1); show(); });
+    next.addEventListener("click", (ev) => { ev.stopPropagation(); cur = Math.min(count - 1, cur + 1); show(); });
+    show();
+  });
 }
 
 let panelTab = "";       // the tab open in the panel, by its title: it survives the refresh of the numbers

@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+
+- **A few at a time, everywhere**: the wall's panel lists (guests, storage, backup, containers, plain rows) are paged with a bar under them (grids of cards 3 rows to a page, rows 8), and when the glance tiles do not all fit at a size readable from across a room they go on pages of their own with a bar at the bottom instead of shrinking or scrolling.
+
 ## [0.1.13] - 2026-10-22
 
 ### Changed

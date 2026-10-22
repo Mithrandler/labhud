@@ -872,7 +872,7 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
   color: var(--sub); font: 700 12px/1 var(--font); text-transform: uppercase; letter-spacing: .5px; }
 .ptab-b.on { background: var(--block); color: var(--title); border-color: var(--title); }
 .ptab[hidden] { display: none; }
-#panel-body .list.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+#panel-body .list.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 #panel-body .list.tiles .row { flex-direction: column; align-items: flex-start; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 #panel-body .list.tiles .row .n { white-space: normal; font-weight: 700; color: var(--text); }
 #panel-body .list.tiles .row .v { font-weight: 400; color: var(--muted); white-space: normal; }
@@ -905,7 +905,7 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .ggauges .gg .gk { font-size: calc(var(--t) * .075); color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
 
 /* a guest's containers in the panel: small cards in a grid, their buttons under the name */
-#panel-body .list.boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+#panel-body .list.boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
 #panel-body .list.boxes > :not(.cbox) { grid-column: 1 / -1; }
 #panel-body .list.boxes .row.cbox { flex-direction: column; align-items: flex-start; gap: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 #panel-body .list.boxes .row.cbox:nth-child(odd) { background: var(--card); }
@@ -913,3 +913,15 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 #panel-body .list.boxes .row.cbox .n { white-space: normal; font-weight: 700; color: var(--text); }
 #panel-body .list.boxes .row.cbox .v { white-space: normal; font-weight: 400; color: var(--muted); }
 #panel-body .list.boxes .row.cbox .row-actions { flex-basis: auto; flex-wrap: wrap; margin-left: 0; margin-top: 2px; }
+
+/* glance: too many tiles for one screen, a page at a time with a bar under them */
+.gbar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: center; gap: 18px; height: 48px; background: var(--bg); }
+.gb-btn { appearance: none; border: 1px solid var(--border); background: var(--block); color: var(--text); width: 64px; height: 40px; border-radius: 10px; font: 700 24px/1 var(--font); }
+.gb-btn:disabled { opacity: .35; }
+.gb-label { color: var(--muted); font: 700 14px/1 var(--font); font-variant-numeric: tabular-nums; }
+
+/* the panel's lists, a page at a time */
+.pbar { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 8px 0 4px; }
+.pb-btn { appearance: none; border: 1px solid var(--border); background: var(--block); color: var(--text); width: 64px; height: 40px; border-radius: 10px; font: 700 24px/1 var(--font); }
+.pb-btn:disabled { opacity: .35; }
+.pb-label { color: var(--muted); font: 700 13px/1 var(--font); font-variant-numeric: tabular-nums; }
