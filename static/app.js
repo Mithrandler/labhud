@@ -3088,7 +3088,7 @@ function from_address() {
 fetch("/api/config").then((r) => r.json()).then((cfg) => {
   CFG = cfg;
   apply_look();   // the board's theme, for a screen that has not picked its own
-  document.title = CFG.title || "LabHUD";
+  document.title = "LabHUD";   // the product's name, not the config's title
   lock_state(CFG.lock);
   put($("#weather .city"), CFG.city || "");
   for (const items of Object.values(CFG.cards)) for (const c of items) CARD_BY_ID[c.id] = c;
