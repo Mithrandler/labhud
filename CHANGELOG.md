@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+
+- **Glance view** (`/?glance=1`): a tile per card with one big number coloured by state, the group's count in a big title, a large clock and weather, and the details (and bigger action buttons) in the panel a tap opens. Nothing else on screen: problems are in the bell.
+
 ## [0.1.11] - 2026-10-22
 
 Needs labhud-agent 0.1.1 or later for the Docker host, stacks, live log and terminal (unchanged). App 0.1.22 reads the palette's new keys.

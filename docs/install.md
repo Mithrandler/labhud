@@ -145,6 +145,11 @@ hand: one scrolling list with what is red at the top, then every card as a row w
 numbers. A tap opens the card's panel; a card with a `url` in the config gets an OPEN button
 there, to the service's own page. The wall never shows those links.
 
+For a screen across a room, `/?glance=1` (the app's Wall mode turns it on) shows a coloured tile per card with
+one big number, each group's count in its title ("PROXMOX 7/8") and a large clock and weather; the details and
+the buttons are in the panel a tap opens. Problems are in the bell, which stays in the corner. The tiles grow
+until the page fits, in landscape and in portrait; the game servers' page keeps its own cards.
+
 ## Without Docker
 
 ```sh

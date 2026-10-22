@@ -25,6 +25,10 @@ const SHOTS = [
   ["games.png", "?static#games", 800, 360, false],
   ["portrait.png", "?static#general", 360, 760, false],
   ["desktop.png", "?static#general", 1920, 1080, false],
+  // ?glance=1: the wall from across a room, at the three sizes
+  ["glance-wall.png", "?static&glance=1#general", 800, 360, false],
+  ["glance-portrait.png", "?static&glance=1#general", 360, 760, false],
+  ["glance-desktop.png", "?static&glance=1#general", 1920, 1080, false],
   ["settings-look.png", "?static&settings=look", 800, 360, true],
   ["settings-alerts.png", "?static&settings=alerts", 800, 360, true],
   ["settings-security.png", "?static&settings=security", 800, 360, true],

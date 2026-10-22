@@ -771,3 +771,51 @@ body.density-airy .card .row { padding: 3px 8px; line-height: 1.4; }
 .stream-body .stream-log { flex: 1; margin: 0; max-height: none; overflow: auto; padding: 8px 12px; white-space: pre-wrap; word-break: break-all; }
 .stream-term { padding: 6px; }
 .stream-term .xterm { flex: 1; }
+
+/* ======================= ?glance=1: the wall from across a room ======================= */
+/* A tile is --t tall (fit_glance picks the biggest at which the page fits) and 1.4 times as wide;
+   every size is a share of it, so the text grows with the tile in landscape and in portrait alike.
+   Nothing moves: an OLED stays on. */
+body.glance { --topbar: 56px; --strip: 0px; }
+body.glance #strip, body.glance #brand { display: none; }
+body.glance #clock .time { font-size: 34px; letter-spacing: 0; }
+body.glance #clock .date { font-size: 13px; }
+body.glance #weather { font-size: 15px; gap: 8px; }
+body.glance #weather .ic { font-size: 28px; }
+body.glance #weather .t { font-size: 28px; }
+body.glance #weather .city, body.glance #search-btn { display: none; }
+body.glance #bell, body.glance #account, body.glance #lock-btn { transform: scale(1.35); margin: 0 6px; }
+@media (orientation: portrait) {
+  body.glance { --topbar: 96px; }
+  body.glance #topbar { grid-template-rows: 56px 40px; }
+  body.glance #clock .time { font-size: 30px; }
+  body.glance #brand { display: none; }
+}
+.gpage { --t: 100px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px 22px; }
+.gsec { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gtitle { margin: 0; display: flex; align-items: baseline; gap: .5em; font: 800 clamp(16px, calc(var(--t) * .2), 40px)/1 var(--font);
+  letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.gtitle.ok { color: var(--green); }
+.gtitle.warn { color: var(--warn); }
+.gtitle.bad { color: var(--red); }
+.gtitle .n { font-variant-numeric: tabular-nums; }
+.ggrid { display: grid; grid-template-columns: repeat(var(--c, 3), calc(var(--t) * 1.4)); grid-auto-rows: var(--t); gap: 8px; }
+.gtile { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: calc(var(--t) * .04);
+  min-width: 0; padding: 0 6px; border-radius: var(--radius-card); background: var(--card); border: 2px solid var(--line);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.gtile:active { background: var(--block); }
+.gval { font: 800 calc(var(--t) * .38)/1 var(--font); font-variant-numeric: tabular-nums; color: var(--muted); max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.gname { font: 600 clamp(11px, calc(var(--t) * .14), 26px)/1.1 var(--font); color: var(--sub); max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gtile.ok { border-color: color-mix(in srgb, var(--green) 55%, transparent); }
+.gtile.ok .gval { color: var(--green); }
+.gtile.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--card)); }
+.gtile.warn .gval { color: var(--warn); }
+.gtile.bad { border-color: var(--red); background: var(--red-bg); }
+.gtile.bad .gval { color: var(--red-text); }
+.gtile.bad .gname { color: var(--red-text); }
+.gtile.off .gval, .gtile.none .gval { color: var(--muted); }
+.gtile.off { opacity: .6; }
+/* the actions in a tile's panel are for a finger at arm's length */
+body.glance #panel-actions button, body.glance #panel-actions a.open { min-height: 56px; font-size: 16px; padding: 0 20px; }

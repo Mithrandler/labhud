@@ -20,6 +20,9 @@ const $ = (s, r) => (r || document).querySelector(s);
 const PAUSE = 60000;    // how long the rotation holds after a touch
 // ?view=list: the phone in your hand, not the wall. One scrolling list, problems first, links out.
 const LIST_VIEW = new URLSearchParams(location.search).get("view") === "list";
+// ?glance=1: the wall seen from across a room (the app's Wall mode sets it): one big number per card,
+// the group's count in its title, the details in the panel a tap opens. See mount_glance.
+const GLANCE = !LIST_VIEW && new URLSearchParams(location.search).get("glance") === "1";
 
 let CFG = null;           // the topology, from /api/config
 let CARD_BY_ID = {};      // every card, flattened: the bottom strip looks its state up here
@@ -639,6 +642,9 @@ function make_section(title, cards) {
 }
 
 function mount() {
+  document.body.classList.toggle("glance", GLANCE);
+  // the game servers keep their own cards: the glance view is for the status pages
+  if (GLANCE && !CFG.pages[page].games) return mount_glance();
   const host = $("#content");
   host.textContent = "";
   updaters = [];
@@ -1347,6 +1353,144 @@ function mount_list() {
     else if (has_details(c)) open_panel(c);
   });
   update();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The glance view (?glance=1): a tile per card with one big number, the group's count in its title
+// ---------------------------------------------------------------------------------------------
+
+/** How a group is doing, from its cards: the worst of them, for the colour of its title. */
+function glance_state(c) {
+  const st = card_status(c);
+  if (st === false) return "bad";
+  if (st === "maintenance" || quiet_off(st)) return "off";
+  let worst = "";
+  if (c.metrics && c.metrics.length) {
+    const [path, , fmt] = c.metrics[0];
+    worst = severity(path, fmt, get(path));
+  } else if (is_guest(c)) {
+    const g = get(`proxmox.${c.check[1]}.guests.${c.check[2]}`);
+    if (g && g.running) worst = severity(`proxmox.${c.check[1]}.guests.${c.check[2]}.cpu`, "percent", g.cpu);
+  }
+  if (worst === "crit") return "bad";
+  if (worst === "warn") return "warn";
+  return st === true || (c.metrics && get(c.metrics[0][0]) != null) ? "ok" : "none";
+}
+
+/** The one number a tile shows: the first metric, a guest's CPU, or UP / DOWN / OFF for a card that
+    only has a status. */
+function glance_value(c) {
+  const st = card_status(c);
+  if (st === false) return "DOWN";
+  if (st === "maintenance" || quiet_off(st)) return "OFF";
+  if (c.metrics && c.metrics.length) {
+    const [path, , fmt] = c.metrics[0];
+    const v = get(path);
+    return fmt === "used_of" ? (Array.isArray(v) && v[1] ? Math.round(100 * v[0] / v[1]) + "%" : "—") : format(v, fmt);
+  }
+  if (is_guest(c)) {
+    const g = get(`proxmox.${c.check[1]}.guests.${c.check[2]}`);
+    return g && g.running ? Math.round(g.cpu) + "%" : "—";
+  }
+  if (st === true) return "UP";
+  return "—";
+}
+
+/** The cards a glance tile can say something about. A clock, a note or a frame says nothing in one number. */
+function glance_card(c) {
+  return !!(c.check || (c.metrics && c.metrics.length));
+}
+
+function glance_tile(c) {
+  const t = el("div", "gtile");
+  t.dataset.id = c.id;
+  const name = el("span", "gname", c.name);
+  const val = el("span", "gval");
+  t.append(name, val);
+  updaters.push(() => {
+    put(val, glance_value(c));
+    const s = glance_state(c);
+    for (const k of ["ok", "warn", "bad", "off", "none"]) cls(t, k, s === k);
+  });
+  t.addEventListener("click", () => {
+    touched();
+    if (has_details(c)) open_panel(c);
+    else if (c.url) window.open(c.url, "_blank", "noopener");
+  });
+  return t;
+}
+
+/** The group's title with its count ("PROXMOX 7/8") and the colour of its worst card. */
+function glance_section(title, cards) {
+  const sec = el("section", "gsec");
+  const h = el("h2", "gtitle");
+  const label = el("span", "t", title);
+  const count = el("span", "n");
+  h.append(label, count);
+  const grid = el("div", "ggrid");
+  sec.append(h, grid);
+  for (const c of cards) grid.appendChild(glance_tile(c));
+  const checked = cards.filter((c) => c.check);
+  updaters.push(() => {
+    let up = 0, quiet = 0, worst = "none";
+    const rank = { none: 0, off: 0, ok: 1, warn: 2, bad: 3 };
+    for (const c of cards) { const s = glance_state(c); if (rank[s] > rank[worst]) worst = s; }
+    for (const c of checked) {
+      const st = card_status(c);
+      if (st === true) up++;
+      else if (quiet_off(st)) quiet++;
+    }
+    put(count, checked.length > 1 ? `${up}/${checked.length - quiet}` : "");
+    for (const k of ["ok", "warn", "bad", "none"]) cls(h, k, worst === k || (worst === "off" && k === "none"));
+  });
+  return { sec, grid };
+}
+
+function mount_glance() {
+  const host = $("#content");
+  host.textContent = "";
+  updaters = [];
+  pageSections = [];
+  if (layoutWatch) layoutWatch.disconnect();
+  pageGrid = el("div", "gpage");
+  host.appendChild(pageGrid);
+  layoutSign = "";
+  for (const g of CFG.pages[page].groups) {
+    const cards = (CFG.cards[g.id] || []).filter((c) => !is_hidden(g.id, c.id) && glance_card(c));
+    if (!cards.length) continue;
+    const { sec } = glance_section(g.title, cards);
+    pageGrid.appendChild(sec);
+    pageSections.push(sec);
+  }
+  update();
+  fit_glance();
+  layoutWatch = new ResizeObserver(() => setTimeout(fit_glance, 0));
+  layoutWatch.observe(host);
+}
+
+/** The biggest tile at which the whole page fits: it never scrolls and nothing is cut. --t is the
+    tile's height; the sections take as many columns as their cards need, side by side while there
+    is room. A portrait phone ends with fewer, taller columns by itself. */
+function fit_glance() {
+  const host = $("#content");
+  if (!pageGrid || !pageSections.length || !host.clientWidth) return;
+  const cs = getComputedStyle(host);
+  const W = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const H = host.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const sign = `${W}x${H}|${pageSections.map((s) => s.querySelectorAll(".gtile").length).join(",")}`;
+  if (sign === layoutSign) return;
+  const gap = 8;
+  for (let t = Math.min(H * 0.6, W * 0.5, 220); ; t *= 0.93) {
+    const cols = Math.max(1, Math.floor((W + gap) / (t * 1.4 + gap)));
+    pageGrid.style.setProperty("--t", t.toFixed(1) + "px");
+    for (const s of pageSections) {
+      const n = s.querySelectorAll(".gtile").length || 1;
+      s.style.setProperty("--c", Math.min(n, cols));
+    }
+    if (t < 56 || (pageGrid.scrollHeight <= H + 1 && pageGrid.scrollWidth <= W + 1)) break;
+  }
+  layoutSign = sign;
+  cls(host, "scroll", pageGrid.scrollHeight > H + 1);   // too many cards for even the smallest tile: scroll
 }
 
 // ---------------------------------------------------------------------------------------------
