@@ -1428,7 +1428,7 @@ function glance_gauges(c) {
   const out = [];
   const add = (kind, v, fmt, path) => {
     const pc = glance_percent(v, fmt);
-    out.push({ kind, text: pc == null ? "—" : pc + "%", sev: pc == null ? "" : severity(path, "percent", pc) });
+    out.push({ kind, pc, text: pc == null ? "—" : pc + "%", sev: pc == null ? "" : severity(path, "percent", pc) });
   };
   if (c.metrics && c.metrics.length) {
     for (const { kind, index } of glance_pick(c.metrics)) {
@@ -1489,7 +1489,10 @@ function glance_tile(c) {
     gauges.dataset.n = gs.length;
     for (const g of gs) {
       const row = el("span", "gg" + (g.sev ? " " + g.sev : ""));
-      row.append(el("span", "gk", GLANCE_NAME[g.kind]), el("span", "gn", g.text));
+      const bar = el("span", "gb"), fill = el("i");
+      fill.style.width = Math.max(0, Math.min(100, g.pc || 0)) + "%";
+      bar.appendChild(fill);
+      row.append(el("span", "gk", GLANCE_NAME[g.kind]), bar, el("span", "gn", g.text));
       gauges.appendChild(row);
     }
   });

@@ -819,11 +819,13 @@ body.glance #bell, body.glance #account, body.glance #lock-btn { transform: scal
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gtile.multi { justify-content: space-evenly; padding: 0 calc(var(--t) * .06); }
 .gtile .gval[hidden], .gtile .ggauges[hidden] { display: none; }
-.ggauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: calc(var(--t) * .03) calc(var(--t) * .08); width: 100%; }
-.ggauges[data-n="2"] { grid-template-columns: 1fr; }
-.gg { display: flex; justify-content: space-between; align-items: baseline; gap: .3em; min-width: 0;
-  font: 800 calc(var(--t) * .17)/1.1 var(--font); font-variant-numeric: tabular-nums; color: var(--green); }
-.gg .gk { font-weight: 600; font-size: .62em; color: var(--sub); letter-spacing: .03em; }
+.ggauges { display: flex; flex-direction: column; gap: calc(var(--t) * .035); width: 100%; }
+.gg { display: grid; grid-template-columns: 2.4em 1fr 2.6em; align-items: center; gap: calc(var(--t) * .05); min-width: 0;
+  font: 800 calc(var(--t) * .13)/1 var(--font); font-variant-numeric: tabular-nums; color: var(--green); }
+.gg .gk { font-weight: 600; font-size: .85em; color: var(--sub); letter-spacing: .02em; }
+.gg .gn { text-align: right; }
+.gb { height: calc(var(--t) * .06); border-radius: 99px; background: color-mix(in srgb, var(--muted) 30%, transparent); overflow: hidden; }
+.gb i { display: block; height: 100%; border-radius: inherit; background: currentColor; }
 .gg.warn { color: var(--warn); }
 .gg.crit { color: var(--red-text); }
 .gtile.ok { border-color: color-mix(in srgb, var(--green) 55%, transparent); }
