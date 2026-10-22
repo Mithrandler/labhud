@@ -176,18 +176,27 @@ def icon_for(name="", *, os=None, image=None, game=None, tags=()):
     return ""
 
 
-# Games with no logo of their own in the icon set (dashboard-icons has only minecraft, rust and steam) get steam's;
-# anything else a game server is called gets the gamepad line icon. Fragments of the slugified game + name.
-GAME_STEAM = ("counter", "cs16", "cs2", "csgo", "valheim", "palworld", "terraria", "7-days", "7days", "enshrouded",
-              "nitrox", "subnautica", "gta", "fivem", "ark", "factorio", "satisfactory", "garry", "dayz", "conan",
-              "left-4", "half-life", "team-fortress", "zombie", "deathmatch")
+# Games with no logo in dashboard-icons have their Steam store art (design/game_icons.py): fragments of the
+# slugified game + name, the first that matches wins. Other Steam games get steam's logo, anything else the gamepad.
+GAME_ICONS = (("counter", "counter-strike"), ("cs16", "counter-strike"), ("cs2", "counter-strike"), ("csgo", "counter-strike"),
+              ("zombie", "counter-strike"), ("deathmatch", "counter-strike"), ("valheim", "valheim"), ("palworld", "palworld"),
+              ("terraria", "terraria"), ("7-days", "7-days-to-die"), ("7days", "7-days-to-die"), ("enshrouded", "enshrouded"),
+              ("subnautica", "subnautica"), ("ark", "ark"), ("factorio", "factorio"), ("satisfactory", "satisfactory"),
+              ("garry", "garrys-mod"), ("gmod", "garrys-mod"), ("dayz", "dayz"), ("conan", "conan-exiles"),
+              ("left-4", "left-4-dead"), ("half-life", "half-life"), ("team-fortress", "team-fortress-2"),
+              ("zomboid", "project-zomboid"), ("unturned", "unturned"), ("starbound", "starbound"),
+              ("v-rising", "v-rising"), ("vrising", "v-rising"), ("arma", "arma-3"))
+GAME_STEAM = ("nitrox", "gta", "fivem")
 
 
 def game_icon(game="", name=""):
-    """The icon of a game server: its own logo when the set has one, else steam's for the games that are on
-    Steam, else "games" (the gamepad). Never empty. static/app.js game_icon() makes the same choice."""
+    """The icon of a game server: its own logo when the set has one, else its Steam store art (GAME_ICONS), else
+    steam's logo, else "games" (the gamepad). Never empty. static/app.js game_icon() makes the same choice."""
     own = icon_for(game or "", game=game) or icon_for(name or "")
     if own:
         return own
     text = re.sub(r"[^a-z0-9]+", "-", f"{game} {name}".lower()).strip("-")
+    for fragment, icon in GAME_ICONS:
+        if fragment in text:
+            return icon
     return "steam" if any(f in text for f in GAME_STEAM) else "games"

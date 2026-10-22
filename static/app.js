@@ -1761,16 +1761,23 @@ function game_card(sv, i) {
   };
 }
 
-/** A game's icon: its own logo (minecraft, rust), steam's for the games that are on Steam, else the gamepad.
-    The same choice as cardtype.game_icon (the server's `icon` wins when it sends one). */
-const GAME_STEAM = ["counter", "cs16", "cs2", "csgo", "valheim", "palworld", "terraria", "7-days", "7days", "enshrouded",
-  "nitrox", "subnautica", "gta", "fivem", "ark", "factorio", "satisfactory", "garry", "dayz", "conan",
-  "left-4", "half-life", "team-fortress", "zombie", "deathmatch"];
+/** A game's icon: its own logo (minecraft, rust), its Steam store art (the shipped svc/<game>.svg), steam's logo
+    for the other Steam games, else the gamepad. The same choice as cardtype.game_icon (the server's `icon` wins when it sends one). */
+const GAME_ICONS = [["counter", "counter-strike"], ["cs16", "counter-strike"], ["cs2", "counter-strike"], ["csgo", "counter-strike"],
+  ["zombie", "counter-strike"], ["deathmatch", "counter-strike"], ["valheim", "valheim"], ["palworld", "palworld"],
+  ["terraria", "terraria"], ["7-days", "7-days-to-die"], ["7days", "7-days-to-die"], ["enshrouded", "enshrouded"],
+  ["subnautica", "subnautica"], ["ark", "ark"], ["factorio", "factorio"], ["satisfactory", "satisfactory"],
+  ["garry", "garrys-mod"], ["gmod", "garrys-mod"], ["dayz", "dayz"], ["conan", "conan-exiles"],
+  ["left-4", "left-4-dead"], ["half-life", "half-life"], ["team-fortress", "team-fortress-2"],
+  ["zomboid", "project-zomboid"], ["unturned", "unturned"], ["starbound", "starbound"],
+  ["v-rising", "v-rising"], ["vrising", "v-rising"], ["arma", "arma-3"]];
+const GAME_STEAM = ["nitrox", "gta", "fivem"];
 function game_icon(sv) {
   if (sv.icon) return sv.icon;
   const name = norm(sv.game || sv.name);
   for (const g of ["minecraft", "rust"]) if (name.includes(g)) return g;
   const text = `${sv.game || ""} ${sv.name || ""}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  for (const [f, icon] of GAME_ICONS) if (text.includes(f)) return icon;
   return GAME_STEAM.some((f) => text.includes(f)) ? "steam" : "games";
 }
 

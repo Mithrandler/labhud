@@ -161,7 +161,7 @@ class IconFor(unittest.TestCase):
             ({"name": "x", "tags": ["web", "prod"]}, ""),
             ({"name": ""}, ""),
             ({"name": "x", "game": "Minecraft"}, "minecraft"),
-            ({"name": "Valheim"}, ""),
+            ({"name": "Valheim"}, "valheim"),
         ]
         for kwargs, expected in cases:
             with self.subTest(**{"case": repr(kwargs)}):
@@ -169,12 +169,18 @@ class IconFor(unittest.TestCase):
 
     def test_game_servers_always_get_an_icon(self):
         for game, name, expected in (("Minecraft", "mc", "minecraft"), ("Rust", "Carbon", "rust"),
-                                     ("Valheim Vanilla", "Pykeron Valheim World", "steam"),
-                                     ("Counter-Strike 1.6", "Zombie Plague", "steam"), ("", "CS2 Deathmatch", "steam"),
-                                     ("Palworld", "pal", "steam"), ("Terraria", "t", "steam"), ("7 Days to Die", "", "steam"),
+                                     ("Valheim Vanilla", "Pykeron Valheim World", "valheim"),
+                                     ("Counter-Strike 1.6", "Zombie Plague", "counter-strike"), ("", "CS2 Deathmatch", "counter-strike"),
+                                     ("Palworld", "pal", "palworld"), ("Terraria", "t", "terraria"), ("7 Days to Die", "", "7-days-to-die"),
+                                     ("Factorio", "f", "factorio"), ("Some Steam Game", "gta", "steam"),
                                      ("Some Unknown Game", "x", "games"), ("", "", "games")):
             with self.subTest(game=game, name=name):
                 self.assertEqual(cardtype.game_icon(game, name), expected)
+
+    def test_every_game_icon_is_shipped(self):
+        for _, icon in cardtype.GAME_ICONS:
+            with self.subTest(icon=icon):
+                self.assertIn(icon, cardtype.shipped())
 
     def test_the_icons_the_containers_and_games_carry(self):
         import cardstate
@@ -183,7 +189,7 @@ class IconFor(unittest.TestCase):
         self.assertEqual((box["icon"], box["image"]), ("sonarr", "lscr.io/linuxserver/sonarr:latest"))
         game = cardstate.game({"id": "g1", "game": "Minecraft", "state": "running"}, 0, {}, {"actions": {}})
         self.assertEqual(game["icon"], "minecraft")
-        self.assertEqual(cardstate.game({"id": "g2", "game": "Valheim", "state": "running"}, 0, {}, {"actions": {}})["icon"], "steam")
+        self.assertEqual(cardstate.game({"id": "g2", "game": "Valheim", "state": "running"}, 0, {}, {"actions": {}})["icon"], "valheim")
 
 
 class IconCache(unittest.TestCase):
