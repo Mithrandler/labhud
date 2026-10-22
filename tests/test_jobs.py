@@ -55,6 +55,15 @@ class Jobs(unittest.TestCase):
         self.assertEqual((j["id"], j["days"], len(j["name"]), "extra" in j), ("", [1, 3], 60, False))
         self.assertEqual(j["last"], {"day": "", "t": 0, "ok": False, "text": ""})
 
+    def test_a_backup_job_keeps_only_well_formed_guests_storage_and_mode(self):
+        ok = {"kind": "backup", "name": "b", "agent": "h", "days": [0], "at": "02:00", "vmids": [113, "101", 101], "storage": "local", "mode": "stop"}
+        j = jobs.clean(ok)
+        self.assertEqual((j["vmids"], j["storage"], j["mode"]), (["101", "113"], "local", "stop"))
+        for k, v in (("vmids", []), ("vmids", ["a"]), ("vmids", [-1]), ("vmids", [True]), ("vmids", list(range(1, 52))), ("storage", ""), ("storage", "a/b"),
+                     ("storage", None), ("mode", "full"), ("mode", None)):
+            self.assertIsNone(jobs.clean(dict(ok, **{k: v})), (k, v))
+        self.assertNotIn("vmids", jobs.clean({"kind": "prune", "name": "p", "agent": "h", "days": [0], "at": "02:00", "vmids": [1]}))
+
     def test_put_replaces_by_id_keeps_the_last_run_and_stops_at_the_limit(self):
         job = jobs.put({"kind": "prune", "name": "p", "agent": "h", "days": [0], "at": "03:00"})
         jobs.record(job["id"], True, "freed", now=at(2026, 10, 19, 3, 0))

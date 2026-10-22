@@ -1003,6 +1003,14 @@ UNIT = agents.TARGET["systemd"]
 POWER = ("reboot", "shutdown")
 
 
+def _updates(u):
+    """The agent's count of pending packages, rebuilt: None when it sent none."""
+    if not isinstance(u, dict):
+        return None
+    names = [_s(n, 80) for n in (u.get("names") or [])[:12] if isinstance(n, str)] if isinstance(u.get("names"), list) else []
+    return {"pending": int(_n(u.get("pending"), 0, 100000)), "security": int(_n(u.get("security"), 0, 100000)), "names": names}
+
+
 @_guarded("host")
 def host(h, body):
     aid, a = _agent(body)
@@ -1021,6 +1029,7 @@ def host(h, body):
     return 200, {"ok": True, "online": aid in agents._live, "version": _s(a.get("version"), 40),
                  "host": {k: _s(info.get(k), 80) for k in ("hostname", "os", "kernel", "arch")},
                  "uptime": int(_n(sensors.get("uptime"), 0, 1e10)),
+                 "updates": _updates(st.get("updates")),
                  "can": {"update": agents.allowed(aid, "host", "update", "host"),
                          "power": agents.allowed(aid, "host", "reboot", "host")},
                  "units": units, "failed": failed}
@@ -1091,7 +1100,25 @@ def activity(h, body):
     rows, more = audit.query(action="servers/", target=a["name"], offset=offset if type(offset) is int else 0, limit=50)
     # the target is "<host>/<what>": a host whose name is a part of another's must not show that one's
     rows = [r for r in rows if r["target"] == a["name"] or r["target"].startswith(a["name"] + "/")]
-    return 200, {"ok": True, "more": more, "rows": [{k: _s(r.get(k), 200) if k != "ok" else bool(r.get(k)) for k in ("ts", "who", "action", "target", "ok")} for r in rows]}
+    out = [{**{k: _s(r.get(k), 200) if k != "ok" else bool(r.get(k)) for k in ("ts", "who", "action", "target", "ok")}, "source": "server"} for r in rows]
+    if not offset:   # the agent's own history (updates, crashes) joins the newest page, by time
+        out += _agent_events(aid, a)
+        out.sort(key=lambda r: r["ts"], reverse=True)
+    return 200, {"ok": True, "more": more, "rows": out}
+
+
+def _agent_events(aid, a):
+    """The host's own history as rows like the audit's: an update, a crash, an out-of-memory kill, a loop, a hold."""
+    rows = []
+    for key, events in list((agents.history.get(aid) or {}).items())[:200]:
+        if not isinstance(events, list) or not isinstance(key, str):
+            continue
+        for e in events[-agents.HISTORY_PER_TARGET:]:
+            if isinstance(e, dict) and e.get("kind") in agents.HISTORY_KINDS and type(e.get("t")) is int:
+                rows.append({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e["t"])), "who": "agent", "action": "agent/" + e["kind"],
+                             "target": a["name"] + "/" + _s(key.split(":", 1)[-1], 80), "ok": e.get("ok") is True, "source": "agent"})
+    rows.sort(key=lambda r: r["ts"], reverse=True)
+    return rows[:30]
 
 
 # --- the scheduler: jobs that run on a host at a time of day ---
@@ -1109,6 +1136,10 @@ def _job_refusal(job):
         return HINT
     if job["kind"] == "host-update" and not agents.allowed(aid, "host", "update", "host"):
         return "tick Host for this agent in Settings > Hosts and agents"
+    if job["kind"] == "backup":
+        miss = [v for v in job["vmids"] if not agents.allowed(aid, "pve", "vzdump", v)]
+        if miss:
+            return "tick these guests for this host in Settings > Hosts and agents: " + ", ".join(miss[:8])
     return ""
 
 
@@ -1122,11 +1153,11 @@ def job_save(h, body):
     raw = body.get("job")
     job = jobs.clean(raw)
     if not job:
-        return 400, {"ok": False, "error": "a name, a kind (" + ", ".join(jobs.KINDS) + "), days 0-6 and a time HH:MM; update may name no host (all of them), the others need one"}
+        return 400, {"ok": False, "error": "a name, a kind (" + ", ".join(jobs.KINDS) + "), days 0-6 and a time HH:MM; update may name no host (all of them), the others need one; backup also needs guests, a storage and a mode (" + ", ".join(jobs.MODES) + ")"}
     why = _job_refusal(job)
     if why:
         return 400, {"ok": False, "error": why}
-    saved = jobs.put(dict(raw, **{k: job[k] for k in ("name", "kind", "agent", "days", "at", "enabled")}))
+    saved = jobs.put(dict(raw, **{k: job[k] for k in ("name", "kind", "agent", "days", "at", "enabled", "vmids", "storage", "mode") if k in job}))
     audit.record(h, "servers/job-save", f"{job['agent']}/{job['name']}", bool(saved))
     if not saved:
         return 400, {"ok": False, "error": "not saved: an unknown job, a changed kind or too many jobs"}

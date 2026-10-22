@@ -60,7 +60,7 @@ the old one is switched off.
    does not trust, the line fetches the installer with `-k` and checks its SHA-256 instead). Either way the installer writes
    `/etc/labhud-agent/config` (mode 600) and a systemd unit and starts it. On Proxmox VE it also
    makes a user `labhud@pve` with only `VM.PowerMgmt`, `VM.Audit` and `Sys.Audit`, and a token for
-   it that stays on the host. Snapshots and the backup list are **opt-in**: `pveum role modify LabhudAgent --privs "VM.PowerMgmt,VM.Audit,Sys.Audit,VM.Snapshot,Datastore.Audit"` (or `install-agent.sh --pve-snapshots`) — nothing that can write a datastore (`Datastore.Allocate*`) or change the node (`Sys.Modify`) is ever added. For a Pterodactyl panel add `--ptero-url https://panel…`: the client
+   it that stays on the host. Snapshots and the backup list are **opt-in**: `pveum role modify LabhudAgent --privs "VM.PowerMgmt,VM.Audit,Sys.Audit,VM.Snapshot,Datastore.Audit"` (or `install-agent.sh --pve-snapshots`) — nothing that changes the node (`Sys.Modify`) is ever added. The scheduler's **backup job** (vzdump) writes to a datastore, so it has its own opt-in, `install-agent.sh --pve-backup`, which adds `VM.Backup` and `Datastore.AllocateSpace` (give both options together: the script sets the role's rights to exactly what the options name). The agent refuses a storage that is not one of the node's backup storages, and a guest that is not ticked. For a Pterodactyl panel add `--ptero-url https://panel…`: the client
    API key is asked for, not given on the command line. `--base-w` and `--price-kwh` set the power
    estimate. From agent 0.1.0 on it **updates itself**: ⚙ > Agents shows *Update to vX* when
    labhud pins a newer release (also in the app and `labhud agent update`), and *Update agents

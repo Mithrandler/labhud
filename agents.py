@@ -53,7 +53,7 @@ VERBS = {
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
     "pve": ("start", "shutdown", "reboot", "config", "snap-list", "backup-list", "task-list",
-            "snap-create", "snap-rollback", "snap-delete"),
+            "snap-create", "snap-rollback", "snap-delete", "vzdump"),
     "ptero": ("start", "stop", "restart"),
     "stacks": ("deploy", "redeploy", "restart", "down", "show", "read", "validate", "save", "version", "restore"),
     "terminal": ("shell",),
@@ -75,6 +75,7 @@ HOST_VERBS = ("inventory", "prune", "prune-dangling", "prune-networks", "prune-v
 # a volume ticked for browsing is the target "volume:<name>"; the two volume verbs are for those and nothing else
 VOLUME_PREFIX = "volume:"
 VOLUME_VERBS = ("volume-ls", "volume-read")
+VZDUMP_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}:(snapshot|suspend|stop)")   # storage:mode
 SNAP_ARG = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,39}")     # Proxmox's own rule for a snapshot name
 VERSION_ARG = re.compile(r"[0-9]{1,12}")
 IMAGE_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,199}")
@@ -109,6 +110,8 @@ def arg_ok(verb, arg):
         return bool(NAME_ARG.fullmatch(arg))
     if verb in ("snap-create", "snap-rollback", "snap-delete"):
         return bool(SNAP_ARG.fullmatch(arg))
+    if verb == "vzdump":
+        return bool(VZDUMP_ARG.fullmatch(arg))
     if verb in ("version", "restore"):
         return bool(VERSION_ARG.fullmatch(arg))
     if verb == "volume-ls":
@@ -382,7 +385,45 @@ def run_job(job):
     if kind == "host-update":
         ok, error = command(aid, "host", "update", "host")
         return ok, "the update was started" if ok else error
+    if kind == "backup":
+        return start_backup(job, aid)
     return False, "unknown kind"
+
+
+BACKUP_WAIT = 3 * 3600 + 60     # s: the agent gives one guest's backup three hours
+_backing = set()                 # ids of the backup jobs running now
+
+
+def start_backup(job, aid):
+    """The guests are backed up one after the other in a thread of their own (it takes hours); the
+    result is written into the job when it ends. (ok, text) of the start."""
+    a = _load().get(aid) or {}
+    ticked = set(a.get("targets", {}).get("pve", [])) if "pve" in a.get("caps", []) else set()
+    ids = [v for v in job["vmids"] if v in ticked]
+    if not ids:
+        return False, "none of its guests is ticked for this host"
+    with _lock:
+        if job["id"] in _backing:
+            return False, "it is still running"
+        _backing.add(job["id"])
+    threading.Thread(target=_backup, args=(job, aid, ids), daemon=True).start()
+    return True, f"started: {len(ids)} guest(s) to {job['storage']}"
+
+
+def _backup(job, aid, ids):
+    from api import audit
+    good, bad = [], []
+    try:
+        for v in ids:
+            ok, error = command(aid, "pve", "vzdump", v, wait=BACKUP_WAIT, arg=f"{job['storage']}:{job['mode']}")
+            (good if ok else bad).append(v if ok else f"{v} ({str(error)[:80]})")
+    finally:
+        with _lock:
+            _backing.discard(job["id"])
+    text = f"{len(good)} backed up" + (f", {len(bad)} failed: {', '.join(bad)}" if bad else "")
+    jobs.record(job["id"], not bad, text)
+    audit.write("scheduler", "servers/job-backup-done", job["agent"], ok=not bad)
+    on_event(f"Scheduled {job['name']}: {text}", bool(bad))
 
 
 def run_due(now=None):

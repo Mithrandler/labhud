@@ -18,6 +18,8 @@
 #                       when given, else against the checksum labhud pins)
 #   --sha256 HEX        the expected SHA-256 of --binary, from where it was built
 #   --pve-snapshots     on Proxmox VE, also give the token VM.Snapshot and Datastore.Audit (snapshots and the backup list in Servers)
+#   --pve-backup        on Proxmox VE, also give the token VM.Backup and Datastore.AllocateSpace (the scheduler's backup job writes
+#                       to a datastore: only for those who want it; it also needs --pve-snapshots' Datastore.Audit)
 #   --ptero-url URL     a Pterodactyl panel; its client API key is asked for (not on the command line)
 #   --ptero-pin HEX     the SHA-256 of the panel's certificate, for a self-signed one
 #                       (python3 init.py fingerprint https://panel… on labhud prints it)
@@ -40,7 +42,7 @@ BIN=$BINDIR/labhud-agent
 LINK=/usr/local/bin/labhud-agent
 UNIT=/etc/systemd/system/labhud-agent.service
 
-URL="" CODE="" NAME="" BINARY="" WANT="" PVE_SNAP="" PTERO_URL="" PTERO_PIN="" BASE_W="" PRICE="" UNINSTALL=""
+URL="" CODE="" NAME="" BINARY="" WANT="" PVE_SNAP="" PVE_BACKUP="" PTERO_URL="" PTERO_PIN="" BASE_W="" PRICE="" UNINSTALL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --url) URL="${2:-}"; shift 2 ;;
@@ -49,6 +51,7 @@ while [ $# -gt 0 ]; do
     --binary) BINARY="${2:-}"; shift 2 ;;
     --sha256) WANT="${2:-}"; shift 2 ;;
     --pve-snapshots) PVE_SNAP=1; shift ;;
+    --pve-backup) PVE_BACKUP=1; shift ;;
     --ptero-url) PTERO_URL="${2:-}"; shift 2 ;;
     --ptero-pin) PTERO_PIN="${2:-}"; shift 2 ;;
     --base-w) BASE_W="${2:-}"; shift 2 ;;
@@ -142,8 +145,9 @@ if command -v pveum >/dev/null && ! grep -q '^LABHUD_PVE_TOKEN=' "$CONF"; then
   echo "Proxmox VE: making the user labhud@pve and its token (VM.PowerMgmt, VM.Audit, Sys.Audit)…"
   PRIVS="VM.PowerMgmt,VM.Audit,Sys.Audit"
   if [ "$PVE_SNAP" = 1 ]; then PRIVS="$PRIVS,VM.Snapshot,Datastore.Audit"; fi
+  if [ "$PVE_BACKUP" = 1 ]; then PRIVS="$PRIVS,Datastore.Audit,VM.Backup,Datastore.AllocateSpace"; fi
   if pveum role list --output-format json | grep -q '"roleid": *"LabhudAgent"'; then
-    if [ "$PVE_SNAP" = 1 ]; then pveum role modify LabhudAgent --privs "$PRIVS"; fi
+    if [ "$PVE_SNAP" = 1 ] || [ "$PVE_BACKUP" = 1 ]; then pveum role modify LabhudAgent --privs "$PRIVS"; fi
   else
     pveum role add LabhudAgent --privs "$PRIVS"
   fi

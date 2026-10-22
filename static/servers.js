@@ -967,6 +967,8 @@ function draw_host(top, units, r, said, reload) {
   const dl = el("dl");
   for (const [k, val] of [["Host", r.host.hostname || S.host], ["System", r.host.os || "–"], ["Kernel", r.host.kernel || "–"],
     ["Arch", r.host.arch || "–"], ["Up", uptime_text(r.uptime)], ["Agent", r.version || "–"]]) dl.append(el("dt", "", k), el("dd", "", val));
+  if (r.updates) dl.append(el("dt", "", "Updates"), el("dd", r.updates.pending ? "warn-text" : "",
+    r.updates.pending ? r.updates.pending + " pending" + (r.updates.security ? " (" + r.updates.security + " security)" : "") + (r.updates.names.length ? ": " + r.updates.names.slice(0, 5).join(", ") + (r.updates.pending > 5 ? "…" : "") : "") : "up to date"));
   top.appendChild(dl);
   const acts = el("div", "actions");
   const run = async (op, body, ok) => { const x = await call(op, Object.assign({ agent: S.host }, body)); said.textContent = x.ok ? ok : op + ": " + (x.error || "failed"); reload(); };
@@ -1031,7 +1033,7 @@ async function activity(box) {
     if (!offset) head_row(t, ["When", "Who", "What", "Target"]);
     for (const e of r.rows) {
       const tr = el("tr");
-      tr.append(el("td", "muted", e.ts.replace("T", " ").slice(0, 16)), el("td", "", e.who), el("td", e.ok ? "" : "warn-text", e.action.replace("servers/", "") + (e.ok ? "" : " (refused)")), el("td", "muted", e.target));
+      tr.append(el("td", "muted", e.ts.replace("T", " ").slice(0, 16)), el("td", "", e.who), el("td", e.ok ? "" : "warn-text", e.action.replace("servers/", "").replace("agent/", "agent: ") + (e.ok ? "" : e.source === "agent" ? " (failed)" : " (refused)")), el("td", "muted", e.target));
       t.appendChild(tr);
     }
     offset += r.rows.length;
@@ -1045,7 +1047,7 @@ async function activity(box) {
 // ---- Scheduler: jobs that run on this host (and the ones for every host) at a time of day ----
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const KIND_LABEL = { "update": "Update containers", "prune": "Prune unused images", "host-update": "Update OS" };
+const KIND_LABEL = { "update": "Update containers", "prune": "Prune unused images", "host-update": "Update OS", "backup": "Backup Proxmox guests" };
 
 function days_text(d) { return d.length === 7 ? "every day" : d.map((x) => DAYS[x]).join(" "); }
 
@@ -1098,11 +1100,29 @@ function job_sheet(job, kinds, reload) {
   DAYS.forEach((d, i) => { const l = el("label", "", ""), c = el("input"); c.type = "checkbox"; c.checked = cur.days.includes(i); boxes.push(c); l.append(c, " " + d + " "); day_row.appendChild(l); });
   const on = el("input"); on.type = "checkbox"; on.checked = cur.enabled;
   const on_l = el("label", "", ""); on_l.append(on, " Enabled");
-  form.append(name, kind, where, time, day_row, on_l);
+  // a backup job also names its guests (the ticked ones of the host), a storage and a mode
+  const bk = el("div", "form");
+  const guests = el("div", "days"), gboxes = [];
+  const storage = el("input"); storage.type = "text"; storage.maxLength = 40; storage.placeholder = "Backup storage (e.g. local)"; storage.value = cur.storage || "";
+  const mode = el("select");
+  for (const m of ["snapshot", "suspend", "stop"]) { const o = el("option", "", m); o.value = m; o.selected = m === (cur.mode || "snapshot"); mode.appendChild(o); }
+  bk.append(el("p", "muted", "Guests to back up"), guests, storage, mode);
+  const show_bk = () => { bk.style.display = kind.value === "backup" ? "" : "none"; };
+  show_bk(); kind.addEventListener("change", show_bk);
+  call("guests", { agent: S.host }).then((g) => {
+    if (!g.ok) return guests.appendChild(el("span", "muted", g.error || "no guests"));
+    for (const x of g.guests.filter((x) => x.ticked && !x.template)) {
+      const l = el("label", ""), c = el("input"); c.type = "checkbox"; c.value = String(x.id); c.checked = (cur.vmids || []).includes(String(x.id));
+      gboxes.push(c); l.append(c, " " + x.id + " " + x.name + " "); guests.appendChild(l);
+    }
+    if (!gboxes.length) guests.appendChild(el("span", "muted", "No ticked guest on this host."));
+  });
+  form.append(name, kind, where, time, day_row, on_l, bk);
   sh.append(form, said);
   if (!isnew && cur.last && cur.last.t) sh.appendChild(el("p", "muted", "Last run: " + new Date(cur.last.t * 1000).toLocaleString() + " · " + (cur.last.ok ? "ok" : "failed") + " · " + cur.last.text));
   const acts = el("div", "actions");
-  const body = () => ({ id: isnew ? undefined : cur.id, name: name.value, kind: kind.value, agent: where.value, at: time.value, enabled: on.checked, days: boxes.map((c, i) => (c.checked ? i : -1)).filter((i) => i >= 0) });
+  const body = () => ({ id: isnew ? undefined : cur.id, name: name.value, kind: kind.value, agent: where.value, at: time.value, enabled: on.checked, days: boxes.map((c, i) => (c.checked ? i : -1)).filter((i) => i >= 0),
+    ...(kind.value === "backup" ? { vmids: gboxes.filter((c) => c.checked).map((c) => c.value), storage: storage.value.trim(), mode: mode.value } : {}) });
   acts.appendChild(btn("Save", "primary", async () => {
     const r = await call("job-save", { job: body() });
     if (!r.ok) return said.textContent = r.error || "not saved";

@@ -4,6 +4,7 @@ A job is {id, name, kind, agent, days, at, enabled, last}:
   kind   "update"      the host's `auto` containers whose registry has a newer image (agent "*" = every host)
          "prune"       the unused images of the host are removed
          "host-update" the host's packages are updated
+         "backup"      the host's ticked guests (`vmids`) are backed up to `storage` in `mode` (Proxmox vzdump, one after the other)
   days   Monday = 0 ... Sunday = 6;  at  "HH:MM"
   last   {day, t, ok, text} of its latest run, {} for none
 
@@ -20,7 +21,11 @@ import store
 
 KEY = "servers_jobs"
 OLD_WINDOW_KEY = "agents_update_window"
-KINDS = ("update", "prune", "host-update")
+KINDS = ("update", "prune", "host-update", "backup")
+MODES = ("snapshot", "suspend", "stop")
+MAX_VMIDS = 50
+VMID = re.compile(r"[0-9]{1,9}")
+STORAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}")
 MAX_JOBS = 30
 HHMM = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
 ID = re.compile(r"[0-9a-f]{8}")
@@ -51,9 +56,18 @@ def clean(raw):
         agent = agent or ALL
     elif not agent or agent == ALL:
         return None
+    extra = {}
+    if raw["kind"] == "backup":
+        ids = raw.get("vmids")
+        ids = [str(v) for v in ids] if isinstance(ids, list) and ids and all(type(v) is int and v > 0 or isinstance(v, str) for v in ids) else None
+        storage, mode = raw.get("storage"), raw.get("mode")
+        if not ids or len(ids) > MAX_VMIDS or not all(VMID.fullmatch(v) for v in ids) or not isinstance(storage, str) \
+                or not STORAGE.fullmatch(storage) or mode not in MODES:
+            return None
+        extra = {"vmids": sorted(set(ids), key=int), "storage": storage, "mode": mode}
     last = raw.get("last") if isinstance(raw.get("last"), dict) else {}
     return {"id": raw.get("id") if isinstance(raw.get("id"), str) and ID.fullmatch(raw["id"]) else "", "name": name, "kind": raw["kind"],
-            "agent": agent, "days": days, "at": at, "enabled": raw.get("enabled") is not False,
+            "agent": agent, "days": days, "at": at, "enabled": raw.get("enabled") is not False, **extra,
             "last": {"day": _clip(last.get("day"), 10), "t": last["t"] if type(last.get("t")) is int else 0,
                      "ok": last.get("ok") is True, "text": _clip(last.get("text"), 300)} if last else {}}
 

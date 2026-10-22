@@ -540,6 +540,39 @@ class HostTab(Base):
         self.assertEqual(self.sent(log, "update") + self.sent(log, "reboot"), [])
         self.assertEqual(self.api("host", {"agent": "plain"})[1]["can"], {"update": False, "power": False})
 
+    def test_pending_updates_are_rebuilt_and_absent_when_unreported(self):
+        self.session()
+        c, session, aid, key = self.pair(name="updbox")
+        self.manage("caps", {"id": aid, "caps": ["host"]})
+        c.read_signed(key, session)
+        c.send_signed(key, session, aid, {"type": "state", "sensors": {"uptime": 5}, "units": {}})
+        self.assertTrue(self.wait_for(lambda: self.api("host", {"agent": "updbox"})[1].get("online")))
+        self.assertIsNone(self.api("host", {"agent": "updbox"})[1]["updates"])
+        c.send_signed(key, session, aid, {"type": "state", "updates": {"pending": 12, "security": 3, "names": ["libssl3", 5, "x" * 200] + ["p"] * 20}})
+        self.assertTrue(self.wait_for(lambda: self.api("host", {"agent": "updbox"})[1]["updates"]))
+        u = self.api("host", {"agent": "updbox"})[1]["updates"]
+        self.assertEqual((u["pending"], u["security"], u["names"][0]), (12, 3, "libssl3"))
+        self.assertLessEqual(len(u["names"]), 12)
+        self.assertTrue(all(len(n) <= 80 for n in u["names"]))
+        c.send_signed(key, session, aid, {"type": "state", "updates": {"pending": "many", "security": -1, "names": "x"}})
+        self.assertTrue(self.wait_for(lambda: self.api("host", {"agent": "updbox"})[1]["updates"]["pending"] == 0))
+        c.close()
+
+    def test_the_agents_own_history_joins_the_activity_marked_as_the_agents(self):
+        self.session()
+        c, session, aid, key = self.pair(name="histo")
+        self.manage("caps", {"id": aid, "caps": ["host"]})
+        c.read_signed(key, session)
+        for ev in ({"text": "web updated", "bad": False, "cap": "docker", "target": "web", "kind": "update"},
+                   {"text": "web stopped", "bad": True, "cap": "docker", "target": "web", "kind": "crash"}):
+            c.send_signed(key, session, aid, dict(ev, type="event"))
+        self.assertTrue(self.wait_for(lambda: len(self.api("activity", {"agent": "histo"})[1]["rows"]) == 2))
+        rows = self.api("activity", {"agent": "histo"})[1]["rows"]
+        self.assertEqual(sorted((r["source"], r["action"], r["target"], r["ok"]) for r in rows),
+                         [("agent", "agent/crash", "histo/web", False), ("agent", "agent/update", "histo/web", True)])
+        self.assertEqual(self.api("activity", {"agent": "histo", "offset": 50})[1]["rows"], [])   # later pages are the server's alone
+        c.close()
+
     def test_the_activity_is_this_hosts_own(self):
         self.session()
         self.host_up("act")
@@ -578,7 +611,7 @@ class Jobs(HostTab):
         r = self.api("jobs")[1]
         first = r["jobs"][0]
         self.assertEqual((first["id"], first["kind"], first["agent"]), ("00000001", "update", "*"))
-        self.assertEqual(r["kinds"], ["update", "prune", "host-update"])
+        self.assertEqual(r["kinds"], ["update", "prune", "host-update", "backup"])
 
     def test_a_job_needs_what_its_kind_needs_from_the_host(self):
         self.session()
@@ -1198,6 +1231,40 @@ class GateUnits(unittest.TestCase):
         cli = FakeHandler(ip="198.51.100.4", cli=True)
         self.assertIsNone(servers._gate(cli, "action"))         # the command beside the server is not concerned
 
+
+class Backup(Guests):
+    """The backup job: guests, storage and mode; one vzdump per guest, in a thread, the result written into the job."""
+    JOB = {"name": "Nightly", "kind": "backup", "days": [0, 1], "at": "02:00", "vmids": [113, "101"], "storage": "local", "mode": "snapshot"}
+
+    def test_a_backup_job_needs_ticked_guests_a_storage_and_a_mode(self):
+        self.session()
+        self.pve_host("bk-a")
+        job = dict(self.JOB, agent="bk-a")
+        for bad in (dict(job, vmids=[]), dict(job, vmids=["x"]), dict(job, vmids=[104]), dict(job, storage="a b"), dict(job, storage="x;y"),
+                    dict(job, mode="full"), dict(job, vmids=list(range(1, 60)))):
+            self.assertEqual(self.api("job-save", {"job": bad})[0], 400, bad)
+        status, r, _ = self.api("job-save", {"job": job})
+        self.assertEqual(status, 200, r)
+        self.assertEqual((r["job"]["vmids"], r["job"]["storage"], r["job"]["mode"]), (["101", "113"], "local", "snapshot"))
+        self.assertIn("104", self.api("job-save", {"job": dict(job, vmids=[104])})[1]["error"])   # not ticked: says which
+
+    def test_run_now_backs_up_each_guest_and_writes_the_result(self):
+        self.session()
+        log = self.pve_host("bk-b", {"vzdump": lambda m: {"ok": m["target"] != "113", "error": "no space"}})
+        jid = self.api("job-save", {"job": dict(self.JOB, agent="bk-b")})[1]["job"]["id"]
+        status, r, _ = self.api("job-run", {"id": jid})
+        self.assertEqual(status, 200, r)
+        self.assertTrue(self.wait_for(lambda: "failed" in next(j for j in self.api("jobs")[1]["jobs"] if j["id"] == jid)["last"]["text"]))
+        last = next(j for j in self.api("jobs")[1]["jobs"] if j["id"] == jid)["last"]
+        self.assertEqual((last["ok"], last["text"]), (False, "1 backed up, 1 failed: 113 (no space)"))
+        self.assertEqual(self.sent(log, "vzdump"), [("101", "local:snapshot"), ("113", "local:snapshot")])
+        self.assertEqual(self.api("job-run", {"id": jid})[0], 200)   # runs again once the first ended
+
+    def test_a_backup_cannot_be_asked_for_with_a_bad_storage_by_hand(self):
+        for good in ("local:snapshot", "pbs-main:stop"):
+            self.assertTrue(agents.arg_ok("vzdump", good), good)
+        for bad in ("", "local", "local:full", "a b:stop", "-x:stop", ":stop", "a;b:stop", "local:stop\n"):
+            self.assertFalse(agents.arg_ok("vzdump", bad), bad)
 
 if __name__ == "__main__":
     unittest.main()
