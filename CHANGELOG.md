@@ -8,6 +8,11 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ### Added
 
+- **A machine's numbers as rings on the wall**: a large card (and every Proxmox host) shows CPU, RAM and disk as rings with the temperature inside, the GPU as one double ring (load outside, video memory inside); the glance tiles use small rings too, and a section with a single tile takes the whole row in portrait.
+- **The panel in tabs**: Overview (status, links, uptime, the host's own numbers), then one short screen each for GPUs, storage, guests, backup, containers and charts; guests, storage and backup are 2-3 to a row. A host's panel has a **backup** section (the last vzdump of each guest, from the `backups` source). No animation in the panel.
+- **Uptime for 7 days** is a square a day, coloured by the share of that day it was up (the panel; the app does the same).
+- **`/api/v1/state`**: cards carry `node` (a Proxmox guest's host, or the node a host card shows) and hosts `guest_counts` (`{"vm": [running, total], "lxc": [...]}`), so the app can put a VM under its host; a host's card says `backup` among its sections.
+
 - **Internet in the glance header**: the router's WAN download and upload sit beside the clock where the bottom strip is hidden (green while something flows). `/api/v1/state` carries them as `internet {dn, up}` (bytes per second) when a router reports them, for the app's top bar.
 - **Glance tiles say more**: the card's own icon (its service, else what kind of machine it is) and, for a host, VM or container, its **CPU, GPU, RAM and storage** as thin coloured bars with their percentages instead of one big number (the first of each kind among its metrics; an agent's GPU load is picked up when it reports one). A card with fewer than two of those keeps the big number.
 - **Discovery tells you** (⚙ > Alerts, the new event "Something new found", off until ticked): a VM, container or service with no card is one message, once, with Add / Ignore for the app (`actions` in `/api/v1/notifications`, answered through `/api/discover/approve|dismiss`). What was there the first time is taken as known, a dismissed one never tells, and the default board's cards are not news.
