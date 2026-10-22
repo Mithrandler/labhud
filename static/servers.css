@@ -69,3 +69,8 @@ tr.dim { opacity: .55; } tr.dim.row { cursor: default; }
 .gap { margin-bottom: 12px; }
 
 td.crit { color: var(--bad); } td.warn { color: var(--warn); } td.ok { color: var(--ok); }
+
+.form { display: flex; flex-direction: column; gap: 10px; max-width: 420px; margin: 10px 0; }
+.days { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.form label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.form input[type=checkbox] { width: auto; margin: 0; }

@@ -17,6 +17,7 @@ import unittest
 
 import agentproto as P
 import agents
+import jobs
 import websock
 from tests import signin
 from tests.test_lock import FakeStore
@@ -660,14 +661,14 @@ class Schedule(unittest.TestCase):
     """Containers labhud updates on its own, in the window (agents.due, run_auto)."""
 
     def setUp(self):
-        self.real = agents.store
-        agents.store = FakeStore()
+        self.real, self.real_jobs = agents.store, jobs.store
+        agents.store = jobs.store = FakeStore()
         agents.store.save(agents.AGENTS_KEY, {"a1b2c3d4": {"name": "n", "key": "k", "caps": ["docker"],
                                                           "targets": {"docker": ["web", "db", "images"]}}})
         agents._state.clear()
 
     def tearDown(self):
-        agents.store = self.real
+        agents.store, jobs.store = self.real, self.real_jobs
         agents._live.pop("a1b2c3d4", None)
 
     def test_auto_only_ticked_and_sent_with_allow(self):
@@ -700,6 +701,25 @@ class Schedule(unittest.TestCase):
         agents._state["a1b2c3d4"] = {"containers": {"web": {"update": True}, "db": {"update": True, "updating": True}}}
         self.assertEqual(agents.run_auto(), [("n", "web", True, "")])
         self.assertEqual(sent, [("docker", "update", "web")])   # db is being updated already
+
+    def test_run_due_runs_the_update_job_once_and_writes_its_result(self):
+        agents.set_auto("a1b2c3d4", ["web"])
+        sent = []
+
+        class Live:
+            def command(self, cap, verb, target, wait):
+                sent.append((cap, verb, target))
+                return True, "", ""
+        agents._live["a1b2c3d4"] = Live()
+        agents._state["a1b2c3d4"] = {"containers": {"web": {"update": True}}}
+        agents.set_window([6], "04:00")
+        sunday = time.mktime((2026, 10, 18, 4, 10, 0, 0, 0, -1))
+        self.assertEqual([j["id"] for j in agents.run_due(sunday)], [jobs.UPDATE_ID])
+        self.assertEqual(agents.run_due(sunday), [])      # once a day
+        self.assertEqual(sent, [("docker", "update", "web")])
+        last = jobs.load()[0]["last"]
+        self.assertEqual((last["ok"], last["day"], last["text"][:9]), (True, "2026-10-18", "1 started"))
+        self.assertEqual(agents.run_due(time.mktime((2026, 10, 19, 4, 10, 0, 0, 0, -1))), [])   # Monday
 
 
 class Hooks(unittest.TestCase):

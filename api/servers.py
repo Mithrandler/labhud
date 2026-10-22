@@ -36,6 +36,10 @@ here is POST, JSON, and goes through one gate, `_gate`, in this order:
     POST /api/servers/unit {agent, name, verb}       act: start or restart a ticked unit
     POST /api/servers/unit-stop {agent, name, confirm}    admin: stop a ticked unit; confirm = its name
     POST /api/servers/activity {agent, offset}       admin: the audit log's entries about this host, newest first
+    POST /api/servers/jobs {}                        read: the scheduler's jobs
+    POST /api/servers/job-save {job}                 admin: makes a job (no id) or replaces one; the host must allow what the kind does
+    POST /api/servers/job-delete {id, confirm}       admin: confirm = the job's name; the update job (the old window) stays
+    POST /api/servers/job-run {id}                   admin: runs it now
     POST /api/servers/audit-verify {}                admin: is the audit log's chain whole
 
 Nothing the agent says reaches a screen as it came: the answers are rebuilt field by field, with
@@ -52,6 +56,7 @@ import time
 
 import admin
 import agents
+import jobs
 from api import audit
 from routes import route
 
@@ -65,6 +70,7 @@ NEEDS = {
     "stack-act": "act", "stack-down": "admin", "stack-source": "admin", "stack-hook": "admin", "stack-sync": "admin",
     "guests": "read", "guest-config": "read", "guest-snapshots": "read", "guest-backups": "read", "guest-tasks": "read",
     "guest-act": "act", "snap-create": "act", "snap-rollback": "admin", "snap-delete": "admin",
+    "jobs": "read", "job-save": "admin", "job-delete": "admin", "job-run": "admin",
     "host": "read", "host-update": "act", "host-power": "admin", "unit": "act", "unit-stop": "admin", "activity": "admin",
     "pull": "act", "rm": "admin", "clean": "admin", "volume-access": "admin",
 }
@@ -1086,3 +1092,73 @@ def activity(h, body):
     # the target is "<host>/<what>": a host whose name is a part of another's must not show that one's
     rows = [r for r in rows if r["target"] == a["name"] or r["target"].startswith(a["name"] + "/")]
     return 200, {"ok": True, "more": more, "rows": [{k: _s(r.get(k), 200) if k != "ok" else bool(r.get(k)) for k in ("ts", "who", "action", "target", "ok")} for r in rows]}
+
+
+# --- the scheduler: jobs that run on a host at a time of day ---
+
+def _job_refusal(job):
+    """Why the host does not allow what the job's kind does, else "" (the agent checks again when it runs)."""
+    if job["kind"] == "update":
+        if job["agent"] != jobs.ALL and not agents.by_name(job["agent"])[1]:
+            return "no such host"
+        return ""
+    aid, a = agents.by_name(job["agent"])
+    if not a:
+        return "no such host"
+    if job["kind"] == "prune" and not agents.allowed(aid, "docker", "prune", agents.PRUNE_TARGET):
+        return HINT
+    if job["kind"] == "host-update" and not agents.allowed(aid, "host", "update", "host"):
+        return "tick Host for this agent in Settings > Hosts and agents"
+    return ""
+
+
+@_guarded("jobs")
+def job_list(h, body):
+    return 200, {"ok": True, "kinds": list(jobs.KINDS), "jobs": jobs.load()}
+
+
+@_guarded("job-save")
+def job_save(h, body):
+    raw = body.get("job")
+    job = jobs.clean(raw)
+    if not job:
+        return 400, {"ok": False, "error": "a name, a kind (" + ", ".join(jobs.KINDS) + "), days 0-6 and a time HH:MM; update may name no host (all of them), the others need one"}
+    why = _job_refusal(job)
+    if why:
+        return 400, {"ok": False, "error": why}
+    saved = jobs.put(dict(raw, **{k: job[k] for k in ("name", "kind", "agent", "days", "at", "enabled")}))
+    audit.record(h, "servers/job-save", f"{job['agent']}/{job['name']}", bool(saved))
+    if not saved:
+        return 400, {"ok": False, "error": "not saved: an unknown job, a changed kind or too many jobs"}
+    return 200, {"ok": True, "job": saved}
+
+
+def _job(body):
+    jid = body.get("id")
+    return next((j for j in jobs.load() if j["id"] == jid), None) if isinstance(jid, str) else None
+
+
+@_guarded("job-delete")
+def job_delete(h, body):
+    job = _job(body)
+    if not job:
+        return 404, {"ok": False, "error": "no such job"}
+    if body.get("confirm") != job["name"]:
+        return 400, {"ok": False, "error": "type the job's name to confirm"}
+    if not jobs.delete(job["id"]):
+        return 400, {"ok": False, "error": "the update job stays: turn it off instead"}
+    audit.record(h, "servers/job-delete", job["name"], True)
+    return 200, {"ok": True}
+
+
+@_guarded("job-run")
+def job_run(h, body):
+    job = _job(body)
+    if not job:
+        return 404, {"ok": False, "error": "no such job"}
+    ok, text = agents.run_job(job)
+    jobs.record(job["id"], ok, text)
+    audit.record(h, f"servers/job-run-{job['kind']}", job["agent"] if job["agent"] != jobs.ALL else job["name"], ok)
+    print(f"servers: job {job['name']} run by {h._who()}: {'ok' if ok else text}", flush=True)
+    now = next(j for j in jobs.load() if j["id"] == job["id"])
+    return (200, {"ok": True, "text": _s(text, 300), "job": now}) if ok else (502, {"ok": False, "error": _s(text, 300) or "failed", "job": now})

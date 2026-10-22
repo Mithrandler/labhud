@@ -946,12 +946,12 @@ function open_stack(x, fresh, reload) {
 // ---- Host: the system, its systemd units, and what was done to it ----
 
 async function host_tab(v) {
-  const said = el("div", "msg bad"), top = el("div"), units = el("div"), log = el("div");
-  v.append(said, top, units, log);
+  const said = el("div", "msg bad"), top = el("div"), units = el("div"), sched = el("div"), log = el("div");
+  v.append(said, top, units, sched, log);
   const load = async () => {
     const r = await call("host", { agent: S.host });
     said.textContent = r.ok ? "" : r.error || "could not load";
-    if (r.ok) { draw_host(top, units, r, said, load); activity(log); }
+    if (r.ok) { draw_host(top, units, r, said, load); scheduler(sched, r); activity(log); }
   };
   await load();
 }
@@ -1040,4 +1040,88 @@ async function activity(box) {
   };
   box.appendChild(more);
   await page();
+}
+
+// ---- Scheduler: jobs that run on this host (and the ones for every host) at a time of day ----
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const KIND_LABEL = { "update": "Update containers", "prune": "Prune unused images", "host-update": "Update OS" };
+
+function days_text(d) { return d.length === 7 ? "every day" : d.map((x) => DAYS[x]).join(" "); }
+
+async function scheduler(box, host) {
+  box.textContent = "";
+  box.appendChild(el("h3", "", "Scheduler"));
+  const said = el("div", "msg bad"), t = el("table");
+  const bar = el("div", "bar");
+  box.append(bar, said, t);
+  const r = await call("jobs", {});
+  if (!r.ok) return said.textContent = r.error || "could not load";
+  const mine = r.jobs.filter((j) => j.agent === S.host || j.agent === "*");
+  const reload = () => scheduler(box, host);
+  bar.appendChild(btn("Add job", "", () => job_sheet(null, r.kinds, reload)));
+  head_row(t, ["Job", "When", "Last run"]);
+  for (const j of mine) {
+    const last = j.last && j.last.t ? new Date(j.last.t * 1000).toLocaleString() + (j.last.ok ? "" : " · failed") : "never";
+    const tr = row_of(t, [j.name + (j.enabled ? "" : "  (off)") + (j.agent === "*" ? "  · all hosts" : ""), days_text(j.days) + " " + j.at, last], () => job_sheet(j, r.kinds, reload), j.last && j.last.t && !j.last.ok);
+    tr.lastChild.classList.remove("num");
+    if (!j.enabled) tr.classList.add("dim");
+  }
+  if (!mine.length) t.appendChild(el("tr")).appendChild(el("td", "muted", "No job for this host yet."));
+}
+
+// the editor: nothing is saved until Save; Discard closes it
+function job_sheet(job, kinds, reload) {
+  close_sheet();
+  S.sheet = { alive: true, stream: null, term: null, gen: 0 };
+  const sh = show_sheet();
+  const isnew = !job;
+  const cur = job || { name: "", kind: "prune", agent: S.host, days: [6], at: "04:00", enabled: true, last: {} };
+  sh.appendChild(el("h2", "", isnew ? "New job" : cur.name));
+  const form = el("div", "form"), said = el("div", "msg bad");
+  const name = el("input"); name.type = "text"; name.value = cur.name; name.maxLength = 60; name.placeholder = "Name";
+  const kind = el("select");
+  for (const k of kinds) { const o = el("option", "", KIND_LABEL[k] || k); o.value = k; o.selected = k === cur.kind; kind.appendChild(o); }
+  kind.disabled = !isnew;
+  const where = el("select");
+  const set_where = () => {
+    where.textContent = "";
+    if (kind.value === "update") { const o = el("option", "", "All hosts"); o.value = "*"; where.appendChild(o); }
+    const o = el("option", "", S.host); o.value = S.host; where.appendChild(o);
+    where.value = cur.agent === "*" && kind.value === "update" ? "*" : kind.value === "update" && !isnew ? cur.agent : S.host;
+  };
+  set_where();
+  kind.addEventListener("change", set_where);
+  where.disabled = !isnew && cur.kind === "update" && cur.id === "00000001";
+  const time = el("input"); time.type = "time"; time.value = cur.at;
+  const day_row = el("div", "days"), boxes = [];
+  DAYS.forEach((d, i) => { const l = el("label", "", ""), c = el("input"); c.type = "checkbox"; c.checked = cur.days.includes(i); boxes.push(c); l.append(c, " " + d + " "); day_row.appendChild(l); });
+  const on = el("input"); on.type = "checkbox"; on.checked = cur.enabled;
+  const on_l = el("label", "", ""); on_l.append(on, " Enabled");
+  form.append(name, kind, where, time, day_row, on_l);
+  sh.append(form, said);
+  if (!isnew && cur.last && cur.last.t) sh.appendChild(el("p", "muted", "Last run: " + new Date(cur.last.t * 1000).toLocaleString() + " · " + (cur.last.ok ? "ok" : "failed") + " · " + cur.last.text));
+  const acts = el("div", "actions");
+  const body = () => ({ id: isnew ? undefined : cur.id, name: name.value, kind: kind.value, agent: where.value, at: time.value, enabled: on.checked, days: boxes.map((c, i) => (c.checked ? i : -1)).filter((i) => i >= 0) });
+  acts.appendChild(btn("Save", "primary", async () => {
+    const r = await call("job-save", { job: body() });
+    if (!r.ok) return said.textContent = r.error || "not saved";
+    close_sheet(); reload();
+  }));
+  acts.appendChild(btn("Discard", "", close_sheet));
+  if (!isnew) {
+    acts.appendChild(btn("Run now", "", async () => {
+      said.className = "msg"; said.textContent = "Running…";
+      const r = await call("job-run", { id: cur.id });
+      said.className = "msg" + (r.ok ? "" : " bad");
+      said.textContent = r.ok ? "Done: " + r.text : "Failed: " + (r.error || "");
+    }));
+    if (cur.id !== "00000001") acts.appendChild(btn("Delete", "danger", async () => {
+      if (!(await typed("Delete " + cur.name + "?", cur.name, "Delete"))) return;
+      const r = await call("job-delete", { id: cur.id, confirm: cur.name });
+      if (!r.ok) return said.textContent = r.error || "not deleted";
+      close_sheet(); reload();
+    }));
+  }
+  sh.appendChild(acts);
 }

@@ -551,6 +551,79 @@ class HostTab(Base):
         self.assertEqual(rows[0]["action"], "servers/unit-restart")
 
 
+class Jobs(HostTab):
+    JOB = {"name": "Prune images", "kind": "prune", "days": [6, 2, 2], "at": "03:30"}
+    made = 0
+
+    def prune_host(self, caps=("docker", "host")):
+        Jobs.made += 1
+        name = self.jobhost = f"jobhost{Jobs.made}"   # a name of its own: the server is shared by the class's tests
+        self.job = dict(self.JOB, agent=name)
+        c, session, aid, key = self.pair(name=name)
+        self.manage("caps", {"id": aid, "caps": list(caps)})
+        self.manage("targets", {"id": aid, "cap": "docker", "targets": ["web", "images"]})
+        if "host" in caps:
+            self.manage("targets", {"id": aid, "cap": "host", "targets": ["host"]})
+        for _ in range(2 + ("host" in caps)):   # the allow list, sent again after each change
+            c.read_signed(key, session)
+        c.send_signed(key, session, aid, STATE)
+        self.assertTrue(self.wait_for(lambda: any(a["name"] == name and a["online"] for a in self.manage("list")[1]["agents"])))
+        log, stop = serve(c, key, session, aid, {"prune": {"output": "freed 12 MB"}})
+        self.addCleanup(stop.set)
+        self.addCleanup(c.close)
+        return log
+
+    def test_the_old_update_window_is_the_first_job(self):
+        self.session()
+        r = self.api("jobs")[1]
+        first = r["jobs"][0]
+        self.assertEqual((first["id"], first["kind"], first["agent"]), ("00000001", "update", "*"))
+        self.assertEqual(r["kinds"], ["update", "prune", "host-update"])
+
+    def test_a_job_needs_what_its_kind_needs_from_the_host(self):
+        self.session()
+        self.prune_host(caps=("docker",))
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, agent="nobody")})[0], 400)
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, agent="*")})[0], 400)          # only update may name every host
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, kind="host-update")})[0], 400)  # Host is not ticked
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, at="3:30")})[0], 400)
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, days=[7])})[0], 400)
+        status, r, _ = self.api("job-save", {"job": self.job})
+        self.assertEqual(status, 200, r)
+        self.assertEqual((r["job"]["days"], len(r["job"]["id"])), ([2, 6], 8))
+
+    def test_a_job_is_replaced_by_its_id_and_the_update_job_stays(self):
+        self.session()
+        self.prune_host()
+        jid = self.api("job-save", {"job": self.job})[1]["job"]["id"]
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, id=jid, at="05:00", enabled=False)})[1]["job"]["enabled"], False)
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, id="ffffffff")})[0], 400)       # not a job
+        self.assertEqual(self.api("job-save", {"job": dict(self.job, id=jid, kind="host-update")})[0], 400)   # a kind does not change
+        self.assertEqual(len([j for j in self.api("jobs")[1]["jobs"] if j["id"] == jid]), 1)
+        self.assertEqual(self.api("job-delete", {"id": jid, "confirm": "nope"})[0], 400)
+        self.assertEqual(self.api("job-delete", {"id": jid, "confirm": "Prune images"})[0], 200)
+        self.assertEqual(self.api("job-delete", {"id": "00000001", "confirm": "Update containers"})[0], 400)
+
+    def test_run_now_sends_what_the_kind_does_and_keeps_the_result(self):
+        self.session()
+        log = self.prune_host()
+        jid = self.api("job-save", {"job": self.job})[1]["job"]["id"]
+        status, r, _ = self.api("job-run", {"id": jid})
+        self.assertEqual(status, 200, r)
+        self.assertEqual(r["job"]["last"]["ok"], True)
+        self.assertEqual(r["job"]["last"]["text"], "freed 12 MB")
+        self.assertEqual([(m["cap"], m["verb"], m["target"]) for m in log if m.get("type") == "command"], [("docker", "prune", "images")])
+
+    def test_only_the_admin_level_changes_jobs(self):
+        self.session()
+        self.prune_host()
+        read, act = Scopes.token(self, "read"), Scopes.token(self, "act")
+        for op, body in (("job-save", {"job": self.job}), ("job-delete", {"id": "00000001", "confirm": "x"}), ("job-run", {"id": "00000001"})):
+            for tok in (read, act):
+                self.assertEqual(self.api(op, body, ticket=False, origin=False, token=tok)[0], 403, op)
+        self.assertEqual(self.api("jobs", {}, ticket=False, origin=False, token=read)[0], 200)
+
+
 class Gate(Base):
     def audit_text(self):
         return audit_text(self.data)

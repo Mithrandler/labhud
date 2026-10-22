@@ -27,6 +27,7 @@ import time
 import agentproto as P
 import devices
 import gitsource
+import jobs
 import store
 import util
 import websock
@@ -252,16 +253,12 @@ def set_auto(aid, targets):
 
 
 def window():
-    w = store.load(WINDOW_KEY) if store.enabled() else None
-    return w if isinstance(w, dict) and "days" in w and "at" in w else dict(WINDOW_DEFAULT)
+    """The days and time of the update job (the scheduler's first job: jobs.py)."""
+    return jobs.update_window() if store.enabled() else dict(WINDOW_DEFAULT)
 
 
 def set_window(days, at):
-    if not (isinstance(days, list) and days and all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6 for d in days)
-            and isinstance(at, str) and HHMM.fullmatch(at)):
-        return False
-    store.save(WINDOW_KEY, {"days": sorted(set(days)), "at": at})
-    return True
+    return jobs.set_update_window(days, at) if store.enabled() else False
 
 
 def due(now=None, last=None):
@@ -289,12 +286,12 @@ def set_hold_critical(on):
     store.save(HOLD_KEY, bool(on))
 
 
-def run_auto(wait=COMMAND_WAIT):
-    """Updates, on every agent online, the auto containers whose registry has a newer image.
-    Returns [(agent name, container, ok, error)]."""
+def run_auto(wait=COMMAND_WAIT, only=None):
+    """Updates, on every agent online (or just the one called `only`), the auto containers whose registry
+    has a newer image. Returns [(agent name, container, ok, error)]."""
     out = []
     for aid, a in _load().items():
-        if aid not in _live:
+        if aid not in _live or (only and a["name"] != only):
             continue
         st = (_state.get(aid) or {}).get("containers") or {}
         for t in auto_targets(a):
@@ -365,20 +362,51 @@ def hook(token, now=None):
     return False, "forbidden", "", ""
 
 
+def run_job(job):
+    """(ok, text): one job of the scheduler, run now. What a kind may do is what the host allows."""
+    kind, name = job["kind"], job["agent"]
+    if kind == "update":
+        started = run_auto(only=None if name == jobs.ALL else name)
+        good = [f"{n}/{c}" for n, c, ok, _ in started if ok]
+        bad = [f"{n}/{c} ({e})" for n, c, ok, e in started if not ok]
+        text = f"{len(good)} started" + (f", {len(bad)} refused: {', '.join(bad)}" if bad else "") + (f" ({', '.join(good[:6])}{'…' if len(good) > 6 else ''})" if good else "")
+        return not bad, text if started else "nothing to update"
+    aid, a = by_name(name)
+    if not a:
+        return False, "no such host"
+    if aid not in _live:
+        return False, "the host is offline"
+    if kind == "prune":
+        ok, error, text = clean(aid, "images")
+        return ok, text if ok else error
+    if kind == "host-update":
+        ok, error = command(aid, "host", "update", "host")
+        return ok, "the update was started" if ok else error
+    return False, "unknown kind"
+
+
+def run_due(now=None):
+    """Runs the jobs that are due, one after the other; says what each did. Returns the jobs it ran."""
+    ran = []
+    for job in jobs.load():
+        if jobs.due(job, now):
+            ok, text = run_job(job)
+            jobs.record(job["id"], ok, text, now)
+            from api import audit
+            audit.write("scheduler", f"servers/job-{job['kind']}", job["agent"] if job["agent"] != jobs.ALL else "", ok=ok)
+            if job["kind"] != "update" or text != "nothing to update":
+                on_event(f"Scheduled {job['name']}: {text}", not ok)
+            ran.append(job)
+    return ran
+
+
 def scheduler(stop, every=30):
-    """One thread: opens the window once a day (its days), and says what it started."""
-    last = None
+    """One thread: runs the scheduler's jobs when they are due, and says what they did."""
     while not stop.wait(every):
-        today = due(last=last)
-        if not today:
-            continue
-        last = today
-        started = run_auto()
-        if started:
-            good = [f"{n}/{c}" for n, c, ok, _ in started if ok]
-            bad = [f"{n}/{c} ({e})" for n, c, ok, e in started if not ok]
-            on_event(f"Scheduled updates: {len(good)} started" + (f", {len(bad)} refused: {', '.join(bad)}" if bad else "")
-                     + (f" ({', '.join(good[:6])}{'…' if len(good) > 6 else ''})" if good else ""), bool(bad))
+        try:
+            run_due()
+        except Exception as e:   # a job must not end the thread
+            print(f"agents: scheduler: {e}", flush=True)
 
 
 def set_caps(aid, caps):
