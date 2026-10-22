@@ -235,8 +235,10 @@ instead (`init.py pair`, or ⚙ > Devices > Phones > Pair a phone) and then send
   `docker exec labhud python3 /app/init.py unpair "<name>"`. Its token stops working at once. A
   phone that only looks cannot remove the others; a phone signed in as the admin can (after the
   PIN, when there is one).
-- The app's wall mode loads the wall page with the token as a cookie: that page is a display like
-  any other, so it needs the admin signed in (and unlocked, with a PIN) for buttons and ⚙.
+- The app's wall mode loads the wall page with the token as a cookie: the page is the admin of a
+  phone signed in as the admin (no second sign-in) and, with a PIN, asks for it again after 2
+  minutes without use, like any display. A phone that only looks stays only looking. The PIN
+  guards a screen left open, not a stolen phone with the app unlocked.
 - **Pair a phone** and **Remove** are in ⚙, so they need the admin signed in.
 - Over HTTPS (the default) the QR code carries the certificate's fingerprint and the app accepts
   only that certificate. With `LABHUD_HTTP=on` the token crosses the network in clear text.

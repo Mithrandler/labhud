@@ -4,6 +4,7 @@ checks, nothing else changes without one."""
 
 import http.client
 import json
+import time
 import os
 import re
 import subprocess
@@ -334,6 +335,38 @@ class AdminPhone(DemoServer):
                             "devices.set_admin(devices.lookup(sys.argv[1])[0], admin.Admin().sign())", token],
                            cwd=ROOT, env=env, check=True, timeout=30)
         return token
+
+    def phone_get(self, path, token):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", path, headers={"Host": self.host, "Authorization": "Bearer " + token})
+        r = conn.getresponse()
+        out = r.status, json.loads(r.read() or b"{}")
+        conn.close()
+        return out
+
+    def test_account_sessions_for_the_admin_phone(self):
+        looking = self.paired("Looker", admin=False)
+        token = self.paired("Admin phone")
+        # a phone that only looks has no sessions to see or end
+        self.assertEqual(self.phone_get("/api/v1/sessions", looking)[0], 403)
+        self.assertEqual(self.call("/api/v1/sessions/revoke", {"id": "x"}, token=looking)[0], 403)
+        self.assertEqual(self.call("/api/v1/sessions/logout-all", {}, token=looking)[0], 403)
+        # the admin phone sees them, with its own name as current, and the admin's user in the rights
+        status, r = self.phone_get("/api/v1/sessions", token)
+        self.assertEqual((status, r.get("current")), (200, "phone:Admin phone"), r)
+        self.assertIn("sessions", r)
+        status, info = self.phone_get("/api/v1/info", token)
+        self.assertTrue(info["device_admin"])
+        self.assertTrue(info["user"])
+        self.assertIsNone(self.phone_get("/api/v1/info", looking)[1]["user"])
+        self.assertEqual(self.call("/api/v1/sessions/revoke", {"id": "nope"}, token=token)[0], 404)
+        self.assertEqual(self.call("/api/v1/unlock", {}, token=token)[1].get("user"), info["user"])
+        self.assertEqual(self.call("/api/v1/sessions/logout-all", {}, token=token)[0], 200)
+        # the browser tickets are gone with it; the phone stays the admin
+        self.assertEqual(self.call("/api/admin/check", page=True)[0], 403)
+        # a TOTP code works once: wait for the next one so the other tests have a ticket again
+        time.sleep(31 - int(time.time()) % 30)
+        type(self).ticket = signin.sign_in(self.port, self.host)
 
     def test_wall_mode_is_the_admin_of_its_phone(self):
         maint = "/api/maintenance/vm-pve-100"

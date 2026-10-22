@@ -86,9 +86,12 @@ paired this way is signed in as the admin already.
 
 | route | body | answer |
 |---|---|---|
-| `POST /api/v1/admin-login` | `{"user", "password", "code"}` | `{ok, device_admin, pin, unlocked}`; 403 with `wait` for a wrong sign-in |
+| `POST /api/v1/admin-login` | `{"user", "password", "code"}` | `{ok, device_admin, pin, unlocked, user}`; 403 with `wait` for a wrong sign-in |
 | `POST /api/v1/admin-logout` | `{}` | `{ok, device_admin: false, …}` |
-| `POST /api/v1/unlock` | `{"pin"}` | `{ok, ticket, idle}`: send the ticket as `X-Labhud-Unlock` with every button; `ticket` is null without a PIN |
+| `POST /api/v1/unlock` | `{"pin"}` | `{ok, ticket, idle, user}`: send the ticket as `X-Labhud-Unlock` with every button; `ticket` is null without a PIN |
+| `GET /api/v1/sessions` | – | `{ok, sessions, current, idle, phones}`: the admin's live sessions (no tickets) and the phones signed in as the admin; `current` is `phone:<this phone>`. Only a phone signed in as the admin and unlocked; 403 otherwise (a phone that only looks too) |
+| `POST /api/v1/sessions/revoke` | `{"id"}` | `{ok}`; 404 for an id that is gone. Same guard, audited |
+| `POST /api/v1/sessions/logout-all` | `{}` | `{ok}`: signs every browser session out. Same guard, audited |
 | `POST /api/v1/push` | `{"endpoint"}` | `{ok}`: this phone's UnifiedPush endpoint (https only; `""` forgets it). Any paired phone; 400 for an address that is not https |
 
 The sign-in belongs to the admin who signed in: a new admin (`init.py admin`) puts every phone

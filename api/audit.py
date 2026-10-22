@@ -45,7 +45,7 @@ LIMITS = {"who": 60, "action": 80, "target": 120, "ip": 64, "ua": 120}
 QUIET = frozenset({
     "setup/status", "setup/catalog", "setup/layout", "setup/text", "setup/scan-status", "setup/logs",
     "setup/inspect", "setup/alerts", "setup/secrets", "agents/list", "tokens/list", "display/icons",
-    "tokens/create", "tokens/revoke",   # these write their own line, with the token's name (api/tokens.py)
+    "v1/sessions", "tokens/create", "tokens/revoke",   # these write their own line, with the token's name (api/tokens.py)
 })
 
 _lock = threading.Lock()

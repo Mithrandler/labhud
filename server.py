@@ -1696,6 +1696,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._login_pair()
         if self.path in ("/api/v1/admin-login", "/api/v1/admin-logout", "/api/v1/unlock"):
             return self._app_admin(self.path.rsplit("/", 1)[1])
+        if self.path in ("/api/v1/sessions/revoke", "/api/v1/sessions/logout-all"):
+            body = self._small_json()
+            if body is None:
+                return self._json({"ok": False, "error": "forbidden"}, 403)
+            return self._app_sessions(self.path.rsplit("/", 1)[1], body)
         if self.path == "/api/v1/push":
             return self._app_push()
         ag = re.fullmatch(r"/api/agents/(list|code|caps|targets|remove|update|auto|autoupdate|window|hook|unhook)", self.path)
@@ -1813,6 +1818,8 @@ class Handler(BaseHTTPRequestHandler):
                                "notifications": notify.outbox(int(m.group(1)) if m else 0)})
         if path == "/api/v1/stream":
             return self._app_stream()
+        if path == "/api/v1/sessions":
+            return self._app_sessions("sessions", {})
         if path == "/api/v1/devices":   # ⚙ lists them; names and times, no secrets, but not for anyone
             if not (self._cli() or self._device()[1] == "bearer" or (ADMIN.is_on() and self._admin_ok())):
                 return self._json({"error": "forbidden"}, 403)
@@ -1824,8 +1831,9 @@ class Handler(BaseHTTPRequestHandler):
     def _app_rights(self):
         """What this app may do: device_admin (signed in as the admin), pin (a PIN is set, so it
         needs /api/v1/unlock before a button), unlocked (its ticket is live)."""
-        return {"device_admin": self._device_admin(), "pin": LOCK.is_on(),
-                "unlocked": self._device_admin() and self._unlocked()}
+        admin = self._device_admin()
+        return {"device_admin": admin, "pin": LOCK.is_on(), "unlocked": admin and self._unlocked(),
+                "user": ADMIN.user() if admin else None}
 
     def _app_admin(self, step):
         """The app with its token: admin-login {user, password, code} signs this phone in as the
@@ -1858,12 +1866,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self._device_admin():
             return self._json({"ok": False, "error": "sign in as the admin first"}, 403)
         if not LOCK.is_on():
-            return self._json({"ok": True, "ticket": None, "idle": LOCK.idle})
+            return self._json({"ok": True, "ticket": None, "idle": LOCK.idle, "user": ADMIN.user()})
         ticket, wait = LOCK.unlock(body.get("pin"))
         if not ticket:
             print(f"lock: wrong PIN from phone {name} at {self.client_address[0]}", flush=True)
             return self._json({"ok": False, "error": "wrong PIN", "wait": wait}, 403)
-        return self._json({"ok": True, "ticket": ticket, "idle": LOCK.idle})
+        return self._json({"ok": True, "ticket": ticket, "idle": LOCK.idle, "user": ADMIN.user()})
 
     def _app_push(self):
         """{endpoint}: this phone's UnifiedPush endpoint ("" forgets it), woken with no news in it
@@ -1883,7 +1891,8 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _app_rights_after(admin):
-        return {"device_admin": admin, "pin": LOCK.is_on(), "unlocked": admin and not LOCK.is_on()}
+        return {"device_admin": admin, "pin": LOCK.is_on(), "unlocked": admin and not LOCK.is_on(),
+                "user": ADMIN.user() if admin else None}
 
     def _small_json(self, limit=1024):
         try:
@@ -1990,6 +1999,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if step == "check":
             return self._json({"ok": True, "user": ADMIN.user(), "id": current, "idle": ADMIN.idle})
+        return self._sessions_step(step, body, current)
+
+    def _sessions_step(self, step, body, current):
+        """sessions / revoke {id} / logout-all, for the display's ⚙ and for the app (/api/v1/sessions):
+        one place; the caller has already been checked (and _may_manage wrote the audit line)."""
         if step == "sessions":
             return self._json({"ok": True, "sessions": ADMIN.sessions(), "current": current, "idle": ADMIN.idle,
                                "phones": [d for d in devices.listing(ADMIN.sign()) if d["admin"]]})
@@ -2002,6 +2016,14 @@ class Handler(BaseHTTPRequestHandler):
             print(f"admin: every session signed out from {self.client_address[0]}", flush=True)
             _log([("Admin signed out everywhere", False)])
             return self._json({"ok": True})
+        return self._json({"ok": False, "error": "forbidden"}, 403)
+
+    def _app_sessions(self, step, body):
+        """The app's Account: the admin's sessions, for a phone signed in as the admin and unlocked
+        (like every ⚙ action). A phone that only looks, or is locked, gets the one refusal."""
+        if self._device()[1] != "bearer" or not self._may_manage():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        return self._sessions_step(step, body, f"phone:{self._dev[0]}")
 
     def _login_pair(self):
         """{user, password, code, name} -> {token, name}: pairing from the app by signing in as the
