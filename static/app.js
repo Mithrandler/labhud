@@ -326,7 +326,8 @@ function update() {
   requestAnimationFrame(() => {
     deferred = false;
     dataVersion++;
-    for (const fn of updaters) fn();
+    // one updater that throws must not stop the others: the wall would stay at "—"
+    for (const fn of updaters) { try { fn(); } catch (e) { console.error("updater:", e); } }
     render_strip();
     render_inet();
     render_alerts();
@@ -2977,6 +2978,17 @@ function uptime_slices(values, n) {
   return out;
 }
 
+/** A week of uptime values as one share a day, oldest first: the mean of the slices up or down (0..1),
+    -1 for a day known only as off on purpose, null for a day nothing is known about. */
+function uptime_day_shares(values, days = 7) {
+  const out = [];
+  for (let d = 0; d < days; d++) {
+    const slice = values.slice(Math.floor(values.length * d / days), Math.floor(values.length * (d + 1) / days)).filter((v) => v !== null && v !== undefined);
+    const up = slice.filter((v) => v >= 0);
+    out.push(!slice.length ? null : !up.length ? -1 : up.reduce((a, v) => a + v, 0) / up.length);
+  }
+  return out;
+}
 function uptime_class(v) {
   return v === null ? "none" : v < 0 ? "off" : v >= 0.999 ? "up" : v >= 0.9 ? "part" : "down";
 }
@@ -3003,11 +3015,9 @@ function panel_uptime(body, c) {
   body.appendChild(head);
   if (uptimeRange === "7d") {   // one square a day, coloured by how much of that day it was up
     const days = el("div", "uptime-days");
-    const per = values.length / 7;
+    const shares = uptime_day_shares(values);
     for (let d = 0; d < 7; d++) {
-      const slice = values.slice(Math.floor(d * per), Math.floor((d + 1) * per)).filter((v) => v !== null && v !== undefined);
-      const up = slice.filter((v) => v >= 0);
-      const share = !slice.length ? null : !up.length ? -1 : up.reduce((a, v) => a + v, 0) / up.length;
+      const share = shares[d];
       const day = new Date(Date.now() - (6 - d) * 86400000);
       const cell = el("div", "uday " + uptime_class(share));
       cell.title = day_name(day.toISOString().slice(0, 10)) + (share === null ? " — not known" : share < 0 ? " — off" : ` — ${(share * 100).toFixed(share >= 0.999 ? 0 : 1)}%`);
