@@ -862,3 +862,29 @@ body.glance #bell, body.glance #account, body.glance #lock-btn { transform: scal
 .gtile.off { opacity: .6; }
 /* the actions in a tile's panel are for a finger at arm's length */
 body.glance #panel-actions button, body.glance #panel-actions a.open { min-height: 56px; font-size: 16px; padding: 0 20px; }
+
+
+/* ---- the panel as tabs: one short screen each, grids, no animation ---- */
+#panel, #panel * { transition: none !important; animation: none !important; }
+.ptabs { position: sticky; top: -8px; z-index: 1; display: flex; gap: 6px; padding: 8px 0; margin: -8px 0 8px; background: var(--bg); overflow-x: auto; scrollbar-width: none; }
+.ptabs::-webkit-scrollbar { display: none; }
+.ptab-b { appearance: none; flex: none; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--border); background: transparent;
+  color: var(--sub); font: 700 12px/1 var(--font); text-transform: uppercase; letter-spacing: .5px; }
+.ptab-b.on { background: var(--block); color: var(--title); border-color: var(--title); }
+.ptab[hidden] { display: none; }
+#panel-body .list.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+#panel-body .list.tiles .row { flex-direction: column; align-items: flex-start; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+#panel-body .list.tiles .row .n { white-space: normal; font-weight: 700; color: var(--text); }
+#panel-body .list.tiles .row .v { font-weight: 400; color: var(--muted); white-space: normal; }
+#panel-body .list.tiles .row.bad .v { color: var(--red); }
+#panel-body .list.tiles .row:nth-child(odd) { background: var(--card); }
+.uptime-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 6px 0 10px; }
+.uday { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 0; border-radius: 8px; background: var(--line); }
+.uday .dn { font-size: 10px; text-transform: uppercase; opacity: .8; }
+.uday .dp { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.uday.up { background: var(--green); color: #000; }
+.uday.part { background: var(--warn); color: #000; }
+.uday.down { background: var(--red); color: #fff; }
+.uday.off { background: var(--block); color: var(--muted); }
+.uday.none { background: var(--block); color: var(--muted); }
+#panel-actions button, #panel-actions a.open { padding: 16px 8px; font-size: 14px; }

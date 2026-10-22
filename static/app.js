@@ -2358,10 +2358,13 @@ function open_panel(c) {
 
 function close_panel() { panelCard = null; LOGS = {}; $("#panel").hidden = true; }
 
+/** Sections whose rows are small cards in a grid, 2-3 to a row, not a long list. */
+const GRID_SECTIONS = ["guests", "storage", "backup", "datastores", "gpus"];
+
 function section(body, title, rows) {
   if (!rows.length) return;
   body.appendChild(el("h3", null, title));
-  const l = el("div", "list");
+  const l = el("div", "list" + (GRID_SECTIONS.includes(String(title).toLowerCase()) && rows.length > 1 ? " tiles" : ""));
   for (const [n, v, bad] of rows) {
     const r = el("div", "row" + (bad ? " bad" : ""));
     r.appendChild(el("span", "n", String(n)));
@@ -2776,6 +2779,21 @@ function fill_panel() {
         : "stopped", !g.running]));
   }
 
+  // ---- Proxmox host: the last backup of each of its guests (the "backups" source) ----
+  if (c.panel && c.panel.startsWith("host:")) {
+    const bk = get("backups.nodes." + c.panel.slice("host:".length)) || {};
+    const now = Date.now() / 1000;
+    const rows = Object.entries(bk).map(([vmid, g]) => {
+      const name = `${g.name || vmid} (${vmid})`;
+      if (g.excluded) return [2, 0, [name, "excluded", false]];
+      if (typeof g.ts !== "number") return [0, -1e18, [name, "never", true]];
+      const age = Math.max(0, now - g.ts);
+      const bad = !g.ok || age > 8 * 86400;
+      return [bad ? 0 : 1, -age, [name, (g.ok ? "ok " : "FAILED ") + (age >= 86400 ? Math.floor(age / 86400) + "d" : Math.floor(age / 3600) + "h") + " ago" + (g.error ? ": " + g.error : ""), bad]];
+    }).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((x) => x[2]);
+    section(body, "backup", rows);
+  }
+
   // ---- the day's timeline: a tap on the clock ----
   if (c.panel === "today") {
     const midnight = new Date().setHours(0, 0, 0, 0) / 1000;
@@ -2879,7 +2897,53 @@ function fill_panel() {
 
   panel_charts(body, c);
   render_actions(c);
-  return body.children.length > afterStatus || links.length > 0 || !$("#panel-actions").hidden;
+  const shown = body.children.length > afterStatus || links.length > 0 || !$("#panel-actions").hidden;
+  if (shown) panel_tabs(body, c);
+  return shown;
+}
+
+let panelTab = "";       // the tab open in the panel, by its title: it survives the refresh of the numbers
+let panelTabCard = "";   // the card it was chosen on
+
+/** The panel as tabs: what comes before the first heading is "overview" (status, links, uptime), every
+    heading with what follows it a tab of its own. One short screen per tab, no scrolling down a long list;
+    a tab is shown and hidden, nothing moves. A panel with a single group stays as it is. */
+function panel_tabs(body, c) {
+  // short facts that belong together on the first screen: they keep their heading there
+  const OVERVIEW = ["status", "uptime", "host", "resources", "numbers", "container"];
+  const groups = [{ title: "overview", nodes: [] }];
+  let into = groups[0];
+  for (const n of [...body.childNodes]) {
+    const head = n.nodeName === "H3" ? n : n.classList && n.classList.contains("chart-head") ? n.querySelector("h3") : null;
+    if (head) {
+      const title = head.textContent;
+      if (OVERVIEW.includes(title.toLowerCase())) { into = groups[0]; into.nodes.push(n); continue; }
+      into = { title, nodes: n === head ? [] : [n] };
+      groups.push(into);
+    } else into.nodes.push(n);
+  }
+  const real = groups.filter((g, i) => i > 0 || g.nodes.length);
+  if (real.length < 2) return;
+  if (panelTabCard !== c.id || !real.some((g) => g.title === panelTab)) { panelTab = real[0].title; panelTabCard = c.id; }
+  const bar = el("div", "ptabs");
+  body.textContent = "";
+  body.appendChild(bar);
+  for (const g of real) {
+    const pane = el("div", "ptab");
+    pane.append(...g.nodes);
+    pane.hidden = g.title !== panelTab;
+    const b = el("button", "ptab-b" + (g.title === panelTab ? " on" : ""), g.title);
+    b.type = "button";
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      panelTab = g.title;
+      for (const x of bar.children) cls(x, "on", x === b);
+      for (const p of body.querySelectorAll(".ptab")) p.hidden = p !== pane;
+      touched();
+    });
+    bar.appendChild(b);
+    body.appendChild(pane);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2934,6 +2998,22 @@ function panel_uptime(body, c) {
   const cov = d.coverage && d.coverage[c.id];
   if (pct !== undefined && cov !== undefined && cov < 100) head.appendChild(el("span", "uptime-cov", `· ${Math.round(cov)}% covered`));
   body.appendChild(head);
+  if (uptimeRange === "7d") {   // one square a day, coloured by how much of that day it was up
+    const days = el("div", "uptime-days");
+    const per = values.length / 7;
+    for (let d = 0; d < 7; d++) {
+      const slice = values.slice(Math.floor(d * per), Math.floor((d + 1) * per)).filter((v) => v !== null && v !== undefined);
+      const up = slice.filter((v) => v >= 0);
+      const share = !slice.length ? null : !up.length ? -1 : up.reduce((a, v) => a + v, 0) / up.length;
+      const day = new Date(Date.now() - (6 - d) * 86400000);
+      const cell = el("div", "uday " + uptime_class(share));
+      cell.title = day_name(day.toISOString().slice(0, 10)) + (share === null ? " — not known" : share < 0 ? " — off" : ` — ${(share * 100).toFixed(share >= 0.999 ? 0 : 1)}%`);
+      cell.append(el("span", "dn", day_name(day.toISOString().slice(0, 10)).slice(0, 2)), el("span", "dp", share === null || share < 0 ? "—" : Math.round(share * 100) + "%"));
+      days.appendChild(cell);
+    }
+    body.appendChild(days);
+    return;
+  }
   const n = 48;
   const bar = el("div", "uptime-bar");
   const parts = uptime_slices(values, n);
