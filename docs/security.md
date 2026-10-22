@@ -264,6 +264,11 @@ rules than the rest:
   audited); files that look like secrets show nothing.
 - **Refusals are counted.** 8 in a minute from one address block it for 60 s, then longer each time.
 - **`[admin] servers_networks`** (a list of networks, optional): act and admin calls only from those addresses.
+- **Stacks** (compose files kept by the agent): reading or editing the files, restoring, down, the git source and its
+  webhook are admin level; redeploy and restart are `act`. Save has the host check the file (`compose config`) and never
+  deploys. The `.env` shows its values as `********` and they stay on the host. A webhook only syncs its own stack from
+  a source that needs no token (a private repository's token is used once, never kept). Ticking `stacks` is as strong as
+  ticking the Docker socket: a compose file can mount `/` or run privileged.
 - **Strict page**: no inline script or style, `frame-ancestors 'none'`, `no-referrer`, `no-store`.
 - **The audit log is chained**: each entry holds the hash of the previous one; Servers' *check* tells whether the chain
   holds. It does not show that the newest entries were removed or the whole log deleted: keep a copy elsewhere.

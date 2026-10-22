@@ -8,7 +8,7 @@ const LOCK_KEY = "labhud-unlock";    // the PIN's ticket (this tab only)
 const LOG_LINES = 1000;
 const $ = (id) => document.getElementById(id);
 const S = { hosts: [], host: null, tab: "overview", rows: [], filter: "", sheet: null, timer: 0 };
-const TABS = [["overview", "Overview", true], ["containers", "Containers", true], ["stacks", "Stacks", false],
+const TABS = [["overview", "Overview", true], ["containers", "Containers", true], ["stacks", "Stacks", true],
               ["images", "Images", true], ["volumes", "Volumes", true], ["networks", "Networks", true],
               ["vms", "VMs & LXC", false], ["host", "Host", false]];
 
@@ -167,6 +167,7 @@ async function draw_view() {
   if (!h) return;
   if (S.tab === "overview") return overview(v, h);
   if (S.tab === "containers") return containers(v, h);
+  if (S.tab === "stacks") return stacks(v);
   if (S.tab === "images") return objects(v, "images", images_view);
   if (S.tab === "volumes") return objects(v, "volumes", volumes_view);
   if (S.tab === "networks") return objects(v, "networks", networks_view);
@@ -587,6 +588,189 @@ function open_object(title, facts, names, why, remove, extra, untagged, more) {
   if (why) sh.appendChild(el("p", "muted", why + (why === "in use" ? ": remove what uses it first." : "")));
   if (untagged) sh.appendChild(el("p", "muted", "Untagged layer: removed by its id."));
   if (more) { const box = el("div"); sh.appendChild(box); more(box); }
+}
+
+// ---- stacks: a list, and a sheet with Compose / .env / History / Git (Validate, Save and Discard; Save never deploys) ----
+
+const NEW_COMPOSE = "services:\n  app:\n    image: nginx:stable\n    restart: unless-stopped\n";
+const when = (t) => new Date(t * 1000).toLocaleString();
+
+async function stacks(v) {
+  const bar = el("div", "bar"), said = el("div", "msg bad"), table = el("table");
+  bar.append(btn("Refresh", "", () => load()), btn("New stack…", "", async () => {
+    const a = await ask("A new stack", [["Name (lowercase letters, digits, - and _)", "text", "name"]], "Create");
+    if (!a) return;
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(a.values[0])) return notice("A name is lowercase letters, digits, - and _.");
+    open_stack({ name: a.values[0], services: 0, running: 0, source: null, hook: false }, true, load);
+  }));
+  v.append(bar, said, table);
+  async function load() {
+    const r = await call("stacks", { agent: S.host });
+    said.textContent = r.ok ? "" : r.error || "could not load";
+    table.textContent = "";
+    if (!r.ok) return;
+    if (!r.enabled) return table.appendChild(el("p", "muted", "Stacks is not ticked for this host: tick it in Settings > Hosts and agents."));
+    head_row(table, ["Stack", "Running", "Source"]);
+    for (const x of r.stacks) {
+      const tr = el("tr", "row");
+      tr.append(el("td", "", x.name), el("td", "muted", x.services ? x.running + " / " + x.services : "stopped"),
+        el("td", "muted", x.source ? "git" + (x.hook ? " · webhook" : "") : ""));
+      tr.addEventListener("click", () => open_stack(x, false, load));
+      table.appendChild(tr);
+    }
+    if (!r.stacks.length) table.appendChild(el("p", "muted", "No stack on this host yet."));
+  }
+  await load();
+}
+
+function open_stack(x, fresh, reload) {
+  close_sheet();
+  S.sheet = { alive: true, stream: null, term: null, gen: 0 };
+  const sh = show_sheet();
+  const ed = { compose: fresh ? NEW_COMPOSE : "", env: "", c0: fresh ? "" : null, e0: "", has_env: false, mask: "********", versions: [], loaded: fresh, tab: "compose", at: null };
+  const said = el("div", "msg");
+  const say = (t, bad) => { said.textContent = t; said.className = "msg" + (bad ? " bad" : ""); };
+  sh.append(el("h2", "", x.name), el("div", "muted", fresh ? "new stack: nothing is written until Save" : (x.services ? x.running + " / " + x.services + " running" : "stopped")));
+  const acts = el("div", "actions");
+  const run = async (verb, label) => {
+    say(label + "…");
+    const r = await call("stack-act", { agent: S.host, name: x.name, verb });
+    say(r.ok ? label + " done" : label + ": " + (r.error || "failed") + (r.output ? "\n" + r.output : ""), !r.ok);
+    reload();
+  };
+  const bRe = btn("Redeploy", "", () => run("redeploy", "Redeploy")), bRs = btn("Restart", "", () => run("restart", "Restart"));
+  const bDown = btn("Down", "danger", async () => {
+    if (!(await typed("Take " + x.name + " down? (volumes stay)", x.name, "Down"))) return;
+    say("Down…");
+    const r = await call("stack-down", { agent: S.host, name: x.name, confirm: x.name });
+    say(r.ok ? "Down done" : "Down: " + (r.error || "failed"), !r.ok);
+    reload();
+  });
+  if (fresh) { bRe.disabled = bRs.disabled = bDown.disabled = true; }
+  acts.append(bRe, bRs, bDown);
+  const tabs = el("div", "actions"), body = el("div");
+  sh.append(acts, tabs, body, said);
+  const dirty = () => ed.loaded && (ed.compose !== ed.c0 || ed.env !== ed.e0);
+  const draw_tabs = () => {
+    tabs.textContent = "";
+    for (const [id, label] of [["compose", "Compose"], ["env", ".env"], ["history", "History"], ["git", "Git"]]) {
+      const b = btn(label + (id === "compose" && ed.compose !== ed.c0 && ed.loaded || id === "env" && ed.env !== ed.e0 && ed.loaded ? " •" : ""), id === ed.tab ? "primary" : "", () => { keep(); ed.tab = id; draw_tabs(); draw(); });
+      b.disabled = fresh && (id === "history" || id === "git");
+      tabs.appendChild(b);
+    }
+  };
+  let area = null;
+  const keep = () => { if (area && (ed.tab === "env" || ed.tab === "compose")) ed[ed.tab] = area.value; };
+  async function load_files(version) {
+    const r = await call("stack-read", { agent: S.host, name: x.name, version });
+    if (!r.ok) return say(r.error || "could not read", true);
+    return r;
+  }
+  async function draw() {
+    body.textContent = "";
+    area = null;
+    if (!ed.loaded) {
+      const r = await load_files();
+      if (!r) return;
+      Object.assign(ed, { compose: r.compose, c0: r.compose, env: r.env, e0: r.env, has_env: r.has_env, mask: r.mask, versions: r.versions, loaded: true });
+      draw_tabs();
+    }
+    if (ed.tab === "compose" || ed.tab === "env") return editor();
+    if (ed.tab === "history") return history();
+    return git();
+  }
+  function editor() {
+    const isEnv = ed.tab === "env";
+    area = el("textarea", "editor");
+    area.value = isEnv ? ed.env : ed.compose;
+    area.spellcheck = false;
+    area.rows = 18;
+    area.addEventListener("input", () => { keep(); draw_tabs(); sync(); });
+    body.appendChild(area);
+    if (isEnv) body.appendChild(el("p", "muted", "Values stay on the host and show as " + ed.mask + ". Leave a line as it is to keep its value; type a new value to change it."));
+    const row = el("div", "actions");
+    const check = btn("Validate", "", async () => { keep(); say("Checking…"); const r = await call("stack-validate", { agent: S.host, name: x.name, compose: ed.compose, env: ed.env }); say(r.ok ? "The compose file is valid." : "✕ " + (r.error || "failed") + (r.output ? "\n" + r.output : ""), !r.ok); });
+    const save = btn("Save", "primary", async () => {
+      keep(); say("Checking and saving…");
+      const r = await call("stack-save", { agent: S.host, name: x.name, compose: ed.compose, env: ed.env });
+      if (!r.ok) return say("✕ " + (r.error || "failed") + (r.output ? "\n" + r.output : ""), true);
+      say("Saved. Redeploy to run it.");
+      fresh = false; bRe.disabled = bRs.disabled = bDown.disabled = false;
+      ed.loaded = false; ed.c0 = ed.compose; ed.e0 = ed.env;
+      reload();
+      const again = await load_files();
+      if (again) Object.assign(ed, { compose: again.compose, c0: again.compose, env: again.env, e0: again.env, versions: again.versions, loaded: true });
+      draw_tabs(); sync();
+    });
+    const discard = btn("Discard", "", () => { ed.compose = ed.c0; ed.env = ed.e0; area.value = isEnv ? ed.env : ed.compose; say(""); draw_tabs(); sync(); });
+    const sync = () => { save.disabled = discard.disabled = !dirty(); };
+    row.append(check, save, discard);
+    body.appendChild(row);
+    sync();
+  }
+  function history() {
+    body.appendChild(el("p", "muted", "Each save and deploy keeps the files it replaces (the last 10). Restore writes an older version back; it does not deploy."));
+    if (dirty()) body.appendChild(el("p", "warn-text", "You have unsaved changes: Save or Discard them before restoring."));
+    const t = el("table");
+    for (const id of ed.versions) {
+      const tr = el("tr");
+      const view = btn("View", "", async () => {
+        const r = await load_files(String(id));
+        if (!r) return;
+        pre.hidden = false; pre.textContent = r.compose + (r.has_env ? "\n# .env\n" + r.env : "");
+      });
+      const restore = btn("Restore", "", async () => {
+        if (dirty()) return say("Save or Discard your changes first.", true);
+        const r = await call("stack-restore", { agent: S.host, name: x.name, version: String(id) });
+        say(r.ok ? "Restored. Redeploy to run it." : "✕ " + (r.error || "failed"), !r.ok);
+        if (r.ok) { ed.loaded = false; draw(); reload(); }
+      });
+      const td = el("td"); td.append(view, document.createTextNode(" "), restore);
+      tr.append(el("td", "", when(id)), td);
+      t.appendChild(tr);
+    }
+    const pre = el("pre", "out"); pre.hidden = true;
+    body.append(ed.versions.length ? t : el("p", "muted", "No older version yet."), pre);
+  }
+  function git() {
+    const src = x.source || {};
+    const f = (label, name, val, ph) => { const i = el("input"); i.value = val || ""; i.placeholder = ph; i.name = name; const l = el("label", "", label); l.appendChild(i); body.appendChild(l); return i; };
+    body.appendChild(el("p", "muted", "The compose file can come from a repository. Sync pulls it, saves it (the .env stays) and redeploys. A token for a private repository is used once and never kept, so a webhook only works for a repository that needs none."));
+    const repo = f("Repository", "repo", src.repo, "https://git.example/owner/name");
+    const branch = f("Branch", "branch", src.branch || "main", "main");
+    const path = f("Path of the file", "path", src.path, "stacks/web/compose.yaml");
+    const row = el("div", "actions"), out = el("div");
+    const saveSrc = btn("Save source", "primary", async () => {
+      const r = await call("stack-source", { agent: S.host, name: x.name, repo: repo.value.trim(), branch: branch.value.trim(), path: path.value.trim() });
+      say(r.ok ? "Source saved." : "✕ " + (r.error || "failed"), !r.ok);
+      if (r.ok) { x.source = { repo: repo.value.trim(), branch: branch.value.trim() || "main", path: path.value.trim() }; reload(); draw(); }
+    });
+    const sync = btn("Sync now", "", async () => {
+      const a = await ask("Sync " + x.name + " from git", [["Token (only for a private repository; leave empty otherwise)", "password", "t"]], "Sync");
+      if (!a) return;
+      say("Syncing…");
+      const r = await call("stack-sync", { agent: S.host, name: x.name, token: a.values[0] || undefined });
+      say(r.ok ? "Synced and redeployed." : "✕ " + (r.error || "failed") + (r.output ? "\n" + r.output : ""), !r.ok);
+      ed.loaded = false; reload();
+    });
+    const forget = btn("Forget source", "danger", async () => {
+      const r = await call("stack-source", { agent: S.host, name: x.name, clear: true });
+      say(r.ok ? "Source and webhook removed." : "✕ " + (r.error || "failed"), !r.ok);
+      if (r.ok) { x.source = null; x.hook = false; reload(); draw(); }
+    });
+    const hook = btn(x.hook ? "New webhook URL" : "Make a webhook URL", "", async () => {
+      const r = await call("stack-hook", { agent: S.host, name: x.name });
+      if (!r.ok) return say("✕ " + (r.error || "failed"), true);
+      x.hook = true; reload();
+      out.textContent = "";
+      out.append(el("p", "muted", "Shown once. Call it with POST from your git host; it only syncs this stack, at most once in 30 s:"), el("pre", "out", location.origin + r.path));
+    });
+    saveSrc.disabled = false; sync.disabled = forget.disabled = !x.source; hook.disabled = !x.source;
+    row.append(saveSrc, sync, hook, forget);
+    body.append(row, out);
+  }
+  draw_tabs();
+  draw();
 }
 
 // ---- start ----

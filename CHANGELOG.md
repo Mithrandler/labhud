@@ -14,7 +14,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 - **Servers, second slice**: Images, Volumes and Networks per host, with what uses each (`used_by`), Remove (the name typed, checked against the host's own list, never forced), Pull, clean unused / untagged, a network's containers, and a volume's files read only once the admin opens that volume (folders, a file's first 64 KB; files that look like secrets show nothing). API: `POST /api/servers/{images,volumes,networks,network,rm,pull,clean,volume-access,volume-ls,volume-read}`; a command may carry `arg` (needs labhud-agent 0.1.2).
 
+- **Servers, third slice: Stacks.** A Stacks tab per host (`/servers` and the app): the compose projects the agent keeps, with what runs of each and where its file comes from; a stack opens a sheet with **Compose**, **.env** (values shown as `********`, they stay on the host), **History** (the last 10 versions, view and restore) and **Git** (repository, branch, path; Sync now; a webhook URL that syncs the stack). The editors have **Validate**, **Save** and **Discard**, never autosave; Save has the host run `compose config` and does not deploy; **Redeploy**, **Restart** and **Down** (the name typed) are separate. API: `POST /api/servers/{stacks,stack-read,stack-validate,stack-save,stack-restore,stack-act,stack-down,stack-source,stack-hook,stack-sync}`; `POST /api/hook/<token>` also takes a stack's webhook. Needs labhud-agent 0.1.2.
+
 ### Fixed
+- **Servers: a sheet no longer lets the page under it move**: on `/servers` the page does not scroll while a sheet is open, and every sheet (container, image, volume, network, stack) has an X in its corner (Esc closes it too); in the app the container list is not re-sorted under an open sheet and the sheets have the X beside Back.
 - **`GET /api/discover/list` answered 500** when the Proxmox data held an entry that is not a node (or a guest that is not an object): such entries are skipped.
 
 ## [0.1.14] - 2026-10-22

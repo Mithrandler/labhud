@@ -59,3 +59,6 @@ label { display: block; margin: 8px 0; }
 body.locked { overflow: hidden; }
 .sheet { overscroll-behavior: contain; }
 .sheet-x { position: sticky; top: 0; float: right; z-index: 1; width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 16px; }
+textarea.editor { width: 100%; font: 12px/1.45 ui-monospace, monospace; color: var(--text); background: #000; border: 1px solid var(--line); border-radius: 8px; padding: 10px; resize: vertical; white-space: pre; overflow: auto; }
+.sheet input { max-width: 100%; }
+.msg { white-space: pre-wrap; }
