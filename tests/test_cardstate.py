@@ -322,6 +322,29 @@ class NodeLink(unittest.TestCase):
         self.assertEqual(c["guest_counts"], {"vm": [1, 2], "lxc": [1, 1]})
 
 
+class BackupRows(unittest.TestCase):
+    NOW = 1_000_000
+    G = {"100": {"name": "docker", "ts": NOW - 3 * 3600, "ok": True},
+         "101": {"name": "ha", "ts": NOW - 2 * 86400, "ok": False, "error": "timeout"},
+         "102": {"name": "old", "ts": NOW - 9 * 86400, "ok": True},
+         "103": {"name": "iso", "excluded": True}, "104": {"name": "new"}}
+
+    def test_failed_and_old_first_excluded_last(self):
+        rows = cardstate.backup_rows(self.G, self.NOW)
+        self.assertEqual([r[0] for r in rows], ["new (104)", "old (102)", "ha (101)", "docker (100)", "iso (103)"])
+        self.assertEqual(rows[2][1:], ["FAILED 2d ago: timeout", True])
+        self.assertEqual(rows[3][1:], ["ok 3h ago", False])
+        self.assertEqual(rows[0][1:], ["never", True])
+
+    def test_no_data(self):
+        self.assertEqual(cardstate.backup_rows(None), [])
+
+    def test_host_panel_has_a_backup_section(self):
+        data = {"backups": {"nodes": {"pve": self.G}}, "proxmox": {"pve": {"guests": {}}}}
+        secs = cardstate.sections({"id": "h", "panel": "host:pve"}, data)
+        self.assertIn("backup", [s["title"] for s in secs])
+
+
 class GpuNumbers(unittest.TestCase):
     CARD = {"id": "h", "sensors": "temp.pve"}
 

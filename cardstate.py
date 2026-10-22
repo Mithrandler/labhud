@@ -645,6 +645,7 @@ def sections(c, data):
             i += 1
         _section(out, "GPUs", gpus)
         _section(out, "storage", [[x.get("name"), used_of(x.get("used"), x.get("total"), True)] for x in p.get("storage") or []])
+        _section(out, "backup", backup_rows(get(data, f"backups.nodes.{node}")))
         _section(out, "guests", [[f"{vmid} {g.get('name') or ''}",
                                   (f"CPU {pct(g.get('cpu'))} · RAM {pct(g.get('mem'))}"
                                    + (f" · Disk {used_of(g.get('disk_used'), g.get('disk_total'), False)}" if g.get("disk_used") is not None else ""))
@@ -763,6 +764,29 @@ def _guest(c, data):
     if _num(g.get("uptime")):
         out["uptime"] = int(g["uptime"])
     return out
+
+
+def backup_rows(guests, now=None):
+    """[name, "ok 5h ago" | "FAILED 2d ago: why" | "never" | "excluded", bad] per guest of a node, from
+    sources/proxmox.py's backups.nodes.<node>: the failed and the oldest first, the excluded last."""
+    if not isinstance(guests, dict):
+        return []
+    now = time.time() if now is None else now
+    rows = []
+    for vmid, g in guests.items():
+        if not isinstance(g, dict):
+            continue
+        name = f"{g.get('name') or vmid} ({vmid})"
+        if g.get("excluded"):
+            rows.append((2, 0, [name, "excluded", False]))
+        elif not _num(g.get("ts")):
+            rows.append((0, -1e18, [name, "never", True]))
+        else:
+            age = max(0, now - g["ts"])
+            text = f"{int(age // 86400)}d ago" if age >= 86400 else f"{int(age // 3600)}h ago"
+            bad = not g.get("ok") or age > 8 * 86400
+            rows.append((0 if bad else 1, -age, [name, ("ok " if g.get("ok") else "FAILED ") + text + (f": {g['error']}" if g.get("error") else ""), bad]))
+    return [r for _, _, r in sorted(rows, key=lambda x: x[:2])]
 
 
 def _node(c):

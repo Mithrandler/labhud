@@ -398,10 +398,24 @@ def logs(name):
     return "\n".join(out) + "\n"
 
 
+def backups():
+    """The last vzdump of each guest of the node (sources/proxmox.py backups.nodes): one is old, one failed."""
+    now = time.time()
+    per = {}
+    for i, (vmid, name, typ, running, ram, disk) in enumerate(GUESTS):
+        g = {"name": name, "ts": now - 3600 * (3 + i), "ok": True}
+        if i == 2:
+            g.update(ok=False, error="timeout")
+        if i == 4:
+            g["ts"] = now - 9 * 86400
+        per[str(vmid)] = g
+    return {"nodes": {"pve": per}}
+
+
 FETCHERS = {"proxmox": (proxmox, 10), "temp": (temp, 10), "synology": (synology, 30), "pbs": (pbs, 60),
             "opnsense": (opnsense, 5), "live": (live, 10), "qbt": (qbt, 5), "recent": (recent, 300),
             "sonarr": (sonarr, 300), "radarr": (radarr, 300), "jellyfin": (jellyfin, 30), "weather": (weather, 600),
-            "agents": (agents, 10)}
+            "agents": (agents, 10), "backups": (backups, 300)}
 
 
 def events():
