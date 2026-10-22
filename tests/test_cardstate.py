@@ -302,6 +302,26 @@ class GuestNumbers(unittest.TestCase):
         self.assertIsNone(cardstate._guest({"id": "x", "check": ("tcp", "h", 1)}, self.DATA))
 
 
+class NodeLink(unittest.TestCase):
+    DATA = {"proxmox": {"pve": {"guests": {"100": {"running": True, "type": "qemu"}, "101": {"running": False},
+                                            "200": {"running": True, "type": "lxc"}}}}}
+
+    def test_guest_and_host_name_the_same_node(self):
+        guest = {"id": "g", "check": ("proxmox", "pve", "100")}
+        host = {"id": "h", "panel": "host:pve"}
+        by_metrics = {"id": "h2", "metrics": [("proxmox.pve.cpu", "CPU", "percent")]}
+        self.assertEqual([cardstate._node(x) for x in (guest, host, by_metrics, {"id": "x"})], ["pve", "pve", "pve", ""])
+
+    def test_a_stopped_guest_still_has_its_node(self):
+        topo = {}
+        c = cardstate.card({"id": "g", "check": ("proxmox", "pve", "101")}, self.DATA, topo, False)
+        self.assertEqual(c["node"], "pve")
+
+    def test_host_counts_vms_and_lxcs(self):
+        c = cardstate.card({"id": "h", "panel": "host:pve"}, self.DATA, {}, False)
+        self.assertEqual(c["guest_counts"], {"vm": [1, 2], "lxc": [1, 1]})
+
+
 class GpuNumbers(unittest.TestCase):
     CARD = {"id": "h", "sensors": "temp.pve"}
 

@@ -765,6 +765,31 @@ def _guest(c, data):
     return out
 
 
+def _node(c):
+    """The Proxmox node a card belongs to: a guest's own, or the one a host card shows ("host:pve" panel
+    or its metrics under proxmox.pve.); "" for any other card. A guest's `node` links it to its host's."""
+    if is_guest(c):
+        return str(c["check"][1])
+    if (c.get("panel") or "").startswith("host:"):
+        return c["panel"][len("host:"):]
+    for m in c.get("metrics") or []:
+        parts = str(m[0]).split(".")
+        if len(parts) >= 3 and parts[0] == "proxmox" and parts[2] != "guests":
+            return parts[1]
+    return ""
+
+
+def _guest_counts(node, data):
+    """{"vm": [running, total], "lxc": [running, total]} of a node, for a host card's "4/5 VM"."""
+    out = {"vm": [0, 0], "lxc": [0, 0]}
+    for g in (get(data, f"proxmox.{node}.guests") or {}).values():
+        if isinstance(g, dict):
+            k = out["lxc" if g.get("type") == "lxc" else "vm"]
+            k[1] += 1
+            k[0] += 1 if g.get("running") else 0
+    return out
+
+
 def card(c, data, topology, actions_on, page=None, group=None, full=False, found=None):
     st = card_status(c, data)
     text, kind = note(c, data)
@@ -785,6 +810,10 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False, found
         out["guest"] = g
     if (g := _gpus(c, data)):
         out["gpus"] = g
+    if (node := _node(c)):
+        out["node"] = node
+        if not is_guest(c) and isinstance(get(data, f"proxmox.{node}.guests"), dict):
+            out["guest_counts"] = _guest_counts(node, data)
     if c.get("charts"):   # a host's agent sensors with a history (/api/v1/history), for its charts
         out["charts"] = [{"key": path, "label": label, "format": fmt} for path, label, fmt in c["charts"]
                          if path in trends and get(data, path) is not None]
