@@ -39,7 +39,7 @@
 
 :root {
   --topbar: 40px;
-  --strip: 32px;
+  --strip: 40px;
   /* design:colors (design/tokens.json, written by design/build.py: edit there) */
   --bg: #000000;
   --card: #121214;
@@ -390,8 +390,12 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 /* Off on schedule or by design (a NAS at night, a backup server, a desktop): grey, like the card's
    hollow dot. Red is kept for what should be on and is not. */
 .node .nm.scheduled { color: var(--muted); }
-.node .rt { font-size: 10px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.node .rt.flowing { color: var(--green); }
+.node .rt { display: flex; gap: .5em; font-size: 12px; font-weight: 600; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.node .rt.flowing .dn { color: var(--green); }
+.node .rt.flowing .up { color: var(--accent); }
+.node.wan { padding-right: var(--space-2); border-right: 1px solid var(--line); }
+.node.wan .nm { font-size: var(--text-sm); }
+.node.wan .rt { font-size: 15px; }
 
 /* the node a guest is on (several nodes in one group) is its spec line */
 
@@ -543,7 +547,7 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
   #brand { visibility: hidden; }
 }
 @media (orientation: portrait) {
-  :root { --topbar: 74px; --strip: 52px; }
+  :root { --topbar: 74px; --strip: 78px; }
 
   #topbar { grid-template-columns: 1fr auto 1fr; grid-template-rows: 40px 34px; row-gap: 0; }
   #weather { grid-row: 1; grid-column: 1; }
@@ -558,7 +562,10 @@ body.disconnected #stream-state { background: var(--red); animation: pulse 1.6s 
      the fifth onto the next row and three rows came out, cut by the strip's height. */
   #strip { flex-wrap: wrap; align-content: center; row-gap: 0; gap: 2px; }
   .node { width: 19%; }
-  #strip .nm, #strip .rt { font-size: 9px; }
+  #strip .nm { font-size: 10px; }
+  #strip .rt { font-size: 11px; gap: .3em; }
+  .node.wan { width: 100%; flex-direction: row; justify-content: center; align-items: baseline; gap: .6em; border-right: 0; padding: 0; }
+  .node.wan .rt { font-size: 14px; }
 }
 .panel-spec { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 
@@ -806,8 +813,19 @@ body.glance #bell, body.glance #account, body.glance #lock-btn { transform: scal
 .gtile:active { background: var(--block); }
 .gval { font: 800 calc(var(--t) * .38)/1 var(--font); font-variant-numeric: tabular-nums; color: var(--muted); max-width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: clip; }
-.gname { font: 600 clamp(11px, calc(var(--t) * .14), 26px)/1.1 var(--font); color: var(--sub); max-width: 100%;
+.ghead { display: flex; align-items: center; justify-content: center; gap: calc(var(--t) * .06); max-width: 100%; min-width: 0; }
+.ghead .ic { --icon-card: calc(var(--t) * .2); }
+.gname { min-width: 0; font: 600 clamp(11px, calc(var(--t) * .14), 26px)/1.1 var(--font); color: var(--sub); max-width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gtile.multi { justify-content: space-evenly; padding: 0 calc(var(--t) * .06); }
+.gtile .gval[hidden], .gtile .ggauges[hidden] { display: none; }
+.ggauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: calc(var(--t) * .03) calc(var(--t) * .08); width: 100%; }
+.ggauges[data-n="2"] { grid-template-columns: 1fr; }
+.gg { display: flex; justify-content: space-between; align-items: baseline; gap: .3em; min-width: 0;
+  font: 800 calc(var(--t) * .17)/1.1 var(--font); font-variant-numeric: tabular-nums; color: var(--green); }
+.gg .gk { font-weight: 600; font-size: .62em; color: var(--sub); letter-spacing: .03em; }
+.gg.warn { color: var(--warn); }
+.gg.crit { color: var(--red-text); }
 .gtile.ok { border-color: color-mix(in srgb, var(--green) 55%, transparent); }
 .gtile.ok .gval { color: var(--green); }
 .gtile.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--card)); }

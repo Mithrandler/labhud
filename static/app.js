@@ -1396,21 +1396,102 @@ function glance_value(c) {
   return "—";
 }
 
+/** What a metric's label measures, for the four numbers a tile shows: cpu, gpu, ram, disk (or ""). */
+function glance_kind(label) {
+  const l = String(label || "").trim().toLowerCase();
+  if (/^(cpu|processor)\b/.test(l)) return "cpu";
+  if (/^gpu\d*\b/.test(l)) return "gpu";
+  if (/^(ram|mem|memory)\b/.test(l)) return "ram";
+  if (/^(disk|storage|used|space)\b/.test(l)) return "disk";
+  return "";
+}
+
+const GLANCE_ORDER = ["cpu", "gpu", "ram", "disk"];
+const GLANCE_NAME = { cpu: "CPU", gpu: "GPU", ram: "RAM", disk: "Disk" };
+
+/** Which of a card's metrics are the main four, one per kind (the first of each), in the tile's order. */
+function glance_pick(metrics) {
+  const found = {};
+  (metrics || []).forEach((m, i) => { const k = glance_kind(m[1]); if (k && !(k in found)) found[k] = i; });
+  return GLANCE_ORDER.filter((k) => k in found).map((k) => ({ kind: k, index: found[k] }));
+}
+
+/** A percentage from a metric value: a percent as it is, a [used, total] pair as its share. */
+function glance_percent(v, fmt) {
+  if (fmt === "used_of") return Array.isArray(v) && v[1] ? Math.round(100 * v[0] / v[1]) : null;
+  return typeof v === "number" ? Math.round(v) : null;
+}
+
+/** CPU, GPU, RAM and storage of a card as [{kind, text, sev}]: from its metrics, a Proxmox guest's own
+    numbers, and (an agent's sensors card without a GPU metric) the agent's GPU load when it reports one. */
+function glance_gauges(c) {
+  const out = [];
+  const add = (kind, v, fmt, path) => {
+    const pc = glance_percent(v, fmt);
+    out.push({ kind, text: pc == null ? "—" : pc + "%", sev: pc == null ? "" : severity(path, "percent", pc) });
+  };
+  if (c.metrics && c.metrics.length) {
+    for (const { kind, index } of glance_pick(c.metrics)) {
+      const [path, , fmt] = c.metrics[index];
+      add(kind, get(path), fmt, path);
+    }
+    const sensors = c.metrics.map((m) => /^(.*\.sensors)\.(cpu|mem|disk)$/.exec(m[0])).find(Boolean);
+    if (sensors && !out.some((g) => g.kind === "gpu")) {
+      const path = sensors[1] + ".gpu0_util";
+      if (get(path) != null) add("gpu", get(path), "percent", path);
+    }
+  } else if (is_guest(c)) {
+    const g = get(`proxmox.${c.check[1]}.guests.${c.check[2]}`);
+    if (g && g.running) {
+      const base = `proxmox.${c.check[1]}.guests.${c.check[2]}`;
+      add("cpu", g.cpu, "percent", base + ".cpu");
+      add("ram", g.mem, "percent", base + ".mem");
+      if (g.disk_used != null && g.disk_total) add("disk", [g.disk_used, g.disk_total], "used_of", base + ".disk");
+    }
+  }
+  return GLANCE_ORDER.map((k) => out.find((g) => g.kind === k)).filter(Boolean);
+}
+
 /** The cards a glance tile can say something about. A clock, a note or a frame says nothing in one number. */
 function glance_card(c) {
   return !!(c.check || (c.metrics && c.metrics.length));
 }
 
+/** The icon a tile falls back to when the card names none: what kind of machine it is (icons.js). */
+function glance_fallback(c) {
+  const by = { proxmox: "server", nas: "nas", vm: "vm", pc: "pc", docker: "container" };
+  return by[c.type] || (is_guest(c) ? "vm" : "app");
+}
+
 function glance_tile(c) {
   const t = el("div", "gtile");
   t.dataset.id = c.id;
-  const name = el("span", "gname", c.name);
+  const head = el("div", "ghead");
+  head.append(card_icon(c.icon, glance_fallback(c)), el("span", "gname", c.name));
   const val = el("span", "gval");
-  t.append(name, val);
+  const gauges = el("div", "ggauges");
+  t.append(head, val, gauges);
+  let shown = "";
   updaters.push(() => {
-    put(val, glance_value(c));
     const s = glance_state(c);
     for (const k of ["ok", "warn", "bad", "off", "none"]) cls(t, k, s === k);
+    // two or more of CPU / GPU / RAM / storage: those instead of the one big number (unless it is down or off)
+    const gs = s === "bad" && card_status(c) === false || s === "off" ? [] : glance_gauges(c);
+    const many = gs.length >= 2;
+    cls(t, "multi", many);
+    val.hidden = many;
+    gauges.hidden = !many;
+    if (!many) { put(val, glance_value(c)); shown = ""; return; }
+    const sign = gs.map((g) => g.kind + g.text + g.sev).join("|");
+    if (sign === shown) return;
+    shown = sign;
+    gauges.textContent = "";
+    gauges.dataset.n = gs.length;
+    for (const g of gs) {
+      const row = el("span", "gg" + (g.sev ? " " + g.sev : ""));
+      row.append(el("span", "gk", GLANCE_NAME[g.kind]), el("span", "gn", g.text));
+      gauges.appendChild(row);
+    }
   });
   t.addEventListener("click", () => {
     touched();
@@ -1748,10 +1829,14 @@ function build_strip() {
   stripNodes = {};
   for (const [code, info] of Object.entries(CFG.strip)) {
     const n = el("div", "node");
-    const nm = el("div", "nm", code), rt = el("div", "rt", "—");
+    // the one that reads the WAN is the internet: named so, first, and a size bigger
+    const nm = el("div", "nm", info.wan ? "INTERNET" : code), rt = el("div", "rt");
+    const dn = el("span", "dn"), up = el("span", "up");
+    rt.append(dn, up);
     n.appendChild(nm); n.appendChild(rt);
+    if (info.wan) { n.classList.add("wan"); n.style.order = "-1"; }
     b.appendChild(n);
-    stripNodes[code] = { nm, rt, info };
+    stripNodes[code] = { nm, rt, dn, up, info };
   }
 }
 
@@ -1767,7 +1852,9 @@ function render_strip() {
     let dn = null, up = null;
     if (x.info.wan) { dn = get("opnsense.wan_dn"); up = get("opnsense.wan_up"); }
     else if (x.info.ip && perIp[x.info.ip]) { dn = perIp[x.info.ip].dn; up = perIp[x.info.ip].up; }
-    put(x.rt, dn == null && up == null ? "—" : "↓" + rate(dn) + " ↑" + rate(up));
+    const none = dn == null && up == null;
+    put(x.dn, none ? "—" : "↓" + rate(dn));
+    put(x.up, none ? "" : "↑" + rate(up));
     // Green only when something actually flows: a permanent colour would say nothing.
     cls(x.rt, "flowing", (dn || 0) + (up || 0) > 64 * 1024);
   }
