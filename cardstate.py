@@ -734,6 +734,37 @@ def _metric(path, label, fmt, data, trends):
     return out
 
 
+def _gpus(c, data):
+    """A host's graphics cards from its sensors (agent): [{util, mem, temp}], load and video memory in
+    percent, the temperature in celsius; what a card does not know is left out. Empty without a GPU."""
+    t = (get(data, c["sensors"]) if c.get("sensors") else None) or {}
+    out, i = [], 0
+    while isinstance(t, dict) and t.get(f"gpu{i}_util") is not None:
+        g = {"util": t[f"gpu{i}_util"]}
+        for k in ("mem", "temp"):
+            if _num(t.get(f"gpu{i}_{k}")):
+                g[k] = t[f"gpu{i}_{k}"]
+        out.append(g)
+        i += 1
+    return out
+
+
+def _guest(c, data):
+    """A running Proxmox guest's numbers for the app's bars (the card itself has no metrics):
+    CPU, RAM and disk in percent (None when not known), the uptime in seconds, its node and id."""
+    if not is_guest(c):
+        return None
+    g = get(data, f"proxmox.{c['check'][1]}.guests.{c['check'][2]}")
+    if not isinstance(g, dict) or not g.get("running"):
+        return None
+    used, total = g.get("disk_used"), g.get("disk_total")
+    disk = round(100 * used / total, 1) if _num(used) and _num(total) and total else None
+    out = {"cpu": g.get("cpu"), "mem": g.get("mem"), "disk": disk, "node": c["check"][1], "vmid": str(c["check"][2])}
+    if _num(g.get("uptime")):
+        out["uptime"] = int(g["uptime"])
+    return out
+
+
 def card(c, data, topology, actions_on, page=None, group=None, full=False, found=None):
     st = card_status(c, data)
     text, kind = note(c, data)
@@ -750,6 +781,10 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False, found
     for k in ("icon", "size"):
         if c.get(k):
             out[k] = c[k]
+    if (g := _guest(c, data)):
+        out["guest"] = g
+    if (g := _gpus(c, data)):
+        out["gpus"] = g
     if c.get("charts"):   # a host's agent sensors with a history (/api/v1/history), for its charts
         out["charts"] = [{"key": path, "label": label, "format": fmt} for path, label, fmt in c["charts"]
                          if path in trends and get(data, path) is not None]
@@ -846,6 +881,15 @@ def games(topology, data, actions_on=False, full=False):
     return out
 
 
+def _internet(data):
+    """The router's WAN rates in bytes per second, for the app's top bar; nothing when no router reports them."""
+    o = data.get("opnsense") if isinstance(data.get("opnsense"), dict) else {}
+    dn, up = o.get("wan_dn"), o.get("wan_up")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (dn, up)):
+        return {}
+    return {"internet": {"dn": dn, "up": up}}
+
+
 def state(topology, data, actions_on=False, full=False, found=None, role=None):
     """Everything an app shows: pages with their cards, the problems first, the alerts. `found`:
     {agent name: what it found} (agents.listing()), for each card's `type`. `role` (viewer /
@@ -909,5 +953,6 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
             "containers": boxes,
             "bookmarks": [{"group": b["group"], "name": b["name"], "url": b["url"]} for b in topology.get("bookmarks") or []],
             "search": (topology.get("search") or {}).get("url") or "",
+            **_internet(data),
             **({"role": role} if role else {}),
             **({"view": topology["role_views"][role]} if role in (topology.get("role_views") or {}) else {})}

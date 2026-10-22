@@ -268,3 +268,47 @@ class RowAndPageIcons(unittest.TestCase):
         pages = cardstate.state(cfg, {})["pages"]
         self.assertEqual(pages[0]["icon"], "proxmox")
         self.assertNotIn("icon", pages[1])
+
+
+class InternetRates(unittest.TestCase):
+    CFG = {"pages": [], "cards": {}}
+
+    def test_wan_rates_in_state(self):
+        st = cardstate.state(self.CFG, {"opnsense": {"wan_dn": 1500.0, "wan_up": 20}})
+        self.assertEqual(st["internet"], {"dn": 1500.0, "up": 20})
+
+    def test_none_without_a_router(self):
+        self.assertNotIn("internet", cardstate.state(self.CFG, {}))
+        self.assertNotIn("internet", cardstate.state(self.CFG, {"opnsense": {"wan_dn": None, "wan_up": 3}}))
+
+
+class GuestNumbers(unittest.TestCase):
+    CARD = {"id": "vm-pve-100", "name": "docker", "check": ("proxmox", "pve", "100")}
+    DATA = {"proxmox": {"pve": {"guests": {"100": {"running": True, "cpu": 12.5, "mem": 40, "uptime": 90061,
+                                                    "disk_used": 2 * 1024 ** 3, "disk_total": 8 * 1024 ** 3}}}}}
+
+    def test_running_guest(self):
+        g = cardstate._guest(self.CARD, self.DATA)
+        self.assertEqual((g["cpu"], g["mem"], g["disk"], g["uptime"], g["node"], g["vmid"]), (12.5, 40, 25.0, 90061, "pve", "100"))
+
+    def test_vmid_is_text_even_when_the_config_has_a_number(self):
+        card = dict(self.CARD, check=("proxmox", "pve", 100))
+        self.assertEqual(cardstate._guest(card, self.DATA)["vmid"], "100")
+
+    def test_stopped_or_unknown_guest(self):
+        data = {"proxmox": {"pve": {"guests": {"100": {"running": False}}}}}
+        self.assertIsNone(cardstate._guest(self.CARD, data))
+        self.assertIsNone(cardstate._guest(self.CARD, {}))
+        self.assertIsNone(cardstate._guest({"id": "x", "check": ("tcp", "h", 1)}, self.DATA))
+
+
+class GpuNumbers(unittest.TestCase):
+    CARD = {"id": "h", "sensors": "temp.pve"}
+
+    def test_gpus_of_a_host(self):
+        data = {"temp": {"pve": {"gpu0_util": 20.5, "gpu0_mem": 30, "gpu0_temp": 46, "gpu1_util": 1}}}
+        self.assertEqual(cardstate._gpus(self.CARD, data), [{"util": 20.5, "mem": 30, "temp": 46}, {"util": 1}])
+
+    def test_no_gpu(self):
+        self.assertEqual(cardstate._gpus(self.CARD, {"temp": {"pve": {"cpu_temp": 50}}}), [])
+        self.assertEqual(cardstate._gpus({"id": "x"}, {}), [])

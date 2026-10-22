@@ -21,7 +21,7 @@ const PAUSE = 60000;    // how long the rotation holds after a touch
 // ?view=list: the phone in your hand, not the wall. One scrolling list, problems first, links out.
 const LIST_VIEW = new URLSearchParams(location.search).get("view") === "list";
 // ?glance=1: the wall seen from across a room (the app's Wall mode sets it): one big number per card,
-// the group's count in its title, the details in the panel a tap opens. See mount_glance.
+// the group's title coloured by its worst card, the details in the panel a tap opens. See mount_glance.
 const GLANCE = !LIST_VIEW && new URLSearchParams(location.search).get("glance") === "1";
 
 let CFG = null;           // the topology, from /api/config
@@ -328,6 +328,7 @@ function update() {
     dataVersion++;
     for (const fn of updaters) fn();
     render_strip();
+    render_inet();
     render_alerts();
     render_weather();
     mark_menu_alerts();
@@ -621,7 +622,6 @@ function make_section(title, cards) {
   h.append(dot, el("span", "t", title), el("span", "rule"), count);
   const grid = el("div", "grid");
   sec.append(h, grid);
-  const checked = cards.filter((c) => c.check);
   updaters.push(() => {
     let bad = false, known = false, up = 0, quiet = 0;
     for (const c of cards) {
@@ -1356,7 +1356,7 @@ function mount_list() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The glance view (?glance=1): a tile per card with one big number, the group's count in its title
+// The glance view (?glance=1): a tile per card with one big number, the group's title coloured by its worst card
 // ---------------------------------------------------------------------------------------------
 
 /** How a group is doing, from its cards: the worst of them, for the colour of its title. */
@@ -1504,27 +1504,19 @@ function glance_tile(c) {
   return t;
 }
 
-/** The group's title with its count ("PROXMOX 7/8") and the colour of its worst card. */
+/** The group's title, in the colour of its worst card. */
 function glance_section(title, cards) {
   const sec = el("section", "gsec");
   const h = el("h2", "gtitle");
   const label = el("span", "t", title);
-  const count = el("span", "n");
-  h.append(label, count);
+  h.append(label);
   const grid = el("div", "ggrid");
   sec.append(h, grid);
   for (const c of cards) grid.appendChild(glance_tile(c));
-  const checked = cards.filter((c) => c.check);
   updaters.push(() => {
-    let up = 0, quiet = 0, worst = "none";
+    let worst = "none";
     const rank = { none: 0, off: 0, ok: 1, warn: 2, bad: 3 };
     for (const c of cards) { const s = glance_state(c); if (rank[s] > rank[worst]) worst = s; }
-    for (const c of checked) {
-      const st = card_status(c);
-      if (st === true) up++;
-      else if (quiet_off(st)) quiet++;
-    }
-    put(count, checked.length > 1 ? `${up}/${checked.length - quiet}` : "");
     for (const k of ["ok", "warn", "bad", "none"]) cls(h, k, worst === k || (worst === "off" && k === "none"));
   });
   return { sec, grid };
@@ -1564,12 +1556,15 @@ function fit_glance() {
   const sign = `${W}x${H}|${pageSections.map((s) => s.querySelectorAll(".gtile").length).join(",")}`;
   if (sign === layoutSign) return;
   const gap = 8;
-  for (let t = Math.min(H * 0.6, W * 0.5, 220); ; t *= 0.93) {
-    const cols = Math.max(1, Math.floor((W + gap) / (t * 1.4 + gap)));
+  // portrait: always two tiles a row, sharing the whole width, so no column is left empty at the right
+  const portrait = W < H;
+  cls(pageGrid, "gp2", portrait);
+  for (let t = Math.min(H * 0.6, portrait ? 220 : W * 0.5, 220); ; t *= 0.93) {
+    const cols = portrait ? 2 : Math.max(1, Math.floor((W + gap) / (t * 1.4 + gap)));
     pageGrid.style.setProperty("--t", t.toFixed(1) + "px");
     for (const s of pageSections) {
       const n = s.querySelectorAll(".gtile").length || 1;
-      s.style.setProperty("--c", Math.min(n, cols));
+      s.style.setProperty("--c", portrait ? 2 : Math.min(n, cols));
     }
     if (t < 56 || (pageGrid.scrollHeight <= H + 1 && pageGrid.scrollWidth <= W + 1)) break;
   }
@@ -1861,6 +1856,17 @@ function render_strip() {
     // Green only when something actually flows: a permanent colour would say nothing.
     cls(x.rt, "flowing", (dn || 0) + (up || 0) > 64 * 1024);
   }
+}
+
+/** The glance view hides the strip, so the internet's rates go beside the clock (#inet, glance only). */
+function render_inet() {
+  const b = $("#inet");
+  if (!GLANCE || !b) return;
+  const dn = get("opnsense.wan_dn"), up = get("opnsense.wan_up");
+  b.hidden = dn == null && up == null;
+  put(b.querySelector(".dn"), "↓" + rate(dn));
+  put(b.querySelector(".up"), "↑" + rate(up));
+  cls(b, "flowing", (dn || 0) + (up || 0) > 64 * 1024);
 }
 
 /** iftop on the router's LAN: IP -> {dn, up}. What only crosses the switch never gets here. */

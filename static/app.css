@@ -787,6 +787,12 @@ body.glance { --topbar: 56px; --strip: 0px; }
 body.glance #strip, body.glance #brand { display: none; }
 body.glance #clock .time { font-size: 34px; letter-spacing: 0; }
 body.glance #clock .date { font-size: 13px; }
+#inet { display: none; }
+body.glance #topbar { grid-template-columns: auto auto 1fr auto; }
+body.glance #inet { display: flex; align-items: baseline; gap: 12px; white-space: nowrap; font-weight: 800; font-size: 26px; }
+body.glance #inet[hidden] { display: none; }
+body.glance #inet .k { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
+body.glance #inet.flowing { color: var(--ok, #3ecf8e); }
 body.glance #weather { font-size: 15px; gap: 8px; }
 body.glance #weather .ic { font-size: 28px; }
 body.glance #weather .t { font-size: 28px; }
@@ -794,7 +800,12 @@ body.glance #weather .city, body.glance #search-btn { display: none; }
 body.glance #bell, body.glance #account, body.glance #lock-btn { transform: scale(1.35); margin: 0 6px; }
 @media (orientation: portrait) {
   body.glance { --topbar: 96px; }
-  body.glance #topbar { grid-template-rows: 56px 40px; }
+  body.glance #topbar { grid-template-rows: 56px 40px; grid-template-columns: 1fr auto; }
+  body.glance #weather, body.glance #clock { grid-row: 1; }
+  body.glance #weather { grid-column: 1; }
+  body.glance #clock { grid-column: 2; }
+  body.glance #menu { grid-row: 2; grid-column: 1; }
+  body.glance #inet { grid-row: 2; grid-column: 2; font-size: 22px; }
   body.glance #clock .time { font-size: 30px; }
   body.glance #brand { display: none; }
 }
@@ -805,8 +816,9 @@ body.glance #bell, body.glance #account, body.glance #lock-btn { transform: scal
 .gtitle.ok { color: var(--green); }
 .gtitle.warn { color: var(--warn); }
 .gtitle.bad { color: var(--red); }
-.gtitle .n { font-variant-numeric: tabular-nums; }
 .ggrid { display: grid; grid-template-columns: repeat(var(--c, 3), calc(var(--t) * 1.4)); grid-auto-rows: var(--t); gap: 8px; }
+.gp2 .gsec { flex: 1 1 100%; }
+.gp2 .ggrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .gtile { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: calc(var(--t) * .04);
   min-width: 0; padding: 0 6px; border-radius: var(--radius-card); background: var(--card); border: 2px solid var(--line);
   cursor: pointer; -webkit-tap-highlight-color: transparent; }
