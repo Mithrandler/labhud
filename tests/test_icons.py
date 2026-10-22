@@ -169,7 +169,7 @@ class IconFor(unittest.TestCase):
 
     def test_game_servers_always_get_an_icon(self):
         for game, name, expected in (("Minecraft", "mc", "minecraft"), ("Rust", "Carbon", "rust"),
-                                     ("Valheim Vanilla", "Pykeron Valheim World", "valheim"),
+                                     ("Valheim Vanilla", "Demo Valheim World", "valheim"),
                                      ("Counter-Strike 1.6", "Zombie Plague", "counter-strike"), ("", "CS2 Deathmatch", "counter-strike"),
                                      ("Palworld", "pal", "palworld"), ("Terraria", "t", "terraria"), ("7 Days to Die", "", "7-days-to-die"),
                                      ("Factorio", "f", "factorio"), ("Some Steam Game", "gta", "steam"),

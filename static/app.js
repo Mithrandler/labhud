@@ -2461,7 +2461,7 @@ function agent_containers(body, c) {
     .sort((a, b) => (a.project || "\uffff").localeCompare(b.project || "\uffff"));
   if (!rows.length) return;
   body.appendChild(el("h3", null, `docker containers (${rows.filter((r) => r.up).length}/${rows.length})`));
-  const l = el("div", "list");
+  const l = el("div", "list boxes");   // small cards, 2-3 to a row; a stack's line and an opened box span the row
   const stacks = new Set(rows.map((x) => x.project)).size > 1 || rows.some((x) => x.project);
   let shownStack = null;
   for (const x of rows) {
@@ -2469,7 +2469,7 @@ function agent_containers(body, c) {
       shownStack = x.project;
       l.appendChild(stack_row(rows.filter((y) => y.project === x.project), x.project));
     }
-    const r = el("div", "row" + (x.up ? "" : " bad"));
+    const r = el("div", "row cbox" + (x.up ? "" : " bad"));
     const nm = el("span", "n");
     nm.append(card_icon(image_icon((all[x.name] || {}).image), "docker"), document.createTextNode(x.name));
     r.appendChild(nm);

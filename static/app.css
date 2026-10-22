@@ -903,3 +903,13 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .ggauges .gg .gn { position: absolute; top: 0; left: 0; width: 100%; height: calc(var(--t) * var(--g)); display: flex; align-items: center; justify-content: center;
   font-size: calc(var(--t) * var(--g) * .25); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .ggauges .gg .gk { font-size: calc(var(--t) * .075); color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+
+/* a guest's containers in the panel: small cards in a grid, their buttons under the name */
+#panel-body .list.boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+#panel-body .list.boxes > :not(.cbox) { grid-column: 1 / -1; }
+#panel-body .list.boxes .row.cbox { flex-direction: column; align-items: flex-start; gap: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+#panel-body .list.boxes .row.cbox:nth-child(odd) { background: var(--card); }
+#panel-body .list.boxes .row.cbox.bad { border-color: var(--red); }
+#panel-body .list.boxes .row.cbox .n { white-space: normal; font-weight: 700; color: var(--text); }
+#panel-body .list.boxes .row.cbox .v { white-space: normal; font-weight: 400; color: var(--muted); }
+#panel-body .list.boxes .row.cbox .row-actions { flex-basis: auto; flex-wrap: wrap; margin-left: 0; margin-top: 2px; }

@@ -6,6 +6,12 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-10-22
+
+### Changed
+
+- A guest's containers in the wall's panel are small cards in a grid (2-3 to a row) with their buttons under the name, a stack's line and an opened box spanning the row.
+
 ## [0.1.12] - 2026-10-22
 
 Needs nothing new from labhud-agent (0.1.1). App 0.1.23 reads `node` and `guest_counts`.
@@ -760,7 +766,8 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/Mithrandler/labhud/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/Mithrandler/labhud/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/Mithrandler/labhud/compare/v0.1.1...v0.1.11
 [0.1.1]: https://github.com/Mithrandler/labhud/compare/v0.1.0...v0.1.1
