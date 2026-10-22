@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 const S = { hosts: [], host: null, tab: "overview", rows: [], filter: "", sheet: null, timer: 0 };
 const TABS = [["overview", "Overview", true], ["containers", "Containers", true], ["stacks", "Stacks", true],
               ["images", "Images", true], ["volumes", "Volumes", true], ["networks", "Networks", true],
-              ["vms", "VMs & LXC", "pve"], ["host", "Host", false]];
+              ["vms", "VMs & LXC", "pve"], ["host", "Host", true]];
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -169,6 +169,7 @@ async function draw_view() {
   if (S.tab === "containers") return containers(v, h);
   if (S.tab === "stacks") return stacks(v);
   if (S.tab === "vms") return guests(v);
+  if (S.tab === "host") return host_tab(v);
   if (S.tab === "images") return objects(v, "images", images_view);
   if (S.tab === "volumes") return objects(v, "volumes", volumes_view);
   if (S.tab === "networks") return objects(v, "networks", networks_view);
@@ -941,3 +942,102 @@ function open_stack(x, fresh, reload) {
   await load_hosts();
   setInterval(() => { if (!S.sheet) load_hosts(); }, 30000);
 })();
+
+// ---- Host: the system, its systemd units, and what was done to it ----
+
+async function host_tab(v) {
+  const said = el("div", "msg bad"), top = el("div"), units = el("div"), log = el("div");
+  v.append(said, top, units, log);
+  const load = async () => {
+    const r = await call("host", { agent: S.host });
+    said.textContent = r.ok ? "" : r.error || "could not load";
+    if (r.ok) { draw_host(top, units, r, said, load); activity(log); }
+  };
+  await load();
+}
+
+function uptime_text(s) {
+  if (!s) return "–";
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return d ? d + "d " + h + "h" : h ? h + "h " + m + "m" : m + "m";
+}
+
+function draw_host(top, units, r, said, reload) {
+  top.textContent = ""; units.textContent = "";
+  const dl = el("dl");
+  for (const [k, val] of [["Host", r.host.hostname || S.host], ["System", r.host.os || "–"], ["Kernel", r.host.kernel || "–"],
+    ["Arch", r.host.arch || "–"], ["Up", uptime_text(r.uptime)], ["Agent", r.version || "–"]]) dl.append(el("dt", "", k), el("dd", "", val));
+  top.appendChild(dl);
+  const acts = el("div", "actions");
+  const run = async (op, body, ok) => { const x = await call(op, Object.assign({ agent: S.host }, body)); said.textContent = x.ok ? ok : op + ": " + (x.error || "failed"); reload(); };
+  const update = btn("Update OS", "", async () => {
+    if (await typed("Update the packages of " + S.host + "?", S.host, "Update")) run("host-update", {}, "The update runs in the background; the timeline says how it ended.");
+  });
+  update.disabled = !r.can.update;
+  acts.appendChild(update);
+  for (const verb of ["reboot", "shutdown"]) {
+    const b = btn(verb[0].toUpperCase() + verb.slice(1), "danger", async () => {
+      if (await typed(verb[0].toUpperCase() + verb.slice(1) + " " + S.host + "?", S.host, verb[0].toUpperCase() + verb.slice(1))) run("host-power", { verb, confirm: S.host }, "Sent: " + verb + ".");
+    });
+    b.disabled = !r.can.power;
+    acts.appendChild(b);
+  }
+  top.appendChild(acts);
+  if (!r.can.update) top.appendChild(el("p", "muted", "Tick Host for this agent in Settings > Hosts and agents to update or reboot it here."));
+  units.appendChild(el("h3", "", "Systemd units" + (r.failed.length ? " · " + r.failed.length + " failed" : "")));
+  const t = el("table"); units.appendChild(t);
+  head_row(t, ["Unit", "State", "Description"]);
+  const failed = new Set(r.failed);
+  for (const u of r.units) {
+    const tr = row_of(t, [u.name + (u.ticked ? "" : "  (read only)"), u.active + (u.sub && u.sub !== u.active ? " · " + u.sub : ""), u.description], () => unit_sheet(u, said, reload), failed.has(u.name) || u.active === "failed");
+    tr.lastChild.classList.remove("num");
+    if (!u.ticked) tr.classList.add("dim");
+  }
+}
+
+function unit_sheet(u, said, reload) {
+  close_sheet();
+  S.sheet = { alive: true, stream: null, term: null, gen: 0 };
+  const sh = show_sheet();
+  sh.appendChild(el("h2", "", u.name));
+  const dl = el("dl");
+  dl.append(el("dt", "", "State"), el("dd", "", u.active + " · " + u.sub), el("dt", "", "About"), el("dd", "", u.description));
+  sh.appendChild(dl);
+  const acts = el("div", "actions");
+  const run = async (op, body) => { const r = await call(op, Object.assign({ agent: S.host, name: u.name }, body)); said.textContent = r.ok ? "" : op + ": " + (r.error || "failed"); close_sheet(); reload(); };
+  const start = btn("Start", "", () => run("unit", { verb: "start" })), restart = btn("Restart", "", () => run("unit", { verb: "restart" }));
+  const stop = btn("Stop", "danger", async () => { if (await typed("Stop " + u.name + "?", u.name, "Stop")) run("unit-stop", { confirm: u.name }); });
+  for (const b of [start, restart, stop]) { b.disabled = !u.ticked; acts.appendChild(b); }
+  acts.appendChild(btn("Close", "", close_sheet));
+  sh.appendChild(acts);
+  if (!u.ticked) sh.appendChild(el("p", "muted", "Not ticked: tick this unit for the agent in Settings > Hosts and agents to act on it."));
+}
+
+async function activity(box) {
+  box.textContent = "";
+  box.appendChild(el("h3", "", "Activity"));
+  const bar = el("div", "bar"), said = el("div", "msg"), t = el("table");
+  bar.appendChild(btn("Verify chain", "", async () => {
+    const r = await call("audit-verify", {});
+    said.className = "msg" + (r.ok && r.intact ? "" : " bad");
+    said.textContent = !r.ok ? r.error || "failed" : r.intact ? "Intact: " + r.checked + " entries checked." : "Broken: " + r.broken;
+  }));
+  box.append(bar, said, t);
+  let offset = 0;
+  const more = btn("Older", "", () => page());
+  const page = async () => {
+    const r = await call("activity", { agent: S.host, offset });
+    if (!r.ok) return said.textContent = r.error || "could not load";
+    if (!offset) head_row(t, ["When", "Who", "What", "Target"]);
+    for (const e of r.rows) {
+      const tr = el("tr");
+      tr.append(el("td", "muted", e.ts.replace("T", " ").slice(0, 16)), el("td", "", e.who), el("td", e.ok ? "" : "warn-text", e.action.replace("servers/", "") + (e.ok ? "" : " (refused)")), el("td", "muted", e.target));
+      t.appendChild(tr);
+    }
+    offset += r.rows.length;
+    more.style.display = r.more ? "" : "none";
+    if (!offset) box.appendChild(el("p", "muted", "Nothing done from here yet."));
+  };
+  box.appendChild(more);
+  await page();
+}

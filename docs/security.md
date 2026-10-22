@@ -45,7 +45,7 @@ stop a VM or delete a backup.
 
 For Proxmox VE and PBS, labhud asks the service at start (and after a config reload) what the
 token may do. Anything beyond reading (`VM.PowerMgmt`, `Sys.Modify`, `Datastore.Modify`...) is
-logged as a warning and shown on `/status`. (The agent's own token is another matter: for Servers > VMs & LXC the admin may add `VM.Snapshot` and `Datastore.Audit` to it, on purpose; see agents.md. Rolling a guest back and deleting a snapshot need the admin level and the guest's or snapshot's name typed, and the snapshot must be in the host's own list.) The guest agent's disk usage needs `VM.Monitor`
+logged as a warning and shown on `/status`. (The agent's own token is another matter: for Servers > VMs & LXC the admin may add `VM.Snapshot` and `Datastore.Audit` to it, on purpose; see agents.md. Rolling a guest back and deleting a snapshot need the admin level and the guest's or snapshot's name typed, and the snapshot must be in the host's own list. Rebooting or shutting a host down and stopping a unit need the admin level and the host's or unit's name typed; updating its packages and starting or restarting a ticked unit are act level.) The guest agent's disk usage needs `VM.Monitor`
 (Proxmox 8) or `VM.GuestAgent.Audit` (Proxmox 9), which count as reading.
 
 ## Certificates

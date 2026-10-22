@@ -247,15 +247,15 @@ def _truthy(v):
     return True if v in ("1", "true", "yes", "ok") else False if v in ("0", "false", "no", "failed") else None
 
 
-def query(who="", action="", ok=None, since="", until="", offset=0, limit=100):
-    """The entries that match, newest first: (rows, more). `who`/`action`: a part of it, any case;
+def query(who="", action="", ok=None, since="", until="", offset=0, limit=100, target=""):
+    """The entries that match, newest first: (rows, more). `who`/`action`/`target`: a part of it, any case;
     `since`/`until`: a day or a moment (2026-10-18, 2026-10-18T13:05), both included."""
     path = folder()
     limit = max(1, min(int(limit or 100), MAX_LIMIT))
     offset = max(0, int(offset or 0))
     if not path:
         return [], False
-    who, action = str(who or "").lower(), str(action or "").lower()
+    who, action, target = str(who or "").lower(), str(action or "").lower(), str(target or "").lower()
     try:
         days = sorted((m.group(1) for m in map(DAY_FILE.fullmatch, os.listdir(path)) if m), reverse=True)
     except OSError:
@@ -282,6 +282,8 @@ def query(who="", action="", ok=None, since="", until="", offset=0, limit=100):
             if who and who not in str(e.get("who", "")).lower():
                 continue
             if action and action not in str(e.get("action", "")).lower():
+                continue
+            if target and target not in str(e.get("target", "")).lower():
                 continue
             if ok is not None and bool(e.get("ok")) != ok:
                 continue

@@ -7,6 +7,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [Unreleased]
 
 ### Added
+- **Servers > Host**: the host's system facts, *Update OS*, *Reboot*, *Shutdown* (the last two with the host's name typed), its systemd units (a sheet per unit with Start / Restart / Stop; Stop needs the unit's name typed) and *Activity*: what was done to this host, from the audit log, with a *Verify chain* check. Routes `host`, `host-update`, `host-power`, `unit`, `unit-stop`, `activity`; the audit query also filters by target.
 - **CVEs on an image** (Servers > Images): each image row shows what the agent's `scan` (trivy or grype) found in the containers that run it ("2 crit · 5 high", "clean", "not scanned"); the image's sheet adds the scanner, when it scanned and which containers are affected. `POST /api/servers/images` carries `scan` per image.
 - **Renaming an agent** from the app: `POST /api/agents/rename` {id, name} (the name is trimmed, cleaned like any agent name and made unique; the answer says what it became).
 

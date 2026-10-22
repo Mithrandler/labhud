@@ -30,6 +30,12 @@ here is POST, JSON, and goes through one gate, `_gate`, in this order:
     POST /api/servers/snap-create {agent, id, name}  act: a snapshot (no RAM state)
     POST /api/servers/snap-rollback {agent, id, name, confirm}   admin: the guest goes back; confirm = the guest's name
     POST /api/servers/snap-delete {agent, id, name, confirm}     admin: confirm = the snapshot's name
+    POST /api/servers/host {agent}                   read: the host's system facts and its systemd units
+    POST /api/servers/host-update {agent}            act: update the host's packages
+    POST /api/servers/host-power {agent, verb, confirm}   admin: reboot or shutdown; confirm = the host's name
+    POST /api/servers/unit {agent, name, verb}       act: start or restart a ticked unit
+    POST /api/servers/unit-stop {agent, name, confirm}    admin: stop a ticked unit; confirm = its name
+    POST /api/servers/activity {agent, offset}       admin: the audit log's entries about this host, newest first
     POST /api/servers/audit-verify {}                admin: is the audit log's chain whole
 
 Nothing the agent says reaches a screen as it came: the answers are rebuilt field by field, with
@@ -59,6 +65,7 @@ NEEDS = {
     "stack-act": "act", "stack-down": "admin", "stack-source": "admin", "stack-hook": "admin", "stack-sync": "admin",
     "guests": "read", "guest-config": "read", "guest-snapshots": "read", "guest-backups": "read", "guest-tasks": "read",
     "guest-act": "act", "snap-create": "act", "snap-rollback": "admin", "snap-delete": "admin",
+    "host": "read", "host-update": "act", "host-power": "admin", "unit": "act", "unit-stop": "admin", "activity": "admin",
     "pull": "act", "rm": "admin", "clean": "admin", "volume-access": "admin",
 }
 SESSION_IDLE = 900            # s without a call before the interactive session ends
@@ -982,3 +989,100 @@ def snap_rollback(h, body):
 @_guarded("snap-delete")
 def snap_delete(h, body):
     return _snap_destroy(h, body, "snap-delete")
+
+
+# --- the host: system facts, systemd units, what was done to it ---
+
+UNIT = agents.TARGET["systemd"]
+POWER = ("reboot", "shutdown")
+
+
+@_guarded("host")
+def host(h, body):
+    aid, a = _agent(body)
+    if not a:
+        return 404, {"ok": False, "error": "no such host"}
+    st = agents.state_of(aid)
+    ticked = set(a.get("targets", {}).get("systemd", [])) if "systemd" in a.get("caps", []) else set()
+    units = []
+    for name, u in sorted((st.get("units") or {}).items())[:200]:
+        if isinstance(u, dict) and isinstance(name, str) and UNIT.fullmatch(name):
+            units.append({"name": name, "active": _s(u.get("active"), 20), "sub": _s(u.get("sub"), 20),
+                          "description": _s(u.get("description"), 160), "ticked": name in ticked})
+    failed = [n for n in (st.get("failed_units") or [])[:200] if isinstance(n, str) and UNIT.fullmatch(n)]
+    info = a.get("host") if isinstance(a.get("host"), dict) else {}
+    sensors = st.get("sensors") if isinstance(st.get("sensors"), dict) else {}
+    return 200, {"ok": True, "online": aid in agents._live, "version": _s(a.get("version"), 40),
+                 "host": {k: _s(info.get(k), 80) for k in ("hostname", "os", "kernel", "arch")},
+                 "uptime": int(_n(sensors.get("uptime"), 0, 1e10)),
+                 "can": {"update": agents.allowed(aid, "host", "update", "host"),
+                         "power": agents.allowed(aid, "host", "reboot", "host")},
+                 "units": units, "failed": failed}
+
+
+@_guarded("host-update")
+def host_update(h, body):
+    aid, a = _agent(body)
+    if not a:
+        return 404, {"ok": False, "error": "no such host"}
+    ok, error = agents.command(aid, "host", "update", "host")
+    audit.record(h, "servers/host-update", a["name"], ok)
+    print(f"servers: host update {a['name']} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+@_guarded("host-power")
+def host_power(h, body):
+    aid, a = _agent(body)
+    verb = str(body.get("verb") or "")
+    if not a or verb not in POWER:
+        return 400, {"ok": False, "error": "agent and a verb of reboot or shutdown"}
+    if body.get("confirm") != a["name"]:
+        return 400, {"ok": False, "error": "type the host's name to confirm"}
+    ok, error = agents.command(aid, "host", verb, "host")
+    audit.record(h, f"servers/host-{verb}", a["name"], ok)
+    print(f"servers: host {verb} {a['name']} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+def _unit(body):
+    name = body.get("name")
+    return name if isinstance(name, str) and UNIT.fullmatch(name) else None
+
+
+@_guarded("unit")
+def unit(h, body):
+    aid, a = _agent(body)
+    name, verb = _unit(body), str(body.get("verb") or "")
+    if not a or not name or verb not in ("start", "restart"):
+        return 400, {"ok": False, "error": "agent, a unit and a verb of start or restart"}
+    ok, error = agents.command(aid, "systemd", verb, name)
+    audit.record(h, f"servers/unit-{verb}", f"{a['name']}/{name}", ok)
+    print(f"servers: unit {verb} {a['name']}/{name} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+@_guarded("unit-stop")
+def unit_stop(h, body):
+    aid, a = _agent(body)
+    name = _unit(body)
+    if not a or not name:
+        return 400, {"ok": False, "error": "agent and a unit"}
+    if body.get("confirm") != name:
+        return 400, {"ok": False, "error": "type the unit's name to confirm"}
+    ok, error = agents.command(aid, "systemd", "stop", name)
+    audit.record(h, "servers/unit-stop", f"{a['name']}/{name}", ok)
+    print(f"servers: unit stop {a['name']}/{name} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+@_guarded("activity")
+def activity(h, body):
+    aid, a = _agent(body)
+    if not a:
+        return 404, {"ok": False, "error": "no such host"}
+    offset = body.get("offset")
+    rows, more = audit.query(action="servers/", target=a["name"], offset=offset if type(offset) is int else 0, limit=50)
+    # the target is "<host>/<what>": a host whose name is a part of another's must not show that one's
+    rows = [r for r in rows if r["target"] == a["name"] or r["target"].startswith(a["name"] + "/")]
+    return 200, {"ok": True, "more": more, "rows": [{k: _s(r.get(k), 200) if k != "ok" else bool(r.get(k)) for k in ("ts", "who", "action", "target", "ok")} for r in rows]}

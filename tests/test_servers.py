@@ -478,6 +478,79 @@ class Stacks(Base):
             self.assertEqual(self.api(op, {"agent": "stk10", "name": "site", "compose": "x", "confirm": "site"}, ticket=False, token=read)[0], 403, op)
 
 
+class HostTab(Base):
+    UNITS = {"docker.service": {"active": "active", "sub": "running", "description": "Docker"},
+             "ssh.service": {"active": "active", "sub": "running", "description": "OpenBSD Secure Shell"},
+             "bad name": {"active": "x"}, "1.txt": {"active": "x"}}
+
+    def host_up(self, name, caps=("systemd", "host"), units=("docker.service",)):
+        c, session, aid, key = self.pair(name=name)
+        self.manage("caps", {"id": aid, "caps": list(caps)})
+        if "systemd" in caps:
+            self.manage("targets", {"id": aid, "cap": "systemd", "targets": list(units)})
+        if "host" in caps:
+            self.manage("targets", {"id": aid, "cap": "host", "targets": ["host"]})
+        c.read_signed(key, session), c.read_signed(key, session)
+        c.send_signed(key, session, aid, {"type": "state", "sensors": {"uptime": 90000}, "units": self.UNITS, "failed_units": ["x.service", "bad name"]})
+        self.assertTrue(self.wait_for(lambda: self.api("host", {"agent": name})[1].get("units")))
+        log, stop = serve(c, key, session, aid, {})
+        self.addCleanup(stop.set)
+        self.addCleanup(c.close)
+        return log
+
+    def sent(self, log, verb):
+        return [(m["cap"], m["target"]) for m in log if m.get("type") == "command" and m["verb"] == verb]
+
+    def test_the_host_shows_well_formed_units_and_which_may_act(self):
+        self.session()
+        self.host_up("hoster")
+        r = self.api("host", {"agent": "hoster"})[1]
+        self.assertEqual([(u["name"], u["ticked"]) for u in r["units"]], [("docker.service", True), ("ssh.service", False)])
+        self.assertEqual(r["failed"], ["x.service"])
+        self.assertEqual((r["host"]["hostname"], r["uptime"]), ("box1", 90000))
+        self.assertEqual(r["can"], {"update": True, "power": True})
+
+    def test_a_unit_that_is_not_ticked_is_refused_and_stop_needs_its_name(self):
+        self.session()
+        log = self.host_up("unitor")
+        self.assertEqual(self.api("unit", {"agent": "unitor", "name": "ssh.service", "verb": "restart"})[0], 502)
+        self.assertEqual(self.api("unit", {"agent": "unitor", "name": "docker.service", "verb": "stop"})[0], 400)   # stop is its own route
+        self.assertEqual(self.api("unit", {"agent": "unitor", "name": "docker.service", "verb": "restart"})[0], 200)
+        self.assertEqual(self.api("unit-stop", {"agent": "unitor", "name": "docker.service"})[0], 400)
+        self.assertEqual(self.api("unit-stop", {"agent": "unitor", "name": "docker.service", "confirm": "nope"})[0], 400)
+        self.assertEqual(self.api("unit-stop", {"agent": "unitor", "name": "docker.service", "confirm": "docker.service"})[0], 200)
+        self.assertEqual(self.sent(log, "restart"), [("systemd", "docker.service")])
+        self.assertEqual(self.sent(log, "stop"), [("systemd", "docker.service")])
+
+    def test_power_needs_the_hosts_name_and_the_update_does_not(self):
+        self.session()
+        log = self.host_up("powered")
+        self.assertEqual(self.api("host-power", {"agent": "powered", "verb": "reboot"})[0], 400)
+        self.assertEqual(self.api("host-power", {"agent": "powered", "verb": "update", "confirm": "powered"})[0], 400)
+        self.assertEqual(self.api("host-power", {"agent": "powered", "verb": "reboot", "confirm": "powered"})[0], 200)
+        self.assertEqual(self.api("host-update", {"agent": "powered"})[0], 200)
+        self.assertEqual(self.sent(log, "reboot"), [("host", "host")])
+        self.assertEqual(self.sent(log, "update"), [("host", "host")])
+
+    def test_without_the_host_capability_nothing_is_sent(self):
+        self.session()
+        log = self.host_up("plain", caps=("systemd",))
+        self.assertEqual(self.api("host-update", {"agent": "plain"})[0], 502)
+        self.assertEqual(self.api("host-power", {"agent": "plain", "verb": "reboot", "confirm": "plain"})[0], 502)
+        self.assertEqual(self.sent(log, "update") + self.sent(log, "reboot"), [])
+        self.assertEqual(self.api("host", {"agent": "plain"})[1]["can"], {"update": False, "power": False})
+
+    def test_the_activity_is_this_hosts_own(self):
+        self.session()
+        self.host_up("act")
+        self.host_up("act2")
+        self.api("unit", {"agent": "act", "name": "docker.service", "verb": "restart"})
+        self.api("unit", {"agent": "act2", "name": "docker.service", "verb": "restart"})
+        rows = self.api("activity", {"agent": "act"})[1]["rows"]
+        self.assertEqual([r["target"] for r in rows], ["act/docker.service"])
+        self.assertEqual(rows[0]["action"], "servers/unit-restart")
+
+
 class Gate(Base):
     def audit_text(self):
         return audit_text(self.data)
