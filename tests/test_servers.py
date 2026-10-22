@@ -337,6 +337,137 @@ class Volumes(Objects):
         self.assertIn("looked/pgdata/base", text)
 
 
+STACK_READ = {"compose": "services:\n  web:\n    image: nginx\n", "env": "TOKEN=********\n", "has_env": True, "versions": [1700000200, 1700000100]}
+
+
+class Stacks(Base):
+    def stack_host(self, name, answers=None, **kw):
+        c, session, aid, key = self.make_host(name, caps=("docker", "stacks"), containers=False, **kw)
+        c.send_signed(key, session, aid, dict(STATE, stacks={"site": {"updated": 5, "env": True}, "bad name": {"updated": 1}}))
+        self.assertTrue(self.wait_for(lambda: self.api("stacks", {"agent": name})[1].get("stacks")))
+        log, stop = serve(c, key, session, aid, {"read": {"output": json.dumps(STACK_READ)}, "version": {"output": json.dumps(STACK_READ)}, **(answers or {})})
+        self.addCleanup(stop.set)
+        self.addCleanup(c.close)
+        return aid, log
+
+    def test_the_list_has_only_well_formed_stacks_with_their_source_and_hook(self):
+        self.session()
+        self.stack_host("stk1")
+        r = self.api("stacks", {"agent": "stk1"})[1]
+        self.assertEqual([x["name"] for x in r["stacks"]], ["site"])
+        self.assertEqual((r["stacks"][0]["source"], r["stacks"][0]["hook"]), (None, False))
+
+    def test_reading_gives_the_masked_env_and_the_versions_and_is_audited(self):
+        self.session()
+        aid, log = self.stack_host("stk2")
+        status, r, _ = self.api("stack-read", {"agent": "stk2", "name": "site"})
+        self.assertEqual(status, 200, r)
+        self.assertEqual((r["env"], r["versions"], r["mask"]), ("TOKEN=********\n", [1700000200, 1700000100], "********"))
+        self.assertIn("servers/stack-read", audit_text(self.data))
+        status, r, _ = self.api("stack-read", {"agent": "stk2", "name": "site", "version": "1700000100"})
+        self.assertEqual(status, 200, r)
+        sent = [m for m in log if m.get("type") == "command" and m["verb"] == "version"]
+        self.assertEqual([(m["target"], m["arg"]) for m in sent], [("site", "1700000100")])
+        for bad in ("../x", "12 3", 5, ""):
+            self.assertEqual(self.api("stack-read", {"agent": "stk2", "name": "site", "version": bad})[0], 400, bad)
+
+    def test_an_answer_that_is_no_stack_is_not_shown(self):
+        self.session()
+        self.stack_host("stk3", {"read": {"output": "not json"}})
+        self.assertEqual(self.api("stack-read", {"agent": "stk3", "name": "site"})[0], 502)
+
+    def test_save_and_validate_check_the_name_and_the_text_first(self):
+        self.session()
+        self.stack_host("stk4", {"validate": {"output": "ok"}, "save": {"output": "saved"}})
+        self.assertEqual(self.api("stack-validate", {"agent": "stk4", "name": "site", "compose": "services: {}"})[0], 200)
+        self.assertEqual(self.api("stack-save", {"agent": "stk4", "name": "site", "compose": "services: {}", "env": "A=1"})[0], 200)
+        for body in ({"name": "Bad Name", "compose": "x"}, {"name": "site", "compose": ""}, {"name": "site", "compose": 5},
+                     {"name": "site", "compose": "x", "env": 5}, {"name": "site"}):
+            self.assertEqual(self.api("stack-save", dict(body, agent="stk4"))[0], 400, body)
+        self.assertEqual(self.api("stack-save", {"agent": "stk4", "name": "site", "compose": "x" * (60 << 10)})[0], 502)
+
+    def test_only_a_save_is_in_the_audit_log_and_the_agents_refusal_comes_back(self):
+        self.session()
+        self.stack_host("stk5", {"validate": {"ok": False, "error": "compose config: yaml: line 3", "output": "bad"}})
+        status, r, _ = self.api("stack-validate", {"agent": "stk5", "name": "site", "compose": "x"})
+        self.assertEqual((status, r["ok"]), (502, False))
+        self.assertIn("yaml", r["error"])
+        self.assertNotIn("servers/stack-validate", audit_text(self.data))
+
+    def test_down_needs_the_name_typed_and_restart_does_not(self):
+        self.session()
+        aid, log = self.stack_host("stk6")
+        self.assertEqual(self.api("stack-down", {"agent": "stk6", "name": "site"})[0], 400)
+        self.assertEqual(self.api("stack-down", {"agent": "stk6", "name": "site", "confirm": "other"})[0], 400)
+        self.assertEqual(self.api("stack-down", {"agent": "stk6", "name": "site", "confirm": "site"})[0], 200)
+        self.assertEqual(self.api("stack-act", {"agent": "stk6", "name": "site", "verb": "restart"})[0], 200)
+        self.assertEqual(self.api("stack-act", {"agent": "stk6", "name": "site", "verb": "down"})[0], 400)
+        self.assertEqual([m["verb"] for m in log if m.get("type") == "command"], ["down", "restart"])
+
+    def test_a_stack_the_host_does_not_keep_is_not_acted_on(self):
+        self.session()
+        aid, log = self.stack_host("stk7")
+        self.assertEqual(self.api("stack-down", {"agent": "stk7", "name": "ghost", "confirm": "ghost"})[0], 404)
+        self.assertEqual(self.api("stack-restore", {"agent": "stk7", "name": "ghost", "version": "1"})[0], 400)
+        self.assertEqual([m for m in log if m.get("type") == "command"], [])
+
+    def test_restore_takes_a_version_number_only(self):
+        self.session()
+        aid, log = self.stack_host("stk8")
+        for v in ("x", "", "1/2", 7):
+            self.assertEqual(self.api("stack-restore", {"agent": "stk8", "name": "site", "version": v})[0], 400, v)
+        self.assertEqual(self.api("stack-restore", {"agent": "stk8", "name": "site", "version": "1700000100"})[0], 200)
+        self.assertEqual([(m["verb"], m["arg"]) for m in log if m.get("type") == "command"], [("restore", "1700000100")])
+
+    def test_a_source_must_be_a_plain_repository_and_a_hook_needs_one(self):
+        self.session()
+        self.stack_host("stk9")
+        self.assertEqual(self.api("stack-hook", {"agent": "stk9", "name": "site"})[0], 400)
+        for bad in ({"repo": "file:///etc", "path": "a.yaml"}, {"repo": "https://git.example/o/n", "path": "../a.yaml"}):
+            self.assertEqual(self.api("stack-source", dict(bad, agent="stk9", name="site"))[0], 400, bad)
+        ok = {"agent": "stk9", "name": "site", "repo": "https://git.example/o/n", "branch": "main", "path": "stacks/site/compose.yaml"}
+        self.assertEqual(self.api("stack-source", ok)[0], 200)
+        status, r, _ = self.api("stack-hook", {"agent": "stk9", "name": "site"})
+        self.assertEqual(status, 200)
+        self.assertRegex(r["path"], r"^/api/hook/[A-Za-z0-9_-]{32,64}$")
+        listed = self.api("stacks", {"agent": "stk9"})[1]["stacks"][0]
+        self.assertEqual((listed["source"]["path"], listed["hook"]), ("stacks/site/compose.yaml", True))
+        self.assertNotIn(r["path"].rsplit("/", 1)[1], json.dumps(self.api("stacks", {"agent": "stk9"})[1]))   # only a hash is kept
+        self.assertEqual(self.api("stack-source", {"agent": "stk9", "name": "site", "clear": True})[0], 200)
+        self.assertEqual(self.api("stacks", {"agent": "stk9"})[1]["stacks"][0]["hook"], False)
+
+    def test_the_stack_webhook_only_syncs_that_stack_and_not_twice_in_a_row(self):
+        self.session()
+        self.stack_host("stk11")
+        ok = {"agent": "stk11", "name": "site", "repo": "https://git.example/o/n", "path": "c.yaml"}
+        self.assertEqual(self.api("stack-source", ok)[0], 200)
+        token = self.api("stack-hook", {"agent": "stk11", "name": "site"})[1]["path"].rsplit("/", 1)[1]
+        def call(tok):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=20)
+            conn.request("POST", "/api/hook/" + tok, body="{}", headers={"Host": self.host})
+            r = conn.getresponse()
+            r.read()
+            conn.close()
+            return r.status
+        self.assertEqual(call(token), 202)       # the sync itself fails (no such repository here): that is its own log line
+        self.assertEqual(call(token), 409)       # not twice within 30 s
+        self.assertEqual(call("x" * 40), 403)
+
+    def test_stacks_need_the_level_of_what_they_do(self):
+        for op in ("stack-read", "stack-validate", "stack-save", "stack-restore", "stack-down", "stack-source", "stack-hook", "stack-sync"):
+            self.assertEqual(servers.NEEDS[op], "admin", op)
+        self.assertEqual((servers.NEEDS["stacks"], servers.NEEDS["stack-act"]), ("read", "act"))
+
+    def test_a_read_token_lists_stacks_and_cannot_read_their_files(self):
+        self.session()
+        self.stack_host("stk10")
+        read = Scopes.token(self, "read")
+        status, r, _ = self.api("stacks", {"agent": "stk10"}, ticket=False, token=read)
+        self.assertEqual(status, 200, r)
+        for op in ("stack-read", "stack-save", "stack-down"):
+            self.assertEqual(self.api(op, {"agent": "stk10", "name": "site", "compose": "x", "confirm": "site"}, ticket=False, token=read)[0], 403, op)
+
+
 class Gate(Base):
     def audit_text(self):
         return audit_text(self.data)
@@ -589,7 +720,7 @@ class Scopes(Base):
     def test_a_read_token_reads_and_nothing_more(self):
         self.session()
         c, session, aid, key = self.make_host("scoper")
-        tok = self.token("read")
+        tok = Scopes.token(self, "read")
         self.assertEqual(self.api("hosts", ticket=False, origin=False, token=tok)[0], 200)
         self.assertEqual(self.api("containers", {"agent": "scoper"}, ticket=False, origin=False, token=tok)[0], 200)
         self.assertEqual(self.api("action", {"agent": "scoper", "name": "web", "verb": "stop"}, ticket=False, origin=False, token=tok)[0], 403)

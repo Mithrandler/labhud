@@ -26,6 +26,7 @@ import time
 
 import agentproto as P
 import devices
+import gitsource
 import store
 import util
 import websock
@@ -52,7 +53,7 @@ VERBS = {
     "wol": ("wake",),
     "pve": ("start", "shutdown", "reboot"),
     "ptero": ("start", "stop", "restart"),
-    "stacks": ("deploy", "redeploy", "restart", "down", "show"),
+    "stacks": ("deploy", "redeploy", "restart", "down", "show", "read", "validate", "save", "version", "restore"),
     "terminal": ("shell",),
 }
 # sensors and scan only report: scan (agent with trivy or grype) reads the ticked containers' images
@@ -71,6 +72,7 @@ HOST_VERBS = ("inventory", "prune", "prune-dangling", "prune-networks", "prune-v
 # a volume ticked for browsing is the target "volume:<name>"; the two volume verbs are for those and nothing else
 VOLUME_PREFIX = "volume:"
 VOLUME_VERBS = ("volume-ls", "volume-read")
+VERSION_ARG = re.compile(r"[0-9]{1,12}")
 IMAGE_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,199}")
 NAME_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 MAX_PATH = 400
@@ -101,6 +103,8 @@ def arg_ok(verb, arg):
         return bool(IMAGE_ARG.fullmatch(arg))
     if verb in ("rm-network", "rm-volume", "network-inspect"):
         return bool(NAME_ARG.fullmatch(arg))
+    if verb in ("version", "restore"):
+        return bool(VERSION_ARG.fullmatch(arg))
     if verb == "volume-ls":
         return clean_path(arg) is not None
     if verb == "volume-read":
@@ -326,12 +330,25 @@ def remove_hook(aid, target):
     return bool(_save(aid, hooks={t: h for t, h in a["hooks"].items() if t != target}))
 
 
+def _sync_from_hook(aid, name):
+    ok, error, _ = sync_stack(aid, name)
+    on_event(f"Stack {name}: synced from git by a webhook" + ("" if ok else f", failed: {error}"), not ok)
+
+
 def hook(token, now=None):
     """(ok, error, agent name, container) for a webhook call."""
     if not HOOK_TOKEN.fullmatch(token or ""):
         return False, "forbidden", "", ""
     h = util.sha256_hex(token)
     for aid, a in _load().items():
+        for target, kept in (a.get("stack_hooks") or {}).items():
+            if hmac.compare_digest(kept, h):
+                now = now or time.monotonic()
+                if now - _hook_last.get((aid, "stack:" + target), -HOOK_EVERY) < HOOK_EVERY:
+                    return False, "too soon: once in 30 s", a["name"], target
+                _hook_last[(aid, "stack:" + target)] = now
+                threading.Thread(target=_sync_from_hook, args=(aid, target), daemon=True).start()
+                return True, "", a["name"], target
         for target, kept in a.get("hooks", {}).items():
             if hmac.compare_digest(kept, h):
                 now = now or time.monotonic()
@@ -734,17 +751,27 @@ def stacks_of(aid):
             for name, x in (st.get("stacks") or {}).items() if isinstance(x, dict) and TARGET["stacks"].fullmatch(name)}
 
 
-def stack(aid, verb, name, compose=None, env=None):
-    """(ok, error, output): one verb on a stack. A deploy carries the files, sealed: `compose` (text)
-    and `env` (text; None keeps the .env the host has, "" removes it). Whatever the admin does here
-    ticks the stack (the allowlist is the admin's own act); the agent checks it again."""
+STACK_FILE_VERBS = ("deploy", "validate", "save")     # these carry the files, sealed
+STACK_ARG_VERBS = ("version", "restore")              # these name a saved version
+
+
+def stack(aid, verb, name, compose=None, env=None, arg=""):
+    """(ok, error, output): one verb on a stack. deploy, validate and save carry the files, sealed:
+    `compose` (text) and `env` (text; None keeps the .env the host has, "" removes it; a line
+    `KEY=********` keeps the host's value of KEY). version and restore name a saved version in `arg`.
+    Whatever the admin does here ticks the stack (the allowlist is the admin's own act); the agent
+    checks it again."""
     a = get(aid)
     if not a or "stacks" not in a.get("caps", []):
         return False, "not allowed", ""
     if not isinstance(name, str) or not TARGET["stacks"].fullmatch(name):
         return False, "a stack's name is lowercase letters, digits, - and _", ""
+    if verb not in VERBS["stacks"]:
+        return False, "no such action", ""
+    if not arg_ok(verb, arg) or (verb in STACK_ARG_VERBS) != bool(arg):
+        return False, "not allowed", ""
     files = None
-    if verb == "deploy":
+    if verb in STACK_FILE_VERBS:
         if not isinstance(compose, str) or not compose.strip():
             return False, "a compose file is needed", ""
         if len(compose.encode()) > STACK_FILE_MAX or (isinstance(env, str) and len(env.encode()) > STACK_FILE_MAX):
@@ -752,8 +779,6 @@ def stack(aid, verb, name, compose=None, env=None):
         files = json.dumps({"compose": compose, **({"env": env} if isinstance(env, str) else {})}, separators=(",", ":"))
         if len(files.encode()) > P.MAX_SEALED_FILES:
             return False, "the files are too long together", ""
-    elif verb not in VERBS["stacks"]:
-        return False, "no such action", ""
     if name not in a.get("targets", {}).get("stacks", []):
         set_targets(aid, "stacks", sorted(set(a.get("targets", {}).get("stacks", [])) | {name}))
     if not allowed(aid, "stacks", verb, name):
@@ -764,7 +789,70 @@ def stack(aid, verb, name, compose=None, env=None):
     wait = 330 if verb in ("deploy", "redeploy") else 120
     if files is not None:
         return s.ask({"type": "command", "cap": "stacks", "verb": verb, "target": name}, wait, files=files)
-    return s.command("stacks", verb, name, wait)
+    return s.command("stacks", verb, name, wait, arg) if arg else s.command("stacks", verb, name, wait)
+
+
+def tick_stack(aid, name):
+    """A stack the host keeps joins the allowlist when the admin works on it from Servers (the cap is ticked)."""
+    a = get(aid)
+    if a and "stacks" in a.get("caps", []) and name not in a.get("targets", {}).get("stacks", []):
+        set_targets(aid, "stacks", sorted(set(a.get("targets", {}).get("stacks", [])) | {name}))
+
+
+# --- a stack's git source and its webhook (POST /api/hook/<token> pulls the file and redeploys) ---
+#
+# The source is {repo, branch, path}; a private repository's token is used for one request and
+# never kept, so a webhook only syncs from a source that needs none. The webhook is a secret URL
+# per (agent, stack), kept as a hash like a container's; it can only ask for that sync.
+
+def stack_source(aid, name):
+    a = get(aid) or {}
+    src = (a.get("stack_sources") or {}).get(name)
+    return dict(src) if isinstance(src, dict) else None
+
+
+def set_stack_source(aid, name, src):
+    """src = {repo, branch, path} (checked as gitsource checks them), or None to forget it and its webhook."""
+    a = get(aid)
+    if not a or not isinstance(name, str) or not TARGET["stacks"].fullmatch(name):
+        return False, "no such stack"
+    sources = dict(a.get("stack_sources") or {})
+    hooks = dict(a.get("stack_hooks") or {})
+    if src is None:
+        sources.pop(name, None)
+        hooks.pop(name, None)
+    else:
+        try:
+            gitsource.raw_url(src.get("repo"), src.get("branch") or "main", src.get("path"))
+        except ValueError as e:
+            return False, str(e)
+        sources[name] = {"repo": src["repo"], "branch": src.get("branch") or "main", "path": src["path"]}
+    _save(aid, stack_sources=sources, stack_hooks=hooks)
+    on_change()
+    return True, ""
+
+
+def new_stack_hook(aid, name):
+    """A new secret for a stack that has a source (the old one stops working), or None."""
+    a = get(aid)
+    if not a or not stack_source(aid, name):
+        return None
+    token = secrets.token_urlsafe(32)
+    _save(aid, stack_hooks=dict(a.get("stack_hooks") or {}, **{name: util.sha256_hex(token)}))
+    on_change()
+    return token
+
+
+def sync_stack(aid, name, token=None):
+    """(ok, error, output): fetch the stack's file from its source and deploy it (the .env stays)."""
+    src = stack_source(aid, name)
+    if not src:
+        return False, "this stack has no git source", ""
+    try:
+        compose = gitsource.fetch(src["repo"], src["branch"], src["path"], token)
+    except ValueError as e:
+        return False, str(e), ""
+    return stack(aid, "deploy", name, compose, None)
 
 
 # ---------------------------------------------------------------------------------------------

@@ -16,6 +16,14 @@ here is POST, JSON, and goes through one gate, `_gate`, in this order:
     POST /api/servers/stream-open {agent, kind, name, cols, rows}   read (logs) / admin + PIN (shell)
     POST /api/servers/stream-read|stream-close {id}                  read
     POST /api/servers/stream-input|stream-resize {id, ...}           admin (the shell only)
+    POST /api/servers/stacks {agent}                 read: the host's stacks (state, git source, webhook)
+    POST /api/servers/stack-read {agent, name, version?}   admin: compose + .env (values masked) + saved versions
+    POST /api/servers/stack-validate|stack-save {agent, name, compose, env}   admin: `compose config`, then (save) write
+    POST /api/servers/stack-restore {agent, name, version}   admin: an older version becomes the present one
+    POST /api/servers/stack-act {agent, name, verb}  act: redeploy | restart
+    POST /api/servers/stack-down {agent, name, confirm}   admin: down (never removes volumes)
+    POST /api/servers/stack-source {agent, name, repo, branch, path | clear}   admin: where the file comes from
+    POST /api/servers/stack-hook {agent, name}       admin: a new webhook URL (shown once); stack-sync {agent, name, token?}: pull now
     POST /api/servers/audit-verify {}                admin: is the audit log's chain whole
 
 Nothing the agent says reaches a screen as it came: the answers are rebuilt field by field, with
@@ -41,6 +49,8 @@ NEEDS = {
     "inspect": "read", "stats": "read", "stream-open": "read", "stream-read": "read", "stream-close": "read",
     "stream-input": "admin", "stream-resize": "admin", "audit-verify": "admin",
     "images": "read", "volumes": "read", "networks": "read", "network": "read", "volume-ls": "read", "volume-read": "read",
+    "stacks": "read", "stack-read": "admin", "stack-validate": "admin", "stack-save": "admin", "stack-restore": "admin",
+    "stack-act": "act", "stack-down": "admin", "stack-source": "admin", "stack-hook": "admin", "stack-sync": "admin",
     "pull": "act", "rm": "admin", "clean": "admin", "volume-access": "admin",
 }
 SESSION_IDLE = 900            # s without a call before the interactive session ends
@@ -163,7 +173,7 @@ def _start_session(h):
                     del _sessions[k]
 
 
-def _guarded(op):
+def _guarded(op, limit=16 * 1024):
     """Decorator: the gate, then the handler (which gets the parsed agent and body)."""
     def wrap(fn):
         def run(h, body):
@@ -171,7 +181,7 @@ def _guarded(op):
             if refused:
                 return refused
             return fn(h, body)
-        return route("POST", f"/api/servers/{op}", guard="open", limit=16 * 1024)(run)
+        return route("POST", f"/api/servers/{op}", guard="open", limit=limit)(run)
     return wrap
 
 
@@ -565,3 +575,197 @@ def _s_text(v):
 def audit_verify(h, body):
     ok, checked, broken = audit.verify()
     return 200, {"ok": True, "intact": ok, "checked": checked, "broken": broken}
+
+
+# --- Stacks: compose files kept by the agent, edited here (validate -> save -> redeploy, three steps) ---
+
+STACK = agents.TARGET["stacks"]
+STACK_TEXT = agents.STACK_FILE_MAX
+MASK = "********"      # what the agent shows in place of a .env value; saved back as it is, it keeps the host's value
+
+
+def _stack(body):
+    """(aid, agent, name, error answer): the host and a stack name that is well formed."""
+    aid, a = _agent(body)
+    name = body.get("name")
+    if not a or not isinstance(name, str) or not STACK.fullmatch(name):
+        return None, None, None, (400, {"ok": False, "error": "agent and a stack name (lowercase letters, digits, - and _)"})
+    if "stacks" not in a.get("caps", []):
+        return None, None, None, (403, {"ok": False, "error": "Stacks is not ticked for this host"})
+    if _kept(aid, name):
+        agents.tick_stack(aid, name)
+    return aid, agents.get(aid), name, None
+
+
+def _kept(aid, name):
+    return name in agents.stacks_of(aid)
+
+
+def _failed(error, output=""):
+    return 502, {"ok": False, "error": _s(error, 200) or "failed", "output": _s_text(output)[:2000]}
+
+
+@_guarded("stacks")
+def stacks(h, body):
+    aid, a = _agent(body)
+    if not a:
+        return 404, {"ok": False, "error": "no such host"}
+    if "stacks" not in a.get("caps", []):
+        return 200, {"ok": True, "enabled": False, "stacks": []}
+    rows = []
+    for name, x in sorted(agents.stacks_of(aid).items())[:200]:
+        src = agents.stack_source(aid, name)
+        rows.append({"name": name, "updated": int(_n(x.get("updated"), 0, 4e9)), "env": x.get("env") is True,
+                     "services": int(_n(x.get("services"), 0, 1e4)), "running": int(_n(x.get("running"), 0, 1e4)),
+                     "source": {k: _s(src.get(k), 200) for k in ("repo", "branch", "path")} if src else None,
+                     "hook": name in (a.get("stack_hooks") or {})})
+    return 200, {"ok": True, "enabled": True, "online": aid in agents._live, "stacks": rows}
+
+
+@_guarded("stack-read")
+def stack_read(h, body):
+    aid, a, name, err = _stack(body)
+    if err:
+        return err
+    if not _kept(aid, name):
+        return 404, {"ok": False, "error": "no such stack on this host"}
+    version = body.get("version")
+    if version is None:
+        ok, error, text = agents.read(aid, "stacks", "read", name, wait=30)
+    elif isinstance(version, str) and agents.arg_ok("version", version):
+        ok, error, text = agents.read(aid, "stacks", "version", name, wait=30, arg=version)
+    else:
+        return 400, {"ok": False, "error": "version is one of the saved versions"}
+    if not ok:
+        return _failed(error)
+    try:
+        d = json.loads(text)
+    except ValueError:
+        d = None
+    if not isinstance(d, dict) or not isinstance(d.get("compose"), str):
+        return 502, {"ok": False, "error": "the agent's answer was not understood"}
+    env = d.get("env") if isinstance(d.get("env"), str) else ""
+    vs = [v for v in (d.get("versions") or [])[:10] if isinstance(v, int) and not isinstance(v, bool) and 0 < v < 4e9]
+    audit.record(h, "servers/stack-read", f"{a['name']}/{name}" + (f"@{version}" if version else ""), True)
+    return 200, {"ok": True, "compose": d["compose"][:STACK_TEXT], "env": env[:STACK_TEXT], "has_env": d.get("has_env") is True,
+                 "versions": vs, "mask": MASK}
+
+
+def _files(body):
+    compose, env = body.get("compose"), body.get("env")
+    if not isinstance(compose, str) or not compose.strip():
+        return None, None, (400, {"ok": False, "error": "a compose file is needed"})
+    if env is not None and not isinstance(env, str):
+        return None, None, (400, {"ok": False, "error": "env is text"})
+    return compose.replace("\r\n", "\n"), (env.replace("\r\n", "\n") if isinstance(env, str) else None), None
+
+
+def _write(op, verb):
+    def handler(h, body):
+        aid, a, name, err = _stack(body)
+        if err:
+            return err
+        compose, env, err = _files(body)
+        if err:
+            return err
+        ok, error, out = agents.stack(aid, verb, name, compose, env)
+        if verb == "save":   # only a write is an act worth the audit log; a check is not
+            audit.record(h, "servers/stack-save", f"{a['name']}/{name}", ok)
+            print(f"servers: stack {name} on {a['name']} saved by {h._who()}: {'ok' if ok else error}", flush=True)
+        return (200, {"ok": True, "output": _s_text(out)[:2000]}) if ok else _failed(error, out)
+    return handler
+
+
+_guarded("stack-validate", limit=110 * 1024)(_write("stack-validate", "validate"))
+_guarded("stack-save", limit=110 * 1024)(_write("stack-save", "save"))
+
+
+@_guarded("stack-restore")
+def stack_restore(h, body):
+    aid, a, name, err = _stack(body)
+    if err:
+        return err
+    version = body.get("version")
+    if not isinstance(version, str) or not agents.arg_ok("version", version) or not _kept(aid, name):
+        return 400, {"ok": False, "error": "a saved version of a stack on this host"}
+    ok, error, out = agents.stack(aid, "restore", name, arg=version)
+    audit.record(h, "servers/stack-restore", f"{a['name']}/{name}@{version}", ok)
+    return (200, {"ok": True}) if ok else _failed(error, out)
+
+
+@_guarded("stack-act")
+def stack_act(h, body):
+    aid, a, name, err = _stack(body)
+    verb = body.get("verb")
+    if err or verb not in ("redeploy", "restart"):
+        return err or (400, {"ok": False, "error": "verb is redeploy or restart"})
+    if not _kept(aid, name):
+        return 404, {"ok": False, "error": "no such stack on this host"}
+    ok, error, out = agents.stack(aid, verb, name)
+    audit.record(h, f"servers/stack-{verb}", f"{a['name']}/{name}", ok)
+    print(f"servers: stack {verb} {a['name']}/{name} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True, "output": _s_text(out)[-2000:]}) if ok else _failed(error, out)
+
+
+@_guarded("stack-down")
+def stack_down(h, body):
+    aid, a, name, err = _stack(body)
+    if err:
+        return err
+    if not _kept(aid, name):
+        return 404, {"ok": False, "error": "no such stack on this host"}
+    if body.get("confirm") != name:
+        return 400, {"ok": False, "error": "type the name to confirm"}
+    ok, error, out = agents.stack(aid, "down", name)
+    audit.record(h, "servers/stack-down", f"{a['name']}/{name}", ok)
+    print(f"servers: stack down {a['name']}/{name} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else _failed(error, out)
+
+
+@_guarded("stack-source")
+def stack_source(h, body):
+    aid, a, name, err = _stack(body)
+    if err:
+        return err
+    if not _kept(aid, name):
+        return 404, {"ok": False, "error": "no such stack on this host"}
+    if body.get("clear") is True:
+        src = None
+    else:
+        src = {k: body.get(k) for k in ("repo", "branch", "path")}
+        if not all(isinstance(v, str) for v in (src["repo"], src["path"])) or not isinstance(src["branch"] or "main", str):
+            return 400, {"ok": False, "error": "repo, branch and path"}
+    ok, error = agents.set_stack_source(aid, name, src)
+    audit.record(h, "servers/stack-source", f"{a['name']}/{name}" + (" cleared" if src is None else ""), ok)
+    return (200, {"ok": True}) if ok else (400, {"ok": False, "error": _s(error, 200)})
+
+
+@_guarded("stack-hook")
+def stack_hook(h, body):
+    aid, a, name, err = _stack(body)
+    if err:
+        return err
+    if body.get("clear") is True:
+        hooks = dict(a.get("stack_hooks") or {})
+        hooks.pop(name, None)
+        agents._save(aid, stack_hooks=hooks)
+        audit.record(h, "servers/stack-hook", f"{a['name']}/{name} removed", True)
+        return 200, {"ok": True}
+    token = agents.new_stack_hook(aid, name)
+    if not token:
+        return 400, {"ok": False, "error": "set a git source first"}
+    audit.record(h, "servers/stack-hook", f"{a['name']}/{name} made", True)
+    return 200, {"ok": True, "path": "/api/hook/" + token}
+
+
+@_guarded("stack-sync")
+def stack_sync(h, body):
+    aid, a, name, err = _stack(body)
+    if err:
+        return err
+    token = body.get("token")
+    if token is not None and not isinstance(token, str):
+        return 400, {"ok": False, "error": "token is text"}
+    ok, error, out = agents.sync_stack(aid, name, token or None)
+    audit.record(h, "servers/stack-sync", f"{a['name']}/{name}", ok)
+    return (200, {"ok": True, "output": _s_text(out)[-2000:]}) if ok else _failed(error, out)
