@@ -7,6 +7,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [Unreleased]
 
 ### Added
+- **CVEs on an image** (Servers > Images): each image row shows what the agent's `scan` (trivy or grype) found in the containers that run it ("2 crit · 5 high", "clean", "not scanned"); the image's sheet adds the scanner, when it scanned and which containers are affected. `POST /api/servers/images` carries `scan` per image.
 - **Renaming an agent** from the app: `POST /api/agents/rename` {id, name} (the name is trimmed, cleaned like any agent name and made unique; the answer says what it became).
 
 - **Servers** (first slice): a zone for the hosts' Docker at `/servers` and in the app's new Servers tab: the hosts with their containers running/total, CPU and memory; per host Overview and Containers (filter, state, CPU/memory); a container opens a sheet with Start/Stop/Restart/Update (stop and update ask for the name), its live log, Inspect, Stats and a shell. API: `POST /api/servers/{session,hosts,containers,action,logs,inspect,stats,stream-*,audit-verify}`; agent verb `stats` (needs labhud-agent 0.1.2).

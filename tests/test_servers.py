@@ -32,7 +32,8 @@ STATE = {"type": "state",
          "sensors": {"cpu": 12.5, "mem": 41.0},
          "containers": {
              "web": {"state": "running", "health": "healthy", "image": "nginx:1", "project": "site", "cpu": 4.2,
-                     "mem": 845000000, "mem_pct": 10.6, "net_rx": 2100, "net_tx": 480, "restarts": 1},
+                     "mem": 845000000, "mem_pct": 10.6, "net_rx": 2100, "net_tx": 480, "restarts": 1,
+                     "scan": {"critical": 2, "high": 5, "tool": "trivy", "t": 1700000000}},
              "db": {"state": "exited", "image": "postgres:16"},
              "bad name!": {"state": "running"}}}
 
@@ -167,6 +168,15 @@ class Objects(Base):
         self.assertEqual({v["name"]: v["browse"] for v in r["volumes"]}, {"pgdata": False, "spare": False})
         status, r, _ = self.api("networks", {"agent": "lister2"})
         self.assertEqual([n["name"] for n in r["networks"]], ["bridge", "proxy", "old_default"])
+
+    def test_an_image_carries_the_scan_of_the_containers_that_run_it(self):
+        self.session()
+        self.host_with_images("scanned")
+        status, r, _ = self.api("images", {"agent": "scanned"})
+        self.assertEqual(status, 200, r)
+        by_id = {i["id"]: i["scan"] for i in r["images"]}
+        self.assertEqual(by_id["aaaa11112222"], {"critical": 2, "high": 5, "tool": "trivy", "t": 1700000000, "affects": ["web"]})
+        self.assertIsNone(by_id["bbbb33334444"])   # no container that runs it was scanned
 
     def test_without_the_hosts_docker_ticked_the_lists_say_what_to_tick(self):
         self.session()

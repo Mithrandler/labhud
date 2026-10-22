@@ -67,3 +67,5 @@ textarea.editor { width: 100%; font: 12px/1.45 ui-monospace, monospace; color: v
 tr.sub td { padding: 1px 12px 1px 28px; font-size: 13px; border: 0; }
 tr.dim { opacity: .55; } tr.dim.row { cursor: default; }
 .gap { margin-bottom: 12px; }
+
+td.crit { color: var(--bad); } td.warn { color: var(--warn); } td.ok { color: var(--ok); }

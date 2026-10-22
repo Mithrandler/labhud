@@ -471,23 +471,40 @@ function head_row(t, labels) {
 }
 function row_of(t, cells, onclick, bad) {
   const tr = el("tr", "row");
-  cells.forEach((c, i) => tr.appendChild(el("td", i === cells.length - 1 && cells.length === 3 ? "num" : i ? "muted" : "", c)));
+  cells.forEach((c, i) => tr.appendChild(el("td", i === 2 && cells.length >= 3 ? "num" : i ? "muted" : "", c)));
   if (bad) tr.firstChild.classList.add("warn-text");
   tr.addEventListener("click", onclick);
   t.appendChild(tr);
+  return tr;
+}
+
+// an image's CVEs from the agent's scan (trivy/grype): [text, tone] for the row and the sheet
+function cve_text(sc) {
+  if (!sc) return ["○ not scanned", ""];
+  if (sc.critical) return ["● " + sc.critical + " crit · " + sc.high + " high", "crit"];
+  if (sc.high) return ["● " + sc.high + " high", "warn"];
+  return ["● clean", "ok"];
+}
+function cve_facts(sc) {
+  if (!sc) return [["Vulnerabilities", "not scanned (the host needs the scan capability, and a container that runs this image ticked)"]];
+  const when = sc.t ? new Date(sc.t * 1000).toLocaleString() : "?";
+  return [["Vulnerabilities", cve_text(sc)[0]], ["Scanner", (sc.tool || "?") + " · scanned " + when],
+    ...(sc.affects.length ? [["Affects", sc.affects.join(", ")]] : [])];
 }
 
 function images_view(t, rows, q, reload, said) {
-  head_row(t, ["Image", "Used", "Size"]);
+  head_row(t, ["Image", "Used", "Size", "CVEs"]);
   const title = (i) => i.tags[0] || i.id;
   for (const i of rows.filter((x) => !q || x.id.includes(q) || x.tags.some((g) => g.toLowerCase().includes(q))).sort((a, b) => b.size - a.size)) {
-    row_of(t, [title(i) + (i.tags.length > 1 ? "  +" + (i.tags.length - 1) : ""), used_text(i.used, i.used_by), bytes(i.size)], () => open_object(i.tags[0] || i.id, [
-      ["Id", i.id], ["Size", bytes(i.size)], ["Used", used_text(i.used, i.used_by)]], i.tags.length ? i.tags : [i.id], i.used ? "in use" : "", async (n) => {
+    const [ct, tone] = cve_text(i.scan);
+    const tr = row_of(t, [title(i) + (i.tags.length > 1 ? "  +" + (i.tags.length - 1) : ""), used_text(i.used, i.used_by), bytes(i.size), ct], () => open_object(i.tags[0] || i.id, [
+      ["Id", i.id], ["Size", bytes(i.size)], ["Used", used_text(i.used, i.used_by)], ...cve_facts(i.scan)], i.tags.length ? i.tags : [i.id], i.used ? "in use" : "", async (n) => {
       if (!(await typed("Remove " + n + "?", n, "Remove"))) return;
       const r = await call("rm", { agent: S.host, kind: "image", name: n, confirm: n });
       said.textContent = r.ok ? "" : "remove: " + (r.error || "failed");
       close_sheet(); reload(true);
     }, [["Pull again", async () => { const r = await call("pull", { agent: S.host, image: i.tags[0] }); said.textContent = r.ok ? "" : "pull: " + (r.error || "failed"); reload(true); }]], !i.tags.length), !i.used);
+    if (tone) tr.lastChild.classList.add(tone);
   }
 }
 

@@ -394,7 +394,26 @@ def images(h, body):
     aid, a, inv, err = _inventory(body, fresh=bool(body.get("fresh")))
     if err:
         return err
-    return 200, {"ok": True, "images": inv["images"], "more": inv["more"].get("images", 0), "totals": inv["totals"]}
+    st = agents.state_of(aid)
+    rows = [dict(i, scan=_image_scan(st, i)) for i in inv["images"]]
+    return 200, {"ok": True, "images": rows, "more": inv["more"].get("images", 0), "totals": inv["totals"]}
+
+
+def _image_scan(st, image):
+    """What the agent's `scan` (trivy/grype) found in the containers that run this image: the worst
+    counts, the oldest scan time, and the containers that have any; None when none was scanned."""
+    found = []
+    for name in image.get("used_by") or []:
+        c = (st.get("containers") or {}).get(name)
+        sc = c.get("scan") if isinstance(c, dict) else None
+        if isinstance(sc, dict) and type(sc.get("critical")) is int and type(sc.get("high")) is int:
+            found.append((name, sc))
+    if not found:
+        return None
+    count = lambda k: max(0, min(max(sc[k] for _, sc in found), 1000000))   # noqa: E731
+    return {"critical": count("critical"), "high": count("high"), "tool": _s(found[0][1].get("tool"), 20),
+            "t": min((sc["t"] for _, sc in found if type(sc.get("t")) is int), default=0),
+            "affects": [n for n, sc in found if sc["critical"] or sc["high"]][:8]}
 
 
 @_guarded("volumes")
