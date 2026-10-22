@@ -747,6 +747,123 @@ class Scopes(Base):
         self.assertGreater(r["checked"], 0)
 
 
+class Guests(Base):
+    GUESTS = {"101": {"name": "pbs", "running": True, "type": "qemu", "cpu": 1.2, "mem": 50.0, "mem_bytes": 512, "mem_max": 1024, "disk": 100,
+                      "uptime": 60, "tags": ["db", 7]},
+              "113": {"name": "web", "running": False, "type": "lxc"},
+              "900": {"name": "tpl", "running": False, "type": "qemu", "template": True},
+              "bad": {"name": "x"}, "104": {"name": "unticked", "running": True, "type": "qemu"}}
+    SNAPS = {"snapshots": [{"name": "before-upgrade", "description": "x", "time": 5, "vmstate": False},
+                           {"name": "1bad name", "time": 6}, {"name": "second", "parent": "before-upgrade", "time": 7}]}
+
+    def pve_host(self, name, answers=None):
+        c, session, aid, key = self.pair(name=name)
+        self.manage("caps", {"id": aid, "caps": ["pve"]})
+        self.manage("targets", {"id": aid, "cap": "pve", "targets": ["101", "113", "900"]})
+        c.read_signed(key, session), c.read_signed(key, session)
+        c.send_signed(key, session, aid, {"type": "state", "node": "pve2", "guests": self.GUESTS})
+        self.assertTrue(self.wait_for(lambda: self.api("guests", {"agent": name})[1].get("guests")))
+        log, stop = serve(c, key, session, aid, {"snap-list": {"output": json.dumps(self.SNAPS)}, **(answers or {})})
+        self.addCleanup(stop.set)
+        self.addCleanup(c.close)
+        return log
+
+    def sent(self, log, verb):
+        return [(m["target"], m.get("arg", "")) for m in log if m.get("type") == "command" and m["verb"] == verb]
+
+    def test_the_list_has_well_formed_guests_and_only_ticked_ones_act(self):
+        self.session()
+        self.pve_host("pve-a")
+        r = self.api("guests", {"agent": "pve-a"})[1]
+        self.assertEqual([g["id"] for g in r["guests"]], ["101", "104", "113", "900"])
+        by = {g["id"]: g for g in r["guests"]}
+        self.assertEqual(by["101"]["can"], ["start", "shutdown", "reboot"])
+        self.assertEqual((by["104"]["can"], by["104"]["ticked"]), ([], False))
+        self.assertEqual(by["900"]["can"], [])      # a template is not started
+        self.assertEqual(by["101"]["tags"], ["db"])
+        self.assertEqual(r["node"], "pve2")
+        self.assertTrue(next(x for x in self.api("hosts")[1]["hosts"] if x["name"] == "pve-a")["pve"])
+
+    def test_config_keeps_the_secrets_hidden_even_if_the_agent_forgot(self):
+        self.session()
+        cfg = {"config": [{"key": "memory", "value": "4096"}, {"key": "cipassword", "value": "hunter2"}, {"key": "keyboard", "value": "en-us"}]}
+        self.pve_host("pve-b", {"config": {"output": json.dumps(cfg)}})
+        r = self.api("guest-config", {"agent": "pve-b", "id": "101"})[1]
+        self.assertEqual({x["key"]: x["value"] for x in r["config"]}, {"memory": "4096", "cipassword": "********", "keyboard": "en-us"})
+        self.assertNotIn("hunter2", json.dumps(r))
+
+    def test_snapshots_backups_and_tasks_are_rebuilt(self):
+        self.session()
+        self.pve_host("pve-c", {"backup-list": {"output": json.dumps({"backups": [{"storage": "pbs", "volid": "pbs:backup/vm/101/x", "size": 9, "time": 20, "protected": True, "evil": 1}]})},
+                                "task-list": {"output": json.dumps({"tasks": [{"type": "qmsnapshot", "status": "OK", "user": "root@pam", "start": 5, "end": 9, "upid": "UPID:x"}]})}})
+        r = self.api("guest-snapshots", {"agent": "pve-c", "id": "101"})[1]
+        self.assertEqual([x["name"] for x in r["snapshots"]], ["before-upgrade", "second"])
+        b = self.api("guest-backups", {"agent": "pve-c", "id": 101})[1]["backups"]
+        self.assertEqual(b, [{"storage": "pbs", "volid": "pbs:backup/vm/101/x", "size": 9, "time": 20, "format": "", "notes": "", "protected": True}])
+        self.assertEqual(self.api("guest-tasks", {"agent": "pve-c", "id": "101"})[1]["tasks"][0]["type"], "qmsnapshot")
+
+    def test_an_answer_that_is_no_list_is_not_shown(self):
+        self.session()
+        self.pve_host("pve-d", {"task-list": {"output": "not json"}})
+        self.assertEqual(self.api("guest-tasks", {"agent": "pve-d", "id": "101"})[0], 502)
+
+    def test_a_guest_not_ticked_or_malformed_is_refused_before_the_agent_is_asked(self):
+        self.session()
+        log = self.pve_host("pve-e")
+        for gid in ("104", "999", "bad", "../1", "", None):
+            self.assertIn(self.api("guest-config", {"agent": "pve-e", "id": gid})[0], (400, 403), gid)
+        self.assertEqual(self.api("guest-act", {"agent": "pve-e", "id": "104", "verb": "start"})[0], 403)
+        self.assertEqual(self.sent(log, "config") + self.sent(log, "start"), [])
+
+    def test_actions_are_the_three_and_are_audited(self):
+        self.session()
+        log = self.pve_host("pve-f")
+        self.assertEqual(self.api("guest-act", {"agent": "pve-f", "id": "101", "verb": "reboot"})[0], 200)
+        self.assertEqual(self.api("guest-act", {"agent": "pve-f", "id": "101", "verb": "stop"})[0], 400)
+        self.assertEqual(self.sent(log, "reboot"), [("101", "")])
+        self.assertIn("servers/guest-reboot", audit_text(self.data))
+
+    def test_a_snapshot_is_made_with_a_good_name_only(self):
+        self.session()
+        log = self.pve_host("pve-g")
+        for bad in ("", "1abc", "a b", "a;b", "x" * 41, 5, None):
+            self.assertEqual(self.api("snap-create", {"agent": "pve-g", "id": "101", "name": bad})[0], 400, bad)
+        self.assertEqual(self.api("snap-create", {"agent": "pve-g", "id": "101", "name": "pre-upgrade"})[0], 200)
+        self.assertEqual(self.sent(log, "snap-create"), [("101", "pre-upgrade")])
+
+    def test_rollback_wants_the_guests_name_and_delete_the_snapshots(self):
+        self.session()
+        log = self.pve_host("pve-h")
+        ask = lambda op, **kw: self.api(op, dict({"agent": "pve-h", "id": "101", "name": "before-upgrade"}, **kw))[0]
+        self.assertEqual(ask("snap-rollback"), 400)
+        self.assertEqual(ask("snap-rollback", confirm="before-upgrade"), 400)      # not the snapshot's name
+        self.assertEqual(ask("snap-delete", confirm="pbs"), 400)                   # not the guest's name
+        self.assertEqual(ask("snap-rollback", name="nope", confirm="pbs"), 404)    # not in the host's own list
+        self.assertEqual(self.sent(log, "snap-rollback") + self.sent(log, "snap-delete"), [])
+        self.assertEqual(ask("snap-rollback", confirm="pbs"), 200)
+        self.assertEqual(ask("snap-delete", confirm="before-upgrade"), 200)
+        self.assertEqual(self.sent(log, "snap-rollback"), [("101", "before-upgrade")])
+        self.assertEqual(self.sent(log, "snap-delete"), [("101", "before-upgrade")])
+        text = audit_text(self.data)
+        self.assertIn("servers/snap-rollback", text)
+        self.assertIn("servers/snap-delete", text)
+
+    def test_levels_read_act_admin(self):
+        self.session()
+        self.pve_host("pve-i")
+        read, act = self.token_for("read"), self.token_for("act")
+        call = lambda tok, op, **kw: self.api(op, dict({"agent": "pve-i", "id": "101", "name": "before-upgrade"}, **kw),
+                                              ticket=False, origin=False, token=tok)[0]
+        self.assertEqual(call(read, "guest-snapshots"), 200)
+        self.assertEqual(call(read, "guest-act", verb="start"), 403)
+        self.assertEqual(call(read, "snap-create", name="x1"), 403)
+        self.assertEqual(call(act, "snap-create", name="x1"), 200)
+        self.assertEqual(call(act, "snap-rollback", confirm="pbs"), 403)
+        self.assertEqual(call(act, "snap-delete", confirm="before-upgrade"), 403)
+
+    token_for = Scopes.token
+
+
 class FakeHandler:
     """What _gate reads of a request."""
 

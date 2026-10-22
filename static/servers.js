@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 const S = { hosts: [], host: null, tab: "overview", rows: [], filter: "", sheet: null, timer: 0 };
 const TABS = [["overview", "Overview", true], ["containers", "Containers", true], ["stacks", "Stacks", true],
               ["images", "Images", true], ["volumes", "Volumes", true], ["networks", "Networks", true],
-              ["vms", "VMs & LXC", false], ["host", "Host", false]];
+              ["vms", "VMs & LXC", "pve"], ["host", "Host", false]];
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -140,7 +140,7 @@ function draw_hosts() {
   const nav = $("hosts");
   nav.textContent = "";
   for (const h of S.hosts) {
-    const b = btn("", "host" + (h.name === S.host ? " on" : ""), () => { S.host = h.name; S.sheet && close_sheet(); draw_hosts(); draw_view(); });
+    const b = btn("", "host" + (h.name === S.host ? " on" : ""), () => { S.host = h.name; S.sheet && close_sheet(); if (S.tab === "vms" && !h.pve) S.tab = "overview"; draw_hosts(); draw_tabs(); draw_view(); });
     b.append(el("span", "dot " + (h.online ? "ok" : "bad")), el("span", "", h.name),
       el("span", "nums", h.online ? h.containers.running + "/" + h.containers.total : "–"));
     nav.appendChild(b);
@@ -152,7 +152,7 @@ function draw_tabs() {
   t.textContent = "";
   for (const [id, label, on] of TABS) {
     const b = btn(label, "tab" + (id === S.tab ? " on" : ""), () => { S.tab = id; draw_tabs(); draw_view(); });
-    b.disabled = !on;
+    b.disabled = on === "pve" ? !(host_now() || {}).pve : !on;
     b.setAttribute("role", "tab");
     t.appendChild(b);
   }
@@ -168,6 +168,7 @@ async function draw_view() {
   if (S.tab === "overview") return overview(v, h);
   if (S.tab === "containers") return containers(v, h);
   if (S.tab === "stacks") return stacks(v);
+  if (S.tab === "vms") return guests(v);
   if (S.tab === "images") return objects(v, "images", images_view);
   if (S.tab === "volumes") return objects(v, "volumes", volumes_view);
   if (S.tab === "networks") return objects(v, "networks", networks_view);
@@ -594,6 +595,138 @@ function open_object(title, facts, names, why, remove, extra, untagged, more) {
   if (why) sh.appendChild(el("p", "muted", why + (why === "in use" ? ": remove what uses it first." : "")));
   if (untagged) sh.appendChild(el("p", "muted", "Untagged layer: removed by its id."));
   if (more) { const box = el("div"); sh.appendChild(box); more(box); }
+}
+
+// ---- VMs & LXC (Proxmox): a list, and a sheet with Config / Snapshots / Backups / Tasks ----
+
+const uptime = (s) => (s >= 86400 ? Math.floor(s / 86400) + " d" : s >= 3600 ? Math.floor(s / 3600) + " h" : Math.floor(s / 60) + " min");
+
+async function guests(v) {
+  const bar = el("div", "bar"), said = el("div", "msg bad"), table = el("table");
+  bar.append(btn("Refresh", "", () => load()));
+  v.append(bar, said, table);
+  async function load() {
+    const r = await call("guests", { agent: S.host });
+    said.textContent = r.ok ? "" : r.error || "could not load";
+    table.textContent = "";
+    if (!r.ok) return;
+    if (!r.enabled) return table.appendChild(el("p", "muted", "Proxmox is not ticked for this host: tick it in Settings > Hosts and agents."));
+    head_row(table, ["", "Guest", "Kind", "CPU", "Memory", "Up", "Tags"]);
+    for (const g of r.guests) {
+      const tr = el("tr", "row" + (g.ticked ? "" : " dim"));
+      const dot = el("span", "dot " + (g.running ? "ok" : g.template ? "" : "bad"));
+      const first = el("td"); first.appendChild(dot);
+      tr.append(first, el("td", "", g.id + " · " + g.name), el("td", "muted", g.template ? "template" : g.type === "lxc" ? "LXC" : "VM"),
+        el("td", "muted", g.running ? g.cpu + "%" : "–"), el("td", "muted", g.running && g.mem != null ? pct(g.mem) : "–"),
+        el("td", "muted", g.running ? uptime(g.uptime) : "stopped"), el("td", "muted", g.tags.join(", ")));
+      if (g.ticked) tr.addEventListener("click", () => open_guest(g, load));
+      table.appendChild(tr);
+    }
+    if (!r.guests.length) table.appendChild(el("p", "muted", "No guest on this node yet."));
+  }
+  await load();
+}
+
+function open_guest(g, reload) {
+  close_sheet();
+  S.sheet = { alive: true, stream: null, term: null };
+  const sh = show_sheet();
+  const said = el("div", "msg");
+  const say = (t, bad) => { said.textContent = t; said.className = "msg" + (bad ? " bad" : ""); };
+  sh.append(el("h2", "", g.name), el("div", "muted", g.id + " · " + (g.type === "lxc" ? "LXC" : "VM") + " · " + (g.running ? "running" : "stopped")));
+  const acts = el("div", "actions");
+  for (const [verb, label] of [["start", "Start"], ["shutdown", "Shut down"], ["reboot", "Reboot"]]) {
+    const b = btn(label, verb === "shutdown" ? "danger" : "", async () => {
+      if (verb === "shutdown" && !(await typed("Shut down " + g.name + "?", g.name, "Shut down"))) return;
+      say(label + "…");
+      const r = await call("guest-act", { agent: S.host, id: g.id, verb });
+      say(r.ok ? label + " sent" : label + ": " + (r.error || "failed"), !r.ok);
+      reload();
+    });
+    b.disabled = !g.can.includes(verb) || (verb === "start" && g.running) || (verb !== "start" && !g.running);
+    acts.appendChild(b);
+  }
+  const tabs = el("div", "actions"), body = el("div");
+  sh.append(acts, tabs, body, said);
+  const views = { Config: guest_config, Snapshots: guest_snapshots, Backups: guest_backups, Tasks: guest_tasks };
+  let tab = "Config";
+  const draw = () => {
+    tabs.textContent = "";
+    for (const name of Object.keys(views)) tabs.appendChild(btn(name, name === tab ? "primary" : "", () => { tab = name; draw(); }));
+    body.textContent = "";
+    views[tab](body, g, say);
+  };
+  draw();
+}
+
+async function guest_config(body, g, say) {
+  const r = await call("guest-config", { agent: S.host, id: g.id });
+  if (!r.ok) return say(r.error || "failed", true);
+  const dl = el("dl");
+  for (const x of r.config) dl.append(el("dt", "", x.key), el("dd", "", x.value));
+  body.appendChild(dl);
+}
+
+async function guest_snapshots(body, g, say) {
+  const r = await call("guest-snapshots", { agent: S.host, id: g.id });
+  if (!r.ok) return say(r.error || "failed", true);
+  const take = btn("Take a snapshot…", "", async () => {
+    const a = await ask("A snapshot of " + g.name, [["Name (letters, digits, - and _; starts with a letter)", "text", "name"]], "Take");
+    if (!a) return;
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(a.values[0])) return notice("A snapshot's name starts with a letter and has letters, digits, - and _ (40 at most).");
+    say("Taking the snapshot… (the host may need a minute)");
+    const m = await call("snap-create", { agent: S.host, id: g.id, name: a.values[0] });
+    say(m.ok ? "Snapshot " + a.values[0] + " made" : "Snapshot: " + (m.error || "failed"), !m.ok);
+    if (m.ok) { body.textContent = ""; guest_snapshots(body, g, say); }
+  });
+  take.classList.add("gap");
+  body.appendChild(take);
+  const table = el("table");
+  head_row(table, ["Snapshot", "Taken", ""]);
+  for (const x of r.snapshots) {
+    const tr = el("tr"), end = el("td"), ab = el("div", "actions");
+    const redo = async (verb, word, title, label) => {
+      if (!(await typed(title, word, label))) return;
+      say(label + "…");
+      const m = await call(verb, { agent: S.host, id: g.id, name: x.name, confirm: word });
+      say(m.ok ? label + " done" : label + ": " + (m.error || "failed"), !m.ok);
+      body.textContent = ""; guest_snapshots(body, g, say);
+    };
+    end.appendChild(ab);
+    ab.append(btn("Roll back", "danger", () => redo("snap-rollback", g.name, "Roll " + g.name + " back to " + x.name + "? What it did since is lost.", "Roll back")),
+      btn("Delete", "danger", () => redo("snap-delete", x.name, "Delete the snapshot " + x.name + "?", "Delete")));
+    tr.append(el("td", "", x.name + (x.description ? " · " + x.description : "")), el("td", "muted", when(x.time)), end);
+    table.appendChild(tr);
+  }
+  if (!r.snapshots.length) body.appendChild(el("p", "muted", "No snapshot yet. Taking one needs VM.Snapshot on the agent's Proxmox token."));
+  else body.appendChild(table);
+}
+
+async function guest_backups(body, g, say) {
+  const r = await call("guest-backups", { agent: S.host, id: g.id });
+  if (!r.ok) return say(r.error || "failed", true);
+  const table = el("table");
+  head_row(table, ["Backup", "Storage", "Size", "Taken"]);
+  for (const x of r.backups) {
+    const tr = el("tr");
+    tr.append(el("td", "", x.volid.split("/").slice(-2).join("/") + (x.protected ? " · protected" : "") + (x.notes ? " · " + x.notes : "")),
+      el("td", "muted", x.storage), el("td", "num", bytes(x.size)), el("td", "muted", when(x.time)));
+    table.appendChild(tr);
+  }
+  body.appendChild(r.backups.length ? table : el("p", "muted", "No backup found. Listing them needs Datastore.Audit on the agent's Proxmox token."));
+}
+
+async function guest_tasks(body, g, say) {
+  const r = await call("guest-tasks", { agent: S.host, id: g.id });
+  if (!r.ok) return say(r.error || "failed", true);
+  const table = el("table");
+  head_row(table, ["Task", "Result", "User", "Started"]);
+  for (const x of r.tasks) {
+    const tr = el("tr");
+    tr.append(el("td", "", x.type), el("td", x.status === "OK" ? "muted" : "", x.status), el("td", "muted", x.user), el("td", "muted", when(x.start)));
+    table.appendChild(tr);
+  }
+  body.appendChild(r.tasks.length ? table : el("p", "muted", "No task for this guest yet."));
 }
 
 // ---- stacks: a list, and a sheet with Compose / .env / History / Git (Validate, Save and Discard; Save never deploys) ----

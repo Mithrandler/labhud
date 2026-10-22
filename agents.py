@@ -51,7 +51,8 @@ VERBS = {
     "systemd": ("start", "stop", "restart"),
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
-    "pve": ("start", "shutdown", "reboot"),
+    "pve": ("start", "shutdown", "reboot", "config", "snap-list", "backup-list", "task-list",
+            "snap-create", "snap-rollback", "snap-delete"),
     "ptero": ("start", "stop", "restart"),
     "stacks": ("deploy", "redeploy", "restart", "down", "show", "read", "validate", "save", "version", "restore"),
     "terminal": ("shell",),
@@ -63,6 +64,7 @@ FEATURES = ("registry-auth",)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
 READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats",
                     "rm-image", "rm-network", "rm-volume", "pull", "network-inspect", "volume-ls", "volume-read"),
+         "pve": VERBS["pve"][3:],    # a guest's config, snapshots, backups and tasks answer with their output; start/shutdown/reboot are the buttons
          "stacks": VERBS["stacks"], "terminal": VERBS["terminal"]}   # compose answers with its output: only ⚙ > Containers > Stacks asks
 # the host's Docker (its images, volumes and networks), ticked as this target, which is no container
 # and takes none of a container's verbs, as the host verbs take no container (the agent checks the same)
@@ -72,6 +74,7 @@ HOST_VERBS = ("inventory", "prune", "prune-dangling", "prune-networks", "prune-v
 # a volume ticked for browsing is the target "volume:<name>"; the two volume verbs are for those and nothing else
 VOLUME_PREFIX = "volume:"
 VOLUME_VERBS = ("volume-ls", "volume-read")
+SNAP_ARG = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,39}")     # Proxmox's own rule for a snapshot name
 VERSION_ARG = re.compile(r"[0-9]{1,12}")
 IMAGE_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,199}")
 NAME_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
@@ -103,6 +106,8 @@ def arg_ok(verb, arg):
         return bool(IMAGE_ARG.fullmatch(arg))
     if verb in ("rm-network", "rm-volume", "network-inspect"):
         return bool(NAME_ARG.fullmatch(arg))
+    if verb in ("snap-create", "snap-rollback", "snap-delete"):
+        return bool(SNAP_ARG.fullmatch(arg))
     if verb in ("version", "restore"):
         return bool(VERSION_ARG.fullmatch(arg))
     if verb == "volume-ls":

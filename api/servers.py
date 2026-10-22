@@ -24,6 +24,12 @@ here is POST, JSON, and goes through one gate, `_gate`, in this order:
     POST /api/servers/stack-down {agent, name, confirm}   admin: down (never removes volumes)
     POST /api/servers/stack-source {agent, name, repo, branch, path | clear}   admin: where the file comes from
     POST /api/servers/stack-hook {agent, name}       admin: a new webhook URL (shown once); stack-sync {agent, name, token?}: pull now
+    POST /api/servers/guests {agent}                 read: the node's VMs and containers (LXC), with what each may do
+    POST /api/servers/guest-config|guest-snapshots|guest-backups|guest-tasks {agent, id}   read: (keys that look like secrets masked)
+    POST /api/servers/guest-act {agent, id, verb}    act: start | shutdown | reboot
+    POST /api/servers/snap-create {agent, id, name}  act: a snapshot (no RAM state)
+    POST /api/servers/snap-rollback {agent, id, name, confirm}   admin: the guest goes back; confirm = the guest's name
+    POST /api/servers/snap-delete {agent, id, name, confirm}     admin: confirm = the snapshot's name
     POST /api/servers/audit-verify {}                admin: is the audit log's chain whole
 
 Nothing the agent says reaches a screen as it came: the answers are rebuilt field by field, with
@@ -51,6 +57,8 @@ NEEDS = {
     "images": "read", "volumes": "read", "networks": "read", "network": "read", "volume-ls": "read", "volume-read": "read",
     "stacks": "read", "stack-read": "admin", "stack-validate": "admin", "stack-save": "admin", "stack-restore": "admin",
     "stack-act": "act", "stack-down": "admin", "stack-source": "admin", "stack-hook": "admin", "stack-sync": "admin",
+    "guests": "read", "guest-config": "read", "guest-snapshots": "read", "guest-backups": "read", "guest-tasks": "read",
+    "guest-act": "act", "snap-create": "act", "snap-rollback": "admin", "snap-delete": "admin",
     "pull": "act", "rm": "admin", "clean": "admin", "volume-access": "admin",
 }
 SESSION_IDLE = 900            # s without a call before the interactive session ends
@@ -231,6 +239,7 @@ def hosts(h, body):
         out.append({
             "name": a["name"], "online": bool(a["online"]), "version": _s(a["version"], 40),
             "update": bool(a.get("update")), "docker": "docker" in a["caps"] or "docker" in a["found"],
+            "pve": "pve" in a["caps"],
             "containers": {"running": sum(1 for c in cs if c.get("state") == "running"), "total": len(cs)},
             "cpu": _n(sensors.get("cpu"), 0, 10000), "mem": _n(sensors.get("mem"), 0, 100),
             "seen": _n(a.get("seen"), 0, 4e9),
@@ -769,3 +778,188 @@ def stack_sync(h, body):
     ok, error, out = agents.sync_stack(aid, name, token or None)
     audit.record(h, "servers/stack-sync", f"{a['name']}/{name}", ok)
     return (200, {"ok": True, "output": _s_text(out)[-2000:]}) if ok else _failed(error, out)
+
+
+# --- VMs & LXC: the guests of a Proxmox node, read and acted on through the agent next to it ---
+
+GUEST = agents.TARGET["pve"]
+GUEST_ACTIONS = ("start", "shutdown", "reboot")
+SNAP_WAIT = 330       # s: a snapshot may take its time (the agent gives it five minutes)
+PVE_SECRET = re.compile(r"pass|secret|token|cicustom|sshkeys|(^|_)keys?$", re.I)
+GUEST_TYPES = ("qemu", "lxc")
+
+
+def _ticked_guests(a):
+    return set(a.get("targets", {}).get("pve", [])) if "pve" in a.get("caps", []) else set()
+
+
+def _guest(body):
+    """(aid, agent, vmid, error answer): the host and a guest of it that the admin ticked."""
+    aid, a = _agent(body)
+    vmid = body.get("id")
+    if isinstance(vmid, int) and not isinstance(vmid, bool):
+        vmid = str(vmid)
+    if not a or not isinstance(vmid, str) or not GUEST.fullmatch(vmid):
+        return None, None, None, (400, {"ok": False, "error": "agent and the guest's number"})
+    if vmid not in _ticked_guests(a):
+        return None, None, None, (403, {"ok": False, "error": "that guest is not ticked for this host"})
+    return aid, a, vmid, None
+
+
+def _json(text, key):
+    """The list `key` of the agent's JSON answer, or None."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return None
+    return d.get(key) if isinstance(d, dict) and isinstance(d.get(key), list) else None
+
+
+def _pve_read(body, verb, key):
+    """(agent, vmid, rows, error answer): one reading verb of the agent, its list rebuilt by the caller."""
+    aid, a, vmid, err = _guest(body)
+    if err:
+        return None, None, None, err
+    ok, error, text = agents.read(aid, "pve", verb, vmid, wait=40)
+    if not ok:
+        return None, None, None, (502, {"ok": False, "error": _s(error, 200) or "failed"})
+    rows = _json(text, key)
+    if rows is None:
+        return None, None, None, (502, {"ok": False, "error": "the agent's answer was not understood"})
+    return a, vmid, [r for r in rows[:200] if isinstance(r, dict)], None
+
+
+@_guarded("guests")
+def guests(h, body):
+    aid, a = _agent(body)
+    if not a:
+        return 404, {"ok": False, "error": "no such host"}
+    if "pve" not in a.get("caps", []):
+        return 200, {"ok": True, "enabled": False, "guests": []}
+    st = agents.state_of(aid)
+    ticked = _ticked_guests(a)
+    rows = []
+    for vmid, g in sorted((st.get("guests") or {}).items(), key=lambda kv: int(kv[0]) if str(kv[0]).isdigit() else 0)[:300]:
+        if not isinstance(g, dict) or not GUEST.fullmatch(str(vmid)):
+            continue
+        rows.append({
+            "id": str(vmid), "name": _s(g.get("name"), 80), "type": g.get("type") if g.get("type") in GUEST_TYPES else "",
+            "running": g.get("running") is True, "template": g.get("template") is True,
+            "cpu": _n(g.get("cpu"), 0, 100000), "mem": _n(g.get("mem"), 0, 1000),
+            "mem_bytes": int(_n(g.get("mem_bytes"))), "mem_max": int(_n(g.get("mem_max"))), "disk": int(_n(g.get("disk"))),
+            "uptime": int(_n(g.get("uptime"), 0, 4e9)),
+            "tags": [_s(t, 30) for t in (g.get("tags") or [])[:8] if isinstance(t, str)],
+            "ticked": str(vmid) in ticked, "can": list(GUEST_ACTIONS) if str(vmid) in ticked and not g.get("template") else [],
+        })
+    return 200, {"ok": True, "enabled": True, "online": aid in agents._live, "node": _s(st.get("node"), 60), "guests": rows}
+
+
+@_guarded("guest-config")
+def guest_config(h, body):
+    a, vmid, rows, err = _pve_read(body, "config", "config")
+    if err:
+        return err
+    out = [{"key": _s(r.get("key"), 60), "value": "********" if PVE_SECRET.search(str(r.get("key"))) else _s(r.get("value"), 300)}
+           for r in rows if isinstance(r.get("key"), str)]
+    return 200, {"ok": True, "config": out}
+
+
+@_guarded("guest-snapshots")
+def guest_snapshots(h, body):
+    a, vmid, rows, err = _pve_read(body, "snap-list", "snapshots")
+    if err:
+        return err
+    return 200, {"ok": True, "snapshots": _snapshots(rows)}
+
+
+def _snapshots(rows):
+    return [{"name": r["name"], "description": _s(r.get("description"), 200), "parent": _s(r.get("parent"), 40),
+             "time": int(_n(r.get("time"), 0, 4e9)), "vmstate": r.get("vmstate") is True}
+            for r in rows if isinstance(r.get("name"), str) and agents.SNAP_ARG.fullmatch(r["name"])]
+
+
+@_guarded("guest-backups")
+def guest_backups(h, body):
+    a, vmid, rows, err = _pve_read(body, "backup-list", "backups")
+    if err:
+        return err
+    return 200, {"ok": True, "backups": [
+        {"storage": _s(r.get("storage"), 60), "volid": _s(r.get("volid"), 200), "size": int(_n(r.get("size"))),
+         "time": int(_n(r.get("time"), 0, 4e9)), "format": _s(r.get("format"), 20), "notes": _s(r.get("notes"), 200),
+         "protected": r.get("protected") is True} for r in rows[:100]]}
+
+
+@_guarded("guest-tasks")
+def guest_tasks(h, body):
+    a, vmid, rows, err = _pve_read(body, "task-list", "tasks")
+    if err:
+        return err
+    return 200, {"ok": True, "tasks": [
+        {"type": _s(r.get("type"), 30), "status": _s(r.get("status"), 120), "user": _s(r.get("user"), 60),
+         "start": int(_n(r.get("start"), 0, 4e9)), "end": int(_n(r.get("end"), 0, 4e9))} for r in rows[:30]]}
+
+
+@_guarded("guest-act")
+def guest_act(h, body):
+    aid, a, vmid, err = _guest(body)
+    verb = str(body.get("verb") or "")
+    if err:
+        return err
+    if verb not in GUEST_ACTIONS:
+        return 400, {"ok": False, "error": "a verb of start, shutdown or reboot"}
+    ok, error = agents.command(aid, "pve", verb, vmid)
+    audit.record(h, f"servers/guest-{verb}", f"{a['name']}/{vmid}", ok)
+    print(f"servers: guest {verb} {a['name']}/{vmid} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+def _snap_name(body):
+    name = body.get("name")
+    return name if isinstance(name, str) and agents.SNAP_ARG.fullmatch(name) else None
+
+
+@_guarded("snap-create")
+def snap_create(h, body):
+    aid, a, vmid, err = _guest(body)
+    name = _snap_name(body)
+    if err:
+        return err
+    if not name:
+        return 400, {"ok": False, "error": "a name of letters, digits, - and _, starting with a letter (40 at most)"}
+    ok, error = agents.command(aid, "pve", "snap-create", vmid, wait=SNAP_WAIT, arg=name)
+    audit.record(h, "servers/snap-create", f"{a['name']}/{vmid}/{name}", ok)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+def _snap_destroy(h, body, verb):
+    """Rollback and delete: the snapshot must be in the host's own list, and the admin types a name."""
+    aid, a, vmid, err = _guest(body)
+    name = _snap_name(body)
+    if err:
+        return err
+    if not name:
+        return 400, {"ok": False, "error": "the snapshot's name"}
+    ok, error, text = agents.read(aid, "pve", "snap-list", vmid, wait=40)
+    rows = _json(text, "snapshots") if ok else None
+    if rows is None:
+        return 502, {"ok": False, "error": _s(error, 200) or "the agent's answer was not understood"}
+    if not any(r["name"] == name for r in _snapshots([r for r in rows[:200] if isinstance(r, dict)])):
+        return 404, {"ok": False, "error": "that is not in this guest's list"}
+    guest_name = _s(((agents.state_of(aid).get("guests") or {}).get(vmid) or {}).get("name"), 80)
+    want = guest_name if verb == "snap-rollback" else name       # the rollback endangers the guest, the delete the snapshot
+    if not want or body.get("confirm") != want:
+        return 400, {"ok": False, "error": "type the name to confirm"}
+    ok, error = agents.command(aid, "pve", verb, vmid, wait=SNAP_WAIT, arg=name)
+    audit.record(h, f"servers/{verb}", f"{a['name']}/{vmid}/{name}", ok)
+    print(f"servers: {verb} {a['name']}/{vmid}/{name} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+@_guarded("snap-rollback")
+def snap_rollback(h, body):
+    return _snap_destroy(h, body, "snap-rollback")
+
+
+@_guarded("snap-delete")
+def snap_delete(h, body):
+    return _snap_destroy(h, body, "snap-delete")

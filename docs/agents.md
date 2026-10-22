@@ -14,7 +14,7 @@ APIs, never through a shell or scripts you write. The agent is
 | `systemd` | D-Bus (`org.freedesktop.systemd1`) | start, stop, restart services; name the failed units (all of them, for an alert) |
 | `host` | D-Bus (`login1`, a transient unit) | reboot, shut down, update packages |
 | `wol` | a UDP broadcast | wake other machines on its network |
-| `pve` | the local API (`https://localhost:8006`, a token made at install) | start, shut down, reboot VMs and LXCs |
+| `pve` | the local API (`https://localhost:8006`, a token made at install) | start, shut down, reboot VMs and LXCs; read their config, snapshots, backups and tasks; make, roll back or delete a snapshot (Servers > VMs & LXC) |
 | `ptero` | the panel's client API (a key given at install) | start, stop, restart game servers |
 | `scan` | `trivy` or `grype` in the agent's `PATH` (the agent downloads nothing) | count the critical and high CVEs of the ticked containers' images (once a day); with ⚙ > Containers > Hold back risky updates, scan a new image before an update on its own replaces the old one |
 
@@ -60,7 +60,7 @@ the old one is switched off.
    does not trust, the line fetches the installer with `-k` and checks its SHA-256 instead). Either way the installer writes
    `/etc/labhud-agent/config` (mode 600) and a systemd unit and starts it. On Proxmox VE it also
    makes a user `labhud@pve` with only `VM.PowerMgmt`, `VM.Audit` and `Sys.Audit`, and a token for
-   it that stays on the host. For a Pterodactyl panel add `--ptero-url https://panel…`: the client
+   it that stays on the host. Snapshots and the backup list are **opt-in**: `pveum role modify LabhudAgent --privs "VM.PowerMgmt,VM.Audit,Sys.Audit,VM.Snapshot,Datastore.Audit"` (or `install-agent.sh --pve-snapshots`) — nothing that can write a datastore (`Datastore.Allocate*`) or change the node (`Sys.Modify`) is ever added. For a Pterodactyl panel add `--ptero-url https://panel…`: the client
    API key is asked for, not given on the command line. `--base-w` and `--price-kwh` set the power
    estimate. From agent 0.1.0 on it **updates itself**: ⚙ > Agents shows *Update to vX* when
    labhud pins a newer release (also in the app and `labhud agent update`), and *Update agents
