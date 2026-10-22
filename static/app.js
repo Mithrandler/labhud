@@ -1575,11 +1575,13 @@ function glance_tile(c) {
     gauges.textContent = "";
     gauges.dataset.n = gs.length;
     for (const g of gs) {
+      // a small ring: the number inside, what it is under it
       const row = el("span", "gg" + (g.sev ? " " + g.sev : ""));
-      const bar = el("span", "gb"), fill = el("i");
-      fill.style.width = Math.max(0, Math.min(100, g.pc || 0)) + "%";
-      bar.appendChild(fill);
-      row.append(el("span", "gk", GLANCE_NAME[g.kind]), bar, el("span", "gn", g.text));
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("viewBox", "0 0 36 36");
+      ring_arc(svg, 15.5, 3.6)(g.pc, g.sev);
+      const mid = el("span", "gn", g.text);
+      row.append(svg, mid, el("span", "gk", GLANCE_NAME[g.kind]));
       gauges.appendChild(row);
     }
   });
@@ -1646,7 +1648,8 @@ function fit_glance() {
   // portrait: always two tiles a row, sharing the whole width, so no column is left empty at the right
   const portrait = W < H;
   cls(pageGrid, "gp2", portrait);
-  for (let t = Math.min(H * 0.6, portrait ? 220 : W * 0.5, 220); ; t *= 0.93) {
+  for (const s of pageSections) cls(s, "one", s.querySelectorAll(".gtile").length === 1);   // a lone tile gets the whole row in portrait
+  for (let t = Math.min(H * 0.6, portrait ? 220 : W * 0.5, 220); ; t *= 0.97) {
     const cols = portrait ? 2 : Math.max(1, Math.floor((W + gap) / (t * 1.4 + gap)));
     pageGrid.style.setProperty("--t", t.toFixed(1) + "px");
     for (const s of pageSections) {
