@@ -2980,7 +2980,7 @@ function fill_panel() {
   panel_charts(body, c);
   render_actions(c);
   const shown = body.children.length > afterStatus || links.length > 0 || !$("#panel-actions").hidden;
-  if (shown) { panel_tabs(body, c); paginate_lists(body, c); }
+  if (shown) paginate_lists(body, c);   // one page, no tabs: every section under its heading
   return shown;
 }
 
@@ -3022,50 +3022,6 @@ function paginate_lists(body, c) {
     next.addEventListener("click", (ev) => { ev.stopPropagation(); cur = Math.min(count - 1, cur + 1); show(); });
     show();
   });
-}
-
-let panelTab = "";       // the tab open in the panel, by its title: it survives the refresh of the numbers
-let panelTabCard = "";   // the card it was chosen on
-
-/** The panel as tabs: what comes before the first heading is "overview" (status, links, uptime), every
-    heading with what follows it a tab of its own. One short screen per tab, no scrolling down a long list;
-    a tab is shown and hidden, nothing moves. A panel with a single group stays as it is. */
-function panel_tabs(body, c) {
-  // short facts that belong together on the first screen: they keep their heading there
-  const OVERVIEW = ["status", "uptime", "host", "resources", "numbers", "container"];
-  const groups = [{ title: "overview", nodes: [] }];
-  let into = groups[0];
-  for (const n of [...body.childNodes]) {
-    const head = n.nodeName === "H3" ? n : n.classList && n.classList.contains("chart-head") ? n.querySelector("h3") : null;
-    if (head) {
-      const title = head.textContent;
-      if (OVERVIEW.includes(title.toLowerCase())) { into = groups[0]; into.nodes.push(n); continue; }
-      into = { title, nodes: n === head ? [] : [n] };
-      groups.push(into);
-    } else into.nodes.push(n);
-  }
-  const real = groups.filter((g, i) => i > 0 || g.nodes.length);
-  if (real.length < 2) return;
-  if (panelTabCard !== c.id || !real.some((g) => g.title === panelTab)) { panelTab = real[0].title; panelTabCard = c.id; }
-  const bar = el("div", "ptabs");
-  body.textContent = "";
-  body.appendChild(bar);
-  for (const g of real) {
-    const pane = el("div", "ptab");
-    pane.append(...g.nodes);
-    pane.hidden = g.title !== panelTab;
-    const b = el("button", "ptab-b" + (g.title === panelTab ? " on" : ""), g.title);
-    b.type = "button";
-    b.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      panelTab = g.title;
-      for (const x of bar.children) cls(x, "on", x === b);
-      for (const p of body.querySelectorAll(".ptab")) p.hidden = p !== pane;
-      touched();
-    });
-    bar.appendChild(b);
-    body.appendChild(pane);
-  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3131,21 +3087,7 @@ function panel_uptime(body, c) {
   const cov = d.coverage && d.coverage[c.id];
   if (pct !== undefined && cov !== undefined && cov < 100) head.appendChild(el("span", "uptime-cov", `· ${Math.round(cov)}% covered`));
   body.appendChild(head);
-  if (uptimeRange === "7d") {   // one square a day, coloured by how much of that day it was up
-    const days = el("div", "uptime-days");
-    const shares = uptime_day_shares(values);
-    for (let d = 0; d < 7; d++) {
-      const share = shares[d];
-      const day = new Date(Date.now() - (6 - d) * 86400000);
-      const cell = el("div", "uday " + uptime_class(share));
-      cell.title = day_name(day.toISOString().slice(0, 10)) + (share === null ? " — not known" : share < 0 ? " — off" : ` — ${(share * 100).toFixed(share >= 0.999 ? 0 : 1)}%`);
-      cell.append(el("span", "dn", day_name(day.toISOString().slice(0, 10)).slice(0, 2)), el("span", "dp", share === null || share < 0 ? "—" : Math.round(share * 100) + "%"));
-      days.appendChild(cell);
-    }
-    body.appendChild(days);
-    return;
-  }
-  const n = 48;
+  const n = uptimeRange === "7d" ? 84 : 48;   // one bar for both ranges, as the app draws it
   const bar = el("div", "uptime-bar");
   const parts = uptime_slices(values, n);
   for (let i = parts.length; i < n; i++) bar.appendChild(el("span", "none"));   // a young history fills from the right

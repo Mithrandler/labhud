@@ -6,6 +6,12 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+- The card panel on the wall is one page, no tabs; uptime is one bar for 24 h and 7 d, as in the app.
+
+### Fixed
+
+- A pushed source (the VPS) that pushes less often than it goes stale left single points in its history, so no chart could draw a line: its last number is now repeated for up to 10 minutes.
+
 ### Added
 
 - Servers: a container's `update` (a newer image in its registry) in `/api/servers/containers`, the host's `bad` and `updates` counts in `hosts`, and `POST /api/servers/update-all` (every ticked container with a newer image, audited). The wall's Servers shows the same.

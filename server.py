@@ -544,6 +544,25 @@ def _restore_uptime(saved):
         _uptime_pending[cid] = minutes
 
 
+PUSH_CARRY = 10   # samples (minutes) a pushed number is repeated while its source is between two pushes
+_carried = {}
+
+
+def _sample_value(path, series):
+    """The number to record for `path` now. A pushed source (live.<name>.…) that pushes less often
+    than it goes stale is gone from the data between two pushes: its last number is repeated for up
+    to PUSH_CARRY samples, so the history is a line, not single points no chart can join."""
+    v = _value(path)
+    parts = path.split(".")
+    if v is None and parts[0] == "live" and len(parts) > 2 and parts[1] in push.KEYS and series and series[-1] is not None \
+            and _carried.get(path, 0) < PUSH_CARRY:
+        _carried[path] = _carried.get(path, 0) + 1
+        return series[-1]
+    if v is not None:
+        _carried[path] = 0
+    return v
+
+
 def sample_history():
     time.sleep(15)  # the first answers of the sources
     while True:
@@ -552,7 +571,7 @@ def sample_history():
                 series = _history.get(path)
                 if series is None:
                     series = _history[path] = collections.deque(maxlen=HISTORY_POINTS)
-                series.append(_value(path))
+                series.append(_sample_value(path, series))
             for path in set(_history) - set(TOPOLOGY["trends"]):  # gone after a reload
                 del _history[path]
             kept = {p: list(s) for p, s in _history.items()}
