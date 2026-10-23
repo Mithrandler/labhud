@@ -403,11 +403,6 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 .card.frozen .mrow .bar > i { background: var(--border); }
 .card.frozen .spark-box { opacity: .35; }
 
-/* ======================= the GAMES page ======================= */
-
-.card.game .line { font-size: var(--text-sm); color: var(--muted); }
-.card.game.on .line { color: var(--green); }
-
 /* ======================= the traffic strip ======================= */
 
 #strip {

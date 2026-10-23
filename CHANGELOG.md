@@ -9,6 +9,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 ### Changed
 - **One set of wall type, smaller**: `text_wall_name` 12, `text_wall_num` 20, `text_wall_min` 11, and tiles 112 px (`wall_tile_min` = `wall_tile_max`, so three rows fit the 914x411 wall without scrolling; the app uses the same). "up" / "down" on a card without numbers is a word, set at the name's size, not the number's. Names are upper case on every tile; the number row has the same height on all of them, so name, number and bottom line sit in the same places.
 - **PVE and PVE2 come first** on General (then the other hosts, then what is in trouble, then the rest as configured).
+- **Games is tiles too**: one tile per game server (name, players or "up", "stopped" / "of N slots" below, the game's icon, state dot), the same grid, type and gap as every other page; the old sectioned cards are gone.
 - **A group in trouble is one tile, not three**: the group tile (and not its cards as well) comes to the front, counts what is broken (each bad row of a list card such as FAILURES, else one per card) and names the first two ("pve2: fleet-update, job: backup-check +2"). A tap opens the group's panel, one level: each card in trouble with its broken rows right there, then the cards that are fine. The "problem/problems" word under the number is gone, and a card that lists what is wrong no longer repeats its unit ("4", not "4 Problems"); its bottom line names the broken rows.
 
 ### Fixed

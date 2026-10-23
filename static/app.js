@@ -651,44 +651,9 @@ function make_section(title, cards) {
 
 function mount() {
   document.body.classList.toggle("glance", GLANCE);
-  // the game servers keep their own cards: the glance view is for the status pages
+  // a games page is tiles too (one per server, mount_tiles); the glance view is for the status pages
   if (GLANCE && !CFG.pages[page].games) return mount_glance();
-  if (!CFG.pages[page].games) return mount_tiles();
-  const host = $("#content");
-  host.textContent = "";
-  updaters = [];
-  pageSections = [];
-  if (layoutWatch) layoutWatch.disconnect();
-  pageGrid = el("div", "page");
-  host.appendChild(pageGrid);
-  apply_density();   // the page's own spacing, if the config sets one
-
-  if (CFG.pages[page].games) {
-    const { sec, grid } = make_section("Servers", []);
-    mount_games(grid, CFG.pages[page].games);
-    pageGrid.appendChild(sec);
-    pageSections.push(sec);
-  } else {
-    for (const g of CFG.pages[page].groups) {
-      // left off this screen from ⚙ (settings.js): the group, or some of its cards
-      const cards = (CFG.cards[g.id] || []).filter((c) => !is_hidden(g.id, c.id));
-      if (!cards.length) continue;
-      const { sec, grid } = make_section(g.title, cards);
-      // guests of more than one node in the group: each says which node it is on
-      const nodes = new Set(cards.filter(is_guest).map((c) => c.check[1]));
-      for (const c of cards) grid.appendChild(make_card(c, nodes.size > 1));
-      pageGrid.appendChild(sec);
-      pageSections.push(sec);
-    }
-  }
-  update();
-  layout();
-  // a timer, not requestAnimationFrame: headless screenshots (and a phone with the screen off)
-  // give no frames; and not inside the callback itself, where moving cards trips the
-  // "ResizeObserver loop" warning
-  layoutWatch = new ResizeObserver(() => setTimeout(relayout_if_needed, 0));
-  layoutWatch.observe(host);
-  layoutWatch.observe(pageGrid);
+  return mount_tiles();
 }
 
 function norm(text) { return String(text || "").trim().toLowerCase(); }
@@ -2023,47 +1988,6 @@ function game_icon(sv) {
   const text = `${sv.game || ""} ${sv.name || ""}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   for (const [f, icon] of GAME_ICONS) if (text.includes(f)) return icon;
   return GAME_STEAM.some((f) => text.includes(f)) ? "steam" : "games";
-}
-
-/** A games page: the cards come live from the server list at `path` (Pterodactyl), so it has no
-    fixed cards in the topology. 15 cards are made once and shown as servers appear. */
-function mount_games(grid, path) {
-  const tiles = [];
-  for (let i = 0; i < 15; i++) {
-    const d = el("div", "card game");
-    d.dataset.size = "s";
-    d.hidden = true;
-    const head = el("div", "head");
-    const ic = el("span", "ic");
-    const title = el("div", "title");
-    const g = el("span", "name");
-    title.appendChild(g);
-    const dot = el("span", "dot");
-    head.append(ic, title, dot);
-    const s = el("div", "line");
-    d.append(head, s);
-    grid.appendChild(d);
-    // The tile keeps one card object (bind_touch holds it); each update refreshes what is in it.
-    const card = { id: "game" + i, name: "server", panel: "game", game: null, check: ["known", false], actions: [] };
-    bind_touch(d, card);
-    tiles.push({ d, g, s, ic, dot, card, icon: "" });
-  }
-  updaters.push(() => {
-    const servers = get(path) || [];
-    tiles.forEach((x, i) => {
-      const sv = servers[i];
-      if (!sv) { if (!x.d.hidden) x.d.hidden = true; return; }
-      if (x.d.hidden) x.d.hidden = false;
-      const gc = game_card(sv, i);
-      put(x.g, gc.title);
-      put(x.s, gc.line);
-      const icn = game_icon(sv);
-      if (icn !== x.icon) { x.icon = icn; x.ic.replaceWith(x.ic = card_icon(icn, "games")); }
-      cls(x.d, "on", gc.check[1]);
-      cls(x.dot, "up", gc.check[1]);
-      Object.assign(x.card, { name: gc.name, game: sv, check: gc.check, actions: gc.actions });
-    });
-  });
 }
 
 // ---------------------------------------------------------------------------------------------

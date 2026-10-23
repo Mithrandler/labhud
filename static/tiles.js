@@ -229,6 +229,53 @@ function fill_group_panel(c, body) {
   return true;
 }
 
+/** The tiles of a games page: the servers come live from the list at `path` (Pterodactyl), so a pool of
+    tiles is made once and a tile is shown as a server appears. */
+const GAME_TILES = 24;
+function make_game_tiles(path) {
+  const out = [];
+  for (let i = 0; i < GAME_TILES; i++) {
+    const n = el("div", "card tile game");
+    const head = el("div", "head");
+    let ic = el("span", "ic");
+    const name = el("span", "name");
+    const title = el("div", "title");
+    title.appendChild(name);
+    const dot = el("span", "dot");
+    head.append(ic, title, dot);
+    const num = el("div", "tile-num");
+    const nv = el("span", "tn-v", "—"), nl = el("span", "tn-l", "");
+    num.append(nv, nl);
+    const sub = el("div", "tile-sub");
+    n.append(head, num, sub);
+    // the tile keeps one card object (bind_touch holds it); each update refreshes what is in it
+    const card = { id: "game" + i, name: "server", panel: "game", game: null, check: ["known", false], actions: [] };
+    bind_touch(n, card);
+    const e = { tile: n, card: null, inner: false, empty: true, pos: i };
+    let icon = "";
+    updaters.push(() => {
+      const sv = (get(path) || [])[i];
+      e.empty = !sv;
+      if (!sv) return;
+      const gc = game_card(sv, i);
+      const q = sv.query || null, on = gc.check[1];
+      put(name, gc.title);
+      const icn = game_icon(sv);
+      if (icn !== icon) { icon = icn; ic.replaceWith(ic = card_icon(icn, "games")); }
+      const players = on && q && q.players != null;
+      put(nv, players ? String(q.players) : on ? "up" : "—");
+      put(nl, players ? "players" : "");
+      cls(nv, "txt", !players);
+      put(sub, !on ? "stopped" : players && q.max ? `of ${q.max} slots` : on && !players ? "running" : "");
+      cls(n, "frozen", !on);
+      cls(dot, "up", on);
+      Object.assign(card, { name: gc.name, game: sv, check: gc.check, actions: gc.actions });
+    });
+    out.push(e);
+  }
+  return out;
+}
+
 let tileEntries = [];   // {tile, card, kind: "own" | "inner", pos}: what lays out, in config order
 
 /** Mounts the current page as tiles. Replaces the sections and the zoom search of layout(). */
@@ -246,7 +293,9 @@ function mount_tiles() {
   tileEntries = [];
   const expanded = tiles_expanded();
   let pos = 0;
-  for (const g of CFG.pages[page].groups) {
+  const games = CFG.pages[page].games;
+  if (games) tileEntries.push(...make_game_tiles(games));
+  for (const g of games ? [] : CFG.pages[page].groups) {
     const cards = (CFG.cards[g.id] || []).filter((c) => !is_hidden(g.id, c.id));
     if (!cards.length) continue;
     const hosts = cards.filter((c) => host_node(c));
@@ -283,7 +332,7 @@ function order_tiles() {
   const sig = [];
   for (const e of tileEntries) {
     const bad = e.group ? e.group.some((c) => tile_trouble(c) === "crit") : e.card && tile_trouble(e.card) === "crit";
-    const visible = !e.inner || bad;
+    const visible = (!e.inner || bad) && !e.empty;
     e.tile.hidden = !visible;
     // PVE and PVE2 first, then the other hosts, then what is in trouble, then the rest as configured
     const node = e.card && host_node(e.card);
