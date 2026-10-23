@@ -7,7 +7,7 @@
 //  - on the pages that list things (everything but General) a group is one tile: how many of its
 //    cards have a problem, red if any does, and the whole list in a panel;
 //  - every other card is one tile with its worst or first number.
-// A card in trouble comes to the front as a tile of its own, wherever it is.
+// A card in trouble comes to the front, wherever it is; a group in trouble, as the one tile of its group.
 
 /** General keeps a tile per card; the other pages fold each group of several cards into one tile. */
 function tiles_expanded() {
@@ -20,8 +20,7 @@ function host_node(c) {
   return c.panel && String(c.panel).startsWith("host:") ? String(c.panel).slice(5) : null;
 }
 
-/** [value text, label, severity] of the one number a card is about. */
-/** [value text, label, severity] of the one number a card is about. */
+/** [value text, label, severity, is text] of the one number a card is about; "up"/"down" are words, set at the size of text. */
 function tile_headline(c) {
   const node = host_node(c);
   if (node) {
@@ -44,7 +43,7 @@ function tile_headline(c) {
   }
   if (best) return best;
   const st = card_status(c);
-  return st === true ? ["up", "", ""] : st === false ? ["down", "", "crit"] : ["—", "", ""];
+  return st === true ? ["up", "", "", true] : st === false ? ["down", "", "crit", true] : ["—", "", ""];
 }
 
 /** "crit": red on the screen (down, or a number past its critical mark); "warn": past a warning mark; "". */
@@ -52,6 +51,18 @@ function tile_trouble(c) {
   if (card_bad(c) === true) return "crit";
   const [, , sev] = tile_headline(c);
   return sev === "warn" ? "warn" : "";
+}
+
+/** What is wrong inside a card that lists things (FAILURES, UPDATES PENDING): the rows marked bad, [name, value]. */
+function card_items(c) {
+  if (!c.list) return [];
+  const rows = get(c.list);
+  return Array.isArray(rows) ? rows.map(detail_row).filter((r) => r[2]).map((r) => [r[0], r[1]]) : [];
+}
+
+/** "a, b +2": the first names of a list, how many more. */
+function names_line(names, n) {
+  return names.slice(0, n).join(", ") + (names.length > n ? ` +${names.length - n}` : "");
 }
 
 /** The line under a host's number: how many guests it runs and whether they are fine. */
@@ -129,12 +140,15 @@ function make_tile(c, guestOf) {
     const st = card_status(c);
     const [v, label, sev] = tile_headline(c);
     const down = st === false;
-    put(nv, v); put(nl, label);
+    const [, , , word] = tile_headline(c);
+    const items = card_items(c);
+    put(nv, v); put(nl, c.list ? "" : label);   // a listing card's name says what the number counts
+    cls(nv, "txt", word === true);
     cls(n, "down", down);
     cls(n, "crit", !down && (sev === "crit" || card_bad(c) === true));
     cls(n, "warn", !down && sev === "warn");
     cls(n, "frozen", st === false || quiet_off(st));
-    put(sub, host_node(c) ? host_line(c) : quiet_off(st) ? off_label(c, st) : (guestOf || c.subtitle || ""));
+    put(sub, host_node(c) ? host_line(c) : items.length ? names_line(items.map((i) => i[0]), 2) : quiet_off(st) ? off_label(c, st) : (guestOf || c.subtitle || ""));
   });
   bind_touch(n, c);
   return n;
@@ -160,33 +174,58 @@ function make_group_tile(g, cards) {
   updaters.push(() => {
     const trouble = cards.map((c) => [c, tile_trouble(c)]).filter(([, t]) => t);
     const crit = trouble.filter(([, t]) => t === "crit");
-    put(nv, String(crit.length || trouble.length));
-    put(nl, crit.length ? (crit.length === 1 ? "problem" : "problems") : trouble.length ? "warning" + (trouble.length === 1 ? "" : "s") : "problems");
+    const broken = (list) => list.reduce((n, [c]) => n + (card_items(c).length || 1), 0);
+    put(nv, String(broken(crit.length ? crit : trouble)));
+    put(nl, "");
     cls(n, "crit", crit.length > 0);
     cls(n, "warn", !crit.length && trouble.length > 0);
     cls(n, "fine", !trouble.length);
     cls(dot, "down", crit.length > 0);
     cls(dot, "up", !trouble.length);
-    put(sub, trouble.length ? trouble.slice(0, 2).map(([c]) => c.name).join(", ") + (trouble.length > 2 ? ` +${trouble.length - 2}` : "")
-      : "all fine");
+    // what is wrong, not who has it: the first broken things of the cards in trouble
+    const what = trouble.flatMap(([c]) => { const it = card_items(c); return it.length ? it.map((i) => i[0]) : [c.name]; });
+    put(sub, trouble.length ? names_line(what, 2) : "all fine");
   });
   bind_touch(n, pseudo);
   return n;
 }
 
-/** The panel of a group tile: its cards, the ones in trouble first; a tap opens the card's own panel. */
+/** The panel of a group tile, one level: for each card in trouble what is wrong in it, then the cards
+    that are fine; a tap on a card (not on a broken thing) opens that card's own panel. */
 function fill_group_panel(c, body) {
-  const rows = c.group_cards.map((x) => [x, tile_trouble(x)]).sort((a, b) => (b[1] === "crit") - (a[1] === "crit") || (b[1] === "warn") - (a[1] === "warn"));
-  const list = el("div", "list group-list");
-  for (const [x, t] of rows) {
-    const [v, label] = tile_headline(x);
-    const r = el("div", "row" + (t === "crit" ? " bad" : t === "warn" ? " warn" : ""));
-    r.appendChild(el("span", "n", x.name));
-    r.appendChild(el("span", "v", label ? `${v} ${label}` : v));
-    if (has_details(x)) r.addEventListener("click", () => { panelCard = null; open_panel(x); });
-    list.appendChild(r);
+  const rows = c.group_cards.map((x) => [x, tile_trouble(x)]);
+  const bad = rows.filter(([, t]) => t), fine = rows.filter(([, t]) => !t);
+  for (const [x, t] of bad) {
+    const items = card_items(x);
+    body.appendChild(el("h3", null, x.name));
+    const list = el("div", "list group-list");
+    if (items.length) {
+      for (const [n, v] of items) {
+        const r = el("div", "row bad");
+        r.append(el("span", "n", n), el("span", "v", v));
+        list.appendChild(r);
+      }
+    } else {
+      const [v, label] = tile_headline(x);
+      const r = el("div", "row" + (t === "crit" ? " bad" : " warn"));
+      r.append(el("span", "n", x.name), el("span", "v", label ? `${v} ${label}` : v));
+      list.appendChild(r);
+    }
+    if (has_details(x)) list.addEventListener("click", () => { panelCard = null; open_panel(x); });
+    body.appendChild(list);
   }
-  body.appendChild(list);
+  if (fine.length) {
+    body.appendChild(el("h3", null, bad.length ? "fine" : "all fine"));
+    const list = el("div", "list group-list");
+    for (const [x] of fine) {
+      const [v, label] = tile_headline(x);
+      const r = el("div", "row");
+      r.append(el("span", "n", x.name), el("span", "v", label ? `${v} ${label}` : v));
+      if (has_details(x)) r.addEventListener("click", () => { panelCard = null; open_panel(x); });
+      list.appendChild(r);
+    }
+    body.appendChild(list);
+  }
   return true;
 }
 
@@ -213,9 +252,7 @@ function mount_tiles() {
     if (expanded || cards.length === 1) {
       for (const c of cards) tileEntries.push({ card: c, tile: make_tile(c, inner(c) ? c.check[1] : ""), inner: inner(c), pos: pos++ });
     } else {
-      const grp = { tile: make_group_tile(g, cards), card: null, inner: false, pos: pos++ };
-      tileEntries.push(grp);
-      for (const c of cards) tileEntries.push({ card: c, tile: make_tile(c), inner: true, pos: pos++ });
+      tileEntries.push({ tile: make_group_tile(g, cards), card: null, group: cards, inner: false, pos: pos++ });
     }
   }
   for (const e of tileEntries) pageGrid.appendChild(e.tile);
@@ -230,10 +267,13 @@ function mount_tiles() {
 function order_tiles() {
   let shown = 0;
   for (const e of tileEntries) {
-    const bad = e.card && tile_trouble(e.card) === "crit";
+    const bad = e.group ? e.group.some((c) => tile_trouble(c) === "crit") : e.card && tile_trouble(e.card) === "crit";
     const visible = !e.inner || bad;
     e.tile.hidden = !visible;
-    e.tile.style.order = String(bad ? e.pos - 100000 : e.pos);
+    // PVE and PVE2 first, then the other hosts, then what is in trouble, then the rest as configured
+    const node = e.card && host_node(e.card);
+    const rank = node ? ({ pve: 0, pve2: 1 }[node.toLowerCase()] ?? 2) : 0;
+    e.tile.style.order = String(node ? e.pos - 200000 + rank * 10000 : bad ? e.pos - 100000 : e.pos);
     if (visible) shown++;
   }
   if (shown !== tileShown) { tileShown = shown; setTimeout(tiles_layout, 0); }

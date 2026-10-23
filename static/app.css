@@ -79,13 +79,13 @@
   --text-tile: 22px;
   --text-tile-name: 13px;
   --wall-gap: 8px;
-  --wall-tile-min: 92px;
-  --wall-tile-max: 132px;
+  --wall-tile-min: 112px;
+  --wall-tile-max: 112px;
   --wall-cols-landscape: 4px;
   --wall-cols-portrait: 3px;
-  --text-wall-min: 13px;
-  --text-wall-name: 15px;
-  --text-wall-num: 28px;
+  --text-wall-min: 11px;
+  --text-wall-name: 12px;
+  --text-wall-num: 20px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
@@ -972,8 +972,10 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .meter.crit .bar > i { background: var(--red); } .meter.crit .mv { color: var(--red); }
 .tile .ic { width: 24px; height: 24px; }
 .tile .head .dot { width: 10px; height: 10px; }
-.tile .tile-num { margin: 0; }
+.tile .tile-num { margin: 0; min-height: calc(var(--text-wall-num) * 1.25); }
 .tile .tn-v { font-size: var(--text-wall-num); }
+.tile .tn-v.txt { font-size: var(--text-wall-name); }
+.tile .name { text-transform: uppercase; }
 .tile .tn-l, .tile-sub { font-size: var(--text-wall-min); color: var(--sub); }
 .tile-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.2em; }
 .tile.crit .tn-v, .tile.down .tn-v { color: var(--red); }
