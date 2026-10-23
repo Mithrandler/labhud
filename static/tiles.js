@@ -232,6 +232,14 @@ function fill_group_panel(c, body) {
 /** The tiles of a games page: the servers come live from the list at `path` (Pterodactyl), so a pool of
     tiles is made once and a tile is shown as a server appears. */
 const GAME_TILES = 24;
+
+/** What a game tile says, from whether the server runs and its query answer ({players, max} or null):
+    [number, label under it, is a word, bottom line]. */
+function game_tile_text(on, q) {
+  const players = !!on && !!q && q.players != null;
+  if (players) return [String(q.players), "players", false, q.max ? `of ${q.max} slots` : "running"];
+  return [on ? "up" : "—", "", true, on ? "running" : "stopped"];
+}
 function make_game_tiles(path) {
   const out = [];
   for (let i = 0; i < GAME_TILES; i++) {
@@ -262,11 +270,8 @@ function make_game_tiles(path) {
       put(name, gc.title);
       const icn = game_icon(sv);
       if (icn !== icon) { icon = icn; ic.replaceWith(ic = card_icon(icn, "games")); }
-      const players = on && q && q.players != null;
-      put(nv, players ? String(q.players) : on ? "up" : "—");
-      put(nl, players ? "players" : "");
-      cls(nv, "txt", !players);
-      put(sub, !on ? "stopped" : players && q.max ? `of ${q.max} slots` : on && !players ? "running" : "");
+      const [num, label, word, line] = game_tile_text(on, q);
+      put(nv, num); put(nl, label); cls(nv, "txt", word); put(sub, line);
       cls(n, "frozen", !on);
       cls(dot, "up", on);
       Object.assign(card, { name: gc.name, game: sv, check: gc.check, actions: gc.actions });

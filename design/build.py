@@ -30,6 +30,8 @@ PAGES = ["static/app.css", "static/setup/setup.css", "static/status.html", "stat
 ICONS_JS = "static/icons.js"
 KOTLIN = "app/src/main/java/io/github/mithrandler/labhud/ui/Tokens.kt"
 BLOCK = re.compile(r"(?P<indent>[ \t]*)/\* design:colors[^*]*\*/\n.*?/\* design:end \*/", re.S)
+GREY = re.compile(r"(?P<indent>[ \t]*)/\* design:grey[^*]*\*/\n.*?/\* design:end \*/", re.S)
+SETTINGS_JS = "static/settings.js"
 SCALE = re.compile(r"(?P<indent>[ \t]*)/\* design:scale[^*]*\*/\n.*?/\* design:end \*/", re.S)
 SHAPE = re.compile(r"<(path|circle|ellipse|rect)\b([^>]*?)/>")
 ATTR = re.compile(r'([a-z-]+)="([^"]*)"')
@@ -140,11 +142,19 @@ def camel(name):
     return head + "".join(p.title() for p in rest)
 
 
+def grey_block(tokens, indent):
+    pairs = ", ".join(f'"{css_var(n)}": "{v}"' for n, (v, _) in tokens["board_grey"].items())
+    return (f"{indent}/* design:grey (design/tokens.json, written by design/build.py: edit there) */\n"
+            f'{indent}const GREY_VARS = {{ {pairs} }};\n{indent}/* design:end */')
+
+
 def kotlin(tokens):
     colors = "\n".join(f"    /** {note} */\n    val {camel(n)} = Color(0xFF{v.lstrip('#').upper()})"
                        for n, (v, note) in tokens["colors"].items())
     scale = "\n".join(f"    /** {note} */\n    val {camel(n)} = {value}{'.sp' if n.startswith('text_') else '.dp'}"
                       for n, (value, note) in tokens["scale"].items())
+    grey = "\n".join(f"    /** {note} */\n    val {camel(n)} = Color(0xFF{v.lstrip('#').upper()})"
+                      for n, (v, note) in tokens["board_grey"].items())
     icons = "\n".join(
         f"    val {camel(n)}: ImageVector by lazy {{ icon(\"{n}\", "
         + ", ".join(f"\"{d}\" to {'true' if fill else 'false'}" for d, fill in shapes(m)) + ") }"
@@ -164,6 +174,11 @@ import androidx.compose.ui.unit.sp
 /** The colours of the wall and ⚙: the HUD theme. The app's `Lab` (Theme.kt) is these or, in another theme, others. */
 object Hud {{
 {colors}
+}}
+
+/** The "Dark grey" board's ground, cards and edges (the wall's settings.js says the same). */
+object HudGrey {{
+{grey}
 }}
 
 /** The sizes of the wall and ⚙: gaps, corners, type, a meter's bar. */
@@ -199,6 +214,9 @@ def outputs(android=None):
         with open(path, encoding="utf-8") as f:
             out[path] = page(f.read(), tokens, rel)
     out[os.path.join(ROOT, ICONS_JS)] = icons_js(tokens)
+    sp = os.path.join(ROOT, SETTINGS_JS)
+    with open(sp, encoding="utf-8") as f:
+        out[sp] = GREY.sub(lambda m: grey_block(tokens, m.group("indent")), f.read())
     if android:
         out[os.path.join(android, KOTLIN)] = kotlin(tokens)
     return out

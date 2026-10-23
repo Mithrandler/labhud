@@ -20,6 +20,12 @@ def paged(widths, cols=4, rows=3):
     return json.loads(out)
 
 
+def game(on, q=None):
+    out = subprocess.run(["node", str(SCRIPT), json.dumps({"game": {"on": on, "q": q}})],
+                         capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
 HOST = {"id": "host-pve", "name": "PVE", "panel": "host:pve"}
 
 
@@ -86,3 +92,16 @@ class Tiles(unittest.TestCase):
         self.assertEqual([len(p) for p in r["pages"]], [11, 2])
         # portrait: three columns, two rows fit
         self.assertEqual([len(p) for p in paged([1] * 7, cols=3, rows=2)["pages"]], [6, 1])
+
+    def test_a_game_tile_says_players_and_slots(self):
+        self.assertEqual(game(True, {"players": 3, "max": 10}), ["3", "players", False, "of 10 slots"])
+
+    def test_a_game_tile_with_players_but_no_max(self):
+        self.assertEqual(game(True, {"players": 0}), ["0", "players", False, "running"])
+
+    def test_a_running_game_without_a_query_is_up(self):
+        self.assertEqual(game(True, None), ["up", "", True, "running"])
+
+    def test_a_stopped_game_says_stopped_even_with_an_old_query(self):
+        self.assertEqual(game(False, {"players": 2, "max": 4}), ["—", "", True, "stopped"])
+

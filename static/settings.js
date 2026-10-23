@@ -9,11 +9,14 @@
 
 const SETTINGS_KEY = "labhud-settings";
 
+/* design:grey (design/tokens.json, written by design/build.py: edit there) */
+const GREY_VARS = { "--bg": "#16181d", "--card": "#1e2128", "--block": "#272b33", "--line": "#333844", "--border": "#454c59" };
+/* design:end */
+
 /** Background bases: the colours behind the cards. */
 const BASES = {
   oled: { label: "OLED black", vars: {} },   // the defaults in app.css
-  grey: { label: "Dark grey", vars: { "--bg": "#16181d", "--card": "#1e2128", "--block": "#272b33",
-                                      "--line": "#333844", "--border": "#454c59" } },
+  grey: { label: "Dark grey", vars: GREY_VARS },
 };
 
 /** Accents: [accent, titles]. Status colours (green/orange/red dots) never change with them. */
