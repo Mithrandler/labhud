@@ -92,6 +92,7 @@
   --pager-gap: 6px;
   --pager-w: 18px;
   --pager-h: 4px;
+  --hairline: 1px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
