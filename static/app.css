@@ -78,6 +78,14 @@
   --text-ring: 14px;
   --text-tile: 22px;
   --text-tile-name: 13px;
+  --wall-gap: 8px;
+  --wall-tile-min: 92px;
+  --wall-tile-max: 132px;
+  --wall-cols-landscape: 4px;
+  --wall-cols-portrait: 3px;
+  --text-wall-min: 14px;
+  --text-wall-name: 17px;
+  --text-wall-num: 30px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
@@ -941,3 +949,29 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .pb-btn { appearance: none; border: 1px solid var(--border); background: var(--block); color: var(--text); width: 64px; height: 40px; border-radius: 10px; font: 700 24px/1 var(--font); }
 .pb-btn:disabled { opacity: .35; }
 .pb-label { color: var(--muted); font: 700 13px/1 var(--font); font-variant-numeric: tabular-nums; }
+
+/* ======================= the wall as equal tiles (tiles.js) ======================= */
+/* A fixed grid: --tcols tiles a row, every tile --th tall, one gap between them and around them. */
+.tiles {
+  display: grid; grid-template-columns: repeat(var(--tcols, 4), minmax(0, 1fr));
+  grid-auto-rows: var(--th, 100px); gap: var(--wall-gap); align-content: start;
+}
+#content:has(> .tiles) { padding: var(--wall-gap); }
+.tile { justify-content: space-between; gap: 0; padding: var(--space-2) var(--space-3); }
+.tile[hidden] { display: none; }
+.tile .head { gap: var(--space-2); }
+.tile .name { font-size: var(--text-wall-name); }
+.tile .ic { width: 24px; height: 24px; }
+.tile .head .dot { width: 10px; height: 10px; }
+.tile .tile-num { margin: 0; }
+.tile .tn-v { font-size: var(--text-wall-num); }
+.tile .tn-l, .tile-sub { font-size: var(--text-wall-min); color: var(--sub); }
+.tile-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.2em; }
+.tile.crit .tn-v, .tile.down .tn-v { color: var(--red); }
+.tile.warn .tn-v { color: var(--warn); }
+.tile.group.fine .tn-v { color: var(--green); }
+.tile.frozen { opacity: .6; }
+.group-list .row { cursor: pointer; }
+.group-list .row.warn .v { color: var(--warn); }
+/* portrait: three narrow tiles, the name needs the room the icon would take */
+@media (orientation: portrait) { .tile > .head > .ic { display: none; } }

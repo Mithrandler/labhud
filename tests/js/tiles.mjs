@@ -1,0 +1,30 @@
+// host_node, host_line and tile_headline (static/tiles.js, copied out unchanged) on {card, data, marks} from argv.
+import fs from "fs";
+
+const src = fs.readFileSync(new URL("../../static/tiles.js", import.meta.url), "utf8");
+function extract(name) {
+  const start = src.search(new RegExp(`^function ${name}\\(`, "m"));
+  if (start < 0) throw new Error(`no function ${name} in tiles.js`);
+  let i = src.indexOf("{", src.indexOf(")", start)), depth = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}" && --depth === 0) return src.slice(start, i + 1);
+  }
+  throw new Error(`unbalanced ${name}`);
+}
+const names = ["host_node", "host_line", "tile_headline", "tile_trouble"];
+const body = `${names.map(extract).join("\n")}
+  return { node: host_node(card), line: host_line(card), head: tile_headline(card), trouble: tile_trouble(card) };`;
+const { card, data } = JSON.parse(process.argv[2]);
+const stubs = {
+  get: (path) => data[path],
+  format: (v) => `${Math.round(v)}%`,
+  severity: (path, fmt, v) => (v >= 92 ? "crit" : v >= 80 ? "warn" : ""),
+  SEV_RANK: { "": 0, warn: 1, crit: 2 },
+  is_guest: () => false,
+  card_bad: (c) => ((c.metrics || []).some(([p]) => data[p] >= 92) ? true : false),
+  card_status: () => true,
+  guest_headline: () => ({}),
+};
+const run = new Function(...Object.keys(stubs), "card", body);
+process.stdout.write(JSON.stringify(run(...Object.values(stubs), card)));

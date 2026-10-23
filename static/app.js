@@ -653,6 +653,7 @@ function mount() {
   document.body.classList.toggle("glance", GLANCE);
   // the game servers keep their own cards: the glance view is for the status pages
   if (GLANCE && !CFG.pages[page].games) return mount_glance();
+  if (!CFG.pages[page].games) return mount_tiles();
   const host = $("#content");
   host.textContent = "";
   updaters = [];
@@ -2834,6 +2835,7 @@ function fill_panel() {
   if (!c) return false;
   const body = $("#panel-body");
   body.textContent = "";
+  if (c.group_cards) return fill_group_panel(c, body);
 
   if (c.subtitle) body.appendChild(el("p", "panel-spec", c.subtitle));
 
