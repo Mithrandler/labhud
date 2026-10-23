@@ -291,6 +291,15 @@ class GuestNumbers(unittest.TestCase):
         g = cardstate._guest(self.CARD, self.DATA)
         self.assertEqual((g["cpu"], g["mem"], g["disk"], g["uptime"], g["node"], g["vmid"]), (12.5, 40, 25.0, 90061, "pve", "100"))
 
+    def test_ram_at_95_percent_is_not_red_without_memory_pressure(self):
+        data = {"proxmox": {"pve": {"guests": {"100": {"running": True, "mem": 95}}}}}
+        self.assertEqual(cardstate._guest(self.CARD, data)["mem_sev"], "")
+
+    def test_ram_is_red_when_processes_stall_on_memory(self):
+        for stall in ({"pressure": 12}, {"pressure_full": 2}):
+            data = {"proxmox": {"pve": {"guests": {"100": dict({"running": True, "mem": 50}, **stall)}}}}
+            self.assertEqual(cardstate._guest(self.CARD, data)["mem_sev"], "crit")
+
     def test_vmid_is_text_even_when_the_config_has_a_number(self):
         card = dict(self.CARD, check=("proxmox", "pve", 100))
         self.assertEqual(cardstate._guest(card, self.DATA)["vmid"], "100")
@@ -350,7 +359,14 @@ class GpuNumbers(unittest.TestCase):
 
     def test_gpus_of_a_host(self):
         data = {"temp": {"pve": {"gpu0_util": 20.5, "gpu0_mem": 30, "gpu0_temp": 46, "gpu1_util": 1}}}
-        self.assertEqual(cardstate._gpus(self.CARD, data), [{"util": 20.5, "mem": 30, "temp": 46}, {"util": 1}])
+        self.assertEqual(cardstate._gpus(self.CARD, data), [
+            {"util": 20.5, "mem": 30, "temp": 46, "util_sev": "", "mem_sev": "", "temp_sev": ""}, {"util": 1, "util_sev": ""}])
+
+    def test_gpu_numbers_carry_their_colour(self):
+        card = {"id": "h2", "sensors": "temp.colour"}   # its own path: the hysteresis remembers the last colour per path
+        data = {"temp": {"colour": {"gpu0_util": 95, "gpu0_mem": 85, "gpu0_temp": 80}}}
+        g = cardstate._gpus(card, data)[0]
+        self.assertEqual((g["util_sev"], g["mem_sev"], g["temp_sev"]), ("crit", "warn", "warn"))
 
     def test_no_gpu(self):
         self.assertEqual(cardstate._gpus(self.CARD, {"temp": {"pve": {"cpu_temp": 50}}}), [])

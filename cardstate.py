@@ -20,7 +20,7 @@ import time
 import cardtype
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-_PERCENT = re.compile(r"\.(cpu|mem|used_percent|disk\.percent)$")
+_PERCENT = re.compile(r"\.(cpu|mem|used_percent|disk\.percent|gpu\d+_(util|mem))$")
 _USED_OF = re.compile(r"\.(mem_used_of|disk_used_of)$")
 _SEV_RANK = {"": 0, "warn": 1, "crit": 2}
 _last_sev = {}
@@ -745,6 +745,10 @@ def _gpus(c, data):
         for k in ("mem", "temp"):
             if _num(t.get(f"gpu{i}_{k}")):
                 g[k] = t[f"gpu{i}_{k}"]
+        # the colour of each number as the wall draws it (the marks of [display], with hysteresis)
+        for k, fmt in (("util", "percent"), ("mem", "percent"), ("temp", "celsius")):
+            if k in g:
+                g[f"{k}_sev"] = severity(f"{c['sensors']}.gpu{i}_{k}", fmt, g[k])
         out.append(g)
         i += 1
     return out
@@ -760,7 +764,9 @@ def _guest(c, data):
         return None
     used, total = g.get("disk_used"), g.get("disk_total")
     disk = round(100 * used / total, 1) if _num(used) and _num(total) and total else None
-    out = {"cpu": g.get("cpu"), "mem": g.get("mem"), "disk": disk, "node": c["check"][1], "vmid": str(c["check"][2])}
+    # RAM turns red only on memory pressure: Proxmox counts the page cache, so 95% is normal (the wall does the same)
+    out = {"cpu": g.get("cpu"), "mem": g.get("mem"), "mem_sev": "crit" if bad_pressure(g) else "", "disk": disk,
+           "node": c["check"][1], "vmid": str(c["check"][2])}
     if _num(g.get("uptime")):
         out["uptime"] = int(g["uptime"])
     return out

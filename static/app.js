@@ -144,7 +144,7 @@ function marks_for(path, fmt) {
   const own = own_marks(path);
   if (own) return own;
   if ((fmt === "used_of" && /\.(mem_used_of|disk_used_of)$/.test(path))
-      || (fmt === "percent" && /\.(cpu|mem|used_percent|disk\.percent)$/.test(path))) return default_marks();
+      || (fmt === "percent" && /\.(cpu|mem|used_percent|disk\.percent|gpu\d+_(util|mem))$/.test(path))) return default_marks();
   return null;
 }
 
@@ -165,7 +165,7 @@ function raw_severity(path, fmt, v) {
   if (typeof v !== "number") return "";
   if (own) return past(v, own);
   if (fmt === "celsius") return v >= 85 ? "crit" : v >= 75 ? "warn" : "";
-  if (fmt === "percent" && /\.(cpu|mem|used_percent|disk\.percent)$/.test(path)) {
+  if (fmt === "percent" && /\.(cpu|mem|used_percent|disk\.percent|gpu\d+_(util|mem))$/.test(path)) {
     return past(v, default_marks());
   }
   // the HEALTH page and the INTERNET card (1 Oct 2026): any value above zero is already a problem

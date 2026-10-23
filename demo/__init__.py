@@ -84,9 +84,11 @@ def proxmox():
 
 def temp():
     return {"pve": {
-        "cpu_temp": round(_wave(52, 6, 300), 1), "gpu_count": 1,
+        "cpu_temp": round(_wave(52, 6, 300), 1), "gpu_count": 2,
         "gpu0_util": round(max(0.0, _wave(20, 25, 600)), 1), "gpu0_mem": round(_wave(30, 5, 900), 1),
         "gpu0_temp": round(_wave(46, 5, 600), 1),
+        "gpu1_util": round(max(0.0, _wave(60, 30, 500)), 1), "gpu1_mem": round(_wave(70, 8, 700), 1),
+        "gpu1_temp": round(_wave(62, 6, 500), 1),
     }}
 
 
