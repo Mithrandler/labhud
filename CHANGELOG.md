@@ -6,6 +6,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-24
+
+### Changed
+
+- **Devices are machines, one each.** A card that only pings and reads its numbers from a service (Sonarr, Radarr, Bazarr, qBittorrent...) is no longer a PC; a second card for an address another machine already has (a NAS's disk, a host's power) is a view of that machine, not another one. Set `kind` on a card to decide it yourself.
+- A metric that has no value (a temperature the machine has no sensor for) is no longer offered a history.
+
 ## [0.1.19] - 2026-10-23
 
 ### Added
