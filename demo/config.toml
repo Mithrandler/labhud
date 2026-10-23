@@ -257,6 +257,14 @@ title = "SECURITY"
     limit = 4
     panel = "security:logins"
 
+    # a card that lists what is broken: the group is then one tile that names it (wall and app)
+    [[page.group.card]]
+    id = "units"
+    name = "FAILURES"
+    metrics = [{ key = "live.fleet_health.problems", label = "Problems", format = "count" }]
+    list = "live.display.units"
+    limit = 5
+
   [[page.group]]
   id = "exposure"
   title = "Exposed ports"

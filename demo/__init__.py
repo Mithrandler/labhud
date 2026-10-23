@@ -168,6 +168,7 @@ def live():
             {"app": "ssh", "user": "root", "ip": "203.0.113.45", "ts": _ago(600)},
             {"app": "nextcloud", "user": "admin", "ip": "198.51.100.7", "ts": _ago(2400)}]},
         "log": log,
+        "fleet_health": {"problems": 3},
         "alerts": [{"id": "demo-disk", "text": "Disk on nas-backup above 85% in 12 days, at the current rate"}],
         "containers": {"100": [
             {"name": "traefik", "state": "running", "status": "Up 5 days"},
@@ -187,6 +188,10 @@ def live():
             "countries": [{"name": "NL", "value": "120"}, {"name": "US", "value": "84"}, {"name": "CN", "value": "51"}],
             "tripwire": [{"name": "/etc/ssh/sshd_config", "value": "12d"}],
             "logins": [{"name": "ssh", "value": "2 / hour"}, {"name": "nextcloud", "value": "0 / hour"}],
+            "units": [{"name": "nas: backup-check", "value": "failed", "bad": True},
+                      {"name": "job: dns-sync", "value": "no ping", "bad": True},
+                      {"name": "vps: fail2ban", "value": "inactive", "bad": True},
+                      {"name": "pve: zfs-scrub", "value": "ok"}],
             "ports": [{"name": "unexpected open", "value": "none"},
                       {"name": "forwarded open", "value": "2 of 3"},
                       {"name": "last scan", "value": "9h ago"}],
