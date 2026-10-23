@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-10-23
+
 ### Changed
 - **The wall is a grid of equal tiles** (`static/tiles.js`): 4 a row in landscape, 3 in portrait, one gap (`wall_gap`) between them and around them, the text at least 14 px (`text_wall_min`, `text_wall_name`, `text_wall_num` in `design/tokens.json`). The zoom search of `layout()` is gone from the status pages. On General a host (PVE, PVE2…) is one tile with its guests inside ("6 VM · 3 LXC · 2 stopped"; the list is in its panel) and every other card is one tile with its worst number. On the other pages a group of several cards is one tile: how many of its cards are in trouble (red when any is, green when none), the list in a panel. A host tile is two cells wide with four meters (CPU, RAM, GPU, VRAM; the busiest GPU), names wrap to two lines, the text is 13–15 px, and the wall has no bottom strip any more. Measured on the real data: no page is cut at 914x411 or 384x854 (before: 10 of 12).
 - **The wall's small cards (guests) are the app's tiles**: one number (the CPU, or the RAM when processes stall on memory) and a thin bar instead of three bars, `text_tile` from `design/tokens.json`.
@@ -810,7 +812,8 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/Mithrandler/labhud/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/Mithrandler/labhud/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/Mithrandler/labhud/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/Mithrandler/labhud/compare/v0.1.12...v0.1.13
