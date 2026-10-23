@@ -42,7 +42,7 @@ PAGE_KEYS = {"id", "title", "group", "games", "icon", "columns", "density"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag", "hidden"}
 CARD_KEYS = {"id", "name", "subtitle", *CHECKS, "large", "on_demand",
              "metrics", "list", "limit", "torrents", "panel", "sensors", "actions", "url", "age", "links",
-             "agent", "agent_target", "wake", "kind", "bookmarks", "notes", "icon", "size", "hidden",
+             "agent", "agent_target", "wake", "kind", "bookmarks", "notes", "icon", "size", "hidden", "menu",
              "widget", "timezone", "frame", "frame_height"}
 CARD_KINDS = ("proxmox", "nas", "docker", "vm", "pc")   # cardtype.KINDS: for ⚙ > Pages > Organize by type
 # agent_target = "<capability>:<target>": what a card controls through its agent (agents.py)
@@ -290,6 +290,9 @@ def _card(ck, where, c):
     # hidden: the card is not shown on any screen (the apps' state leaves it out); its alerts go on
     if ck.opt(where, c, "hidden", bool, "true or false"):
         out["hidden"] = True
+    # menu: the card is in no page or group; only the app's menu opens it (the notes)
+    if ck.opt(where, c, "menu", bool, "true or false"):
+        out["menu"] = True
     if ck.opt(where, c, "on_demand", bool, "true or false"):
         out["on_demand"] = True
     # bookmarks = true: the [[bookmark]] links (or only one group: bookmarks = "<group>");

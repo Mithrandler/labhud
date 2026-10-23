@@ -836,6 +836,8 @@ def card(c, data, topology, actions_on, page=None, group=None, full=False, found
         "note": text, "note_kind": kind,
         "metrics": [_metric(path, label, fmt, data, trends) for path, label, fmt in c.get("metrics") or []],
     }
+    if c.get("menu"):
+        out["menu"] = True
     for k in ("icon", "size"):
         if c.get(k):
             out[k] = c[k]
@@ -973,7 +975,8 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
             for c in every:
                 if c.get("hidden"):
                     continue
-                ids.append(c["id"])
+                if not c.get("menu"):   # a menu card is in the state (the app's menu opens it) but on no page
+                    ids.append(c["id"])
                 if c["id"] not in seen:
                     seen.add(c["id"])
                     hosts.append(c)

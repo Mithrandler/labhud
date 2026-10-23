@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+- A card with `menu = true` is in the app's state but on no page or group: the app's menu opens it (the notes card).
+
 - A group tile with nothing wrong says a green "OK" (wall and app).
 - A card can take its state from a data path: `up = "live.wireguard.up"` (true is up, false is down, missing is unknown).
 

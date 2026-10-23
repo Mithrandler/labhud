@@ -380,3 +380,35 @@ class DataCheck(unittest.TestCase):
         self.assertIs(cardstate.raw_status(c, {"live": {"wireguard": {"up": False}}}), False)
         self.assertIsNone(cardstate.raw_status(c, {"live": {"wireguard": {"unavailable": "x"}}}))
         self.assertIsNone(cardstate.raw_status(c, {}))
+
+
+class MenuCard(unittest.TestCase):
+    def test_a_menu_card_is_in_the_state_but_on_no_page(self):
+        import config
+        import tempfile, textwrap
+        toml = textwrap.dedent("""
+            [[page]]
+            id = "main"
+            title = "MAIN"
+              [[page.group]]
+              id = "g"
+              title = "G"
+                [[page.group.card]]
+                id = "shown"
+                name = "SHOWN"
+                ping = "192.0.2.1"
+                [[page.group.card]]
+                id = "notes"
+                name = "NOTES"
+                notes = true
+                menu = true
+            """)
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+            f.write(toml)
+        try:
+            topo = config.load(f.name)
+        finally:
+            os.unlink(f.name)
+        st = cardstate.state(topo, {})
+        self.assertEqual(st["pages"][0]["groups"][0]["cards"], ["shown"])
+        self.assertTrue(next(c for c in st["cards"] if c["id"] == "notes")["menu"])
