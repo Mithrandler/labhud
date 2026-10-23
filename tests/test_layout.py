@@ -140,6 +140,15 @@ class Kinds(unittest.TestCase):
         self.assertEqual(cardtype.kind(guest, {}), "vm")
         self.assertEqual(cardtype.kind({"id": "nas", "name": "NAS", "ping": "192.0.2.1"}), "nas")
 
+    def test_a_service_on_a_machine_is_no_machine_and_one_address_is_one_machine(self):
+        sonarr = {"id": "sonarr", "name": "SONARR", "ping": "192.0.2.5", "metrics": [{"key": "sonarr.queue", "label": "Queue", "format": "count"}]}
+        self.assertEqual(cardtype.kind(sonarr), "")
+        self.assertEqual(cardtype.kind(dict(sonarr, kind="pc")), "pc")   # unless it says so
+        disk = {"id": "disk", "name": "DISK", "ping": "192.0.2.6", "metrics": [{"key": "synology.free", "label": "Free", "format": "bytes"}]}
+        self.assertEqual(cardtype.kind(dict(disk, name="Synology")), "nas")
+        self.assertEqual(cardtype.address({"tcp": "192.0.2.7:47989"}), "192.0.2.7")
+        self.assertEqual(cardtype.address({"check": ["ping", "192.0.2.8"]}), "192.0.2.8")
+
     def test_own_kind_wins_and_is_checked(self):
         self.assertEqual(cardtype.kind({"id": "x", "name": "synology", "kind": "pc"}), "pc")
         with self.assertRaises(config.ConfigError):

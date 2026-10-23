@@ -730,7 +730,7 @@ def _metric(path, label, fmt, data, trends):
     when high is bad (CPU, RAM, disk, or the metric's own marks)."""
     v = get(data, path)
     out = {"key": path, "label": label, "value": format_(v, fmt), "sev": severity(path, fmt, v),
-           "trend": path in trends, "format": fmt}
+           "trend": path in trends and v is not None, "format": fmt}
     if (p := pct(fmt, v)) is not None:
         out["pct"] = p
     if (m := marks_for(path, fmt)) is not None:
@@ -960,7 +960,7 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
     operator / admin): only the pages [roles.<role>] lists; the alerts (alerting.py) do not depend
     on it, so a card a role does not see still raises its alert."""
     pages, cards, seen, hosts = [], [], set(), []
-    titles = {}
+    titles, claimed = {}, set()
     only = (topology.get("roles") or {}).get(role)
     for i, p in enumerate(topology["pages"]):
         if only is not None and p["id"] not in only:
@@ -981,6 +981,11 @@ def state(topology, data, actions_on=False, full=False, found=None, role=None):
                     seen.add(c["id"])
                     hosts.append(c)
                     cards.append(card(c, data, topology, actions_on, page=p["id"], group=g["id"], full=full, found=found))
+                    # one machine per address: a second card for the same one (its disk, its power) is a view of it
+                    if cards[-1]["type"] and (addr := cardtype.address(c)):
+                        if addr in claimed:
+                            cards[-1]["type"] = ""
+                        claimed.add(addr)
             if ids or not every:   # a group whose cards are all hidden goes with them
                 groups.append({"id": g["id"], "title": g["title"], "cards": ids})
         pages.append({"id": p["id"], "title": p["title"], "groups": groups,

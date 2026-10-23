@@ -18,6 +18,25 @@ TITLES = {"proxmox": "Proxmox", "nas": "NAS & backup", "docker": "Docker hosts",
           "pc": "PCs & other"}
 NAS = re.compile(r"synology|\bomv\b|openmediavault|truenas|unraid|qnap|\bpbs\b|backup|\bnas\b", re.I)
 DOCKER = re.compile(r"docker|portainer", re.I)
+# Sources that describe a machine itself. A card that only pings and reads its numbers from any other source
+# (sonarr, radarr, bazarr, qbt, ...) is a service on some machine, not a machine.
+MACHINE_SOURCES = {"proxmox", "pbs", "synology", "omv", "opnsense", "agents", "truenas", "unraid", "qnap"}
+
+
+def _sources(card):
+    """The first part of every data path a card reads: its metrics, list and torrents."""
+    paths = []
+    for m in card.get("metrics") or []:
+        paths.append(m.get("key") if isinstance(m, dict) else m[0] if isinstance(m, (list, tuple)) and m else m)
+    paths += [card[k] for k in ("list", "torrents") if isinstance(card.get(k), str)]
+    return {str(p).split(".", 1)[0] for p in paths if p}
+
+
+def address(card):
+    """The host a card pings or opens a TCP port on ("192.0.2.7:47989" -> "192.0.2.7"), or ""."""
+    check = card.get("check") or []
+    target = card.get("ping") or card.get("tcp") or (check[1] if len(check) > 1 and check[0] in ("ping", "tcp") else "")
+    return str(target).rsplit(":", 1)[0] if target else ""
 
 
 def _text(card):
@@ -39,6 +58,8 @@ def kind(card, agents=None):
         return ""   # a list that only pings (the backup report, a hygiene list): a report, not a machine
     if panel.startswith("host:") and not guest or "pve" in found and not guest:
         return "proxmox"
+    if not (guest or found or panel.startswith("host:")) and _sources(card) - MACHINE_SOURCES:
+        return ""   # a service (Sonarr, Radarr...) that answers a ping because its machine does: it is not a machine
     if guest:
         return "vm"   # a guest is never a NAS or a Docker host: its Docker is seen in Servers
     if NAS.search(_text(card)):
