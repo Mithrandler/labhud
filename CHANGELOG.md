@@ -6,6 +6,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- **The wall's rings are the app's**: CPU and RAM share one ring (half each), so do a GPU's load and video memory; the rings use the sizes of `design/tokens.json` (`ring`, `ring_stroke`, `text_ring`), show only their name underneath and grow with a short transition (none with `prefers-reduced-motion`). The icons `servers`, `info`, `close` and `chevron_up`, which the app had only in its generated file, are now in `tokens.json`.
+
 ### Added
 - **`mem_sev` on a guest and `util_sev` / `mem_sev` / `temp_sev` on a GPU** in `/api/v1/state`: the colour (`warn`, `crit` or empty) the wall gives each number, so the app no longer guesses it. A guest's RAM is `crit` only on memory pressure (Proxmox counts the page cache, so 95% is normal); a GPU's numbers follow the `[display]` marks, with the same hysteresis as the cards. Older apps ignore the new fields.
 

@@ -73,6 +73,11 @@
   --text-xl: 24px;
   --bar: 6px;
   --icon-card: 20px;
+  --ring: 104px;
+  --ring-stroke: 8px;
+  --text-ring: 14px;
+  --text-tile: 22px;
+  --text-tile-name: 13px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
@@ -301,17 +306,20 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 .mrow .bar { height: var(--bar); border-radius: 999px; background: var(--block); overflow: hidden; min-width: 24px; }
 .mrow .bar > i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .6s ease-out; }
 .mrow .vl { font-size: var(--text-sm); font-weight: 700; color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
-.rings { display: flex; justify-content: space-evenly; align-items: flex-start; gap: var(--space-2); flex-wrap: wrap; }
-.ring { position: relative; width: 64px; display: flex; flex-direction: column; align-items: center; }
-.ring svg { width: 64px; height: 64px; display: block; }
+.rings { display: flex; justify-content: center; align-items: flex-start; gap: var(--space-3); flex-wrap: wrap; }
+.ring { position: relative; width: var(--ring); display: flex; flex-direction: column; align-items: center; }
+.ring svg { width: var(--ring); height: var(--ring); display: block; }
 .ring .track { stroke: var(--block); }
-.ring .arc { stroke: var(--accent); stroke-linecap: round; }
-.ring.warn .arc { stroke: var(--warn); }
-.ring.crit .arc { stroke: var(--red); }
-.ring .mid { position: absolute; top: 0; left: 0; width: 64px; height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; }
-.ring .vl { font-size: var(--text-sm); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.ring .arc { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray .45s ease-out, stroke-dashoffset .45s ease-out; }
+.ring .arc.warn, .ring.warn .arc { stroke: var(--warn); }
+.ring .arc.crit, .ring.crit .arc { stroke: var(--red); }
+.ring .mid { position: absolute; top: 0; left: 0; width: var(--ring); height: var(--ring); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; }
+.ring .nums { display: flex; width: calc(var(--ring) - 2 * var(--ring-stroke)); }
+.ring .nums .vl { flex: 1; text-align: center; white-space: nowrap; }
+.ring .vl { font-size: var(--text-ring); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .ring .tv { font-size: var(--text-xs); color: var(--muted); }
-.ring .lbl { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .3px; margin-top: 2px; }
+.ring .lbl { font-size: var(--text-sm); color: var(--muted); margin-top: 2px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .ring .arc { transition: none; } }
 .mrow.warn .bar > i { background: var(--warn); }
 .mrow.warn .vl { color: var(--warn); }
 .mrow.crit .bar > i { background: var(--red); }

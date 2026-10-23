@@ -1205,54 +1205,114 @@ function ring_arc(svg, r, w) {
 /** The label of a ring's kind: "cpu", "gpu", or "" (RAM, disk, other shares). */
 function ring_kind(label) { const t = String(label).toLowerCase(); return /\bcpu/.test(t) ? "cpu" : /\bgpu/.test(t) ? "gpu" : ""; }
 
-/** A machine's percentages as rings: the number in the middle, the temperature of the same part under
-    it (a "CPU" celsius number goes into the CPU ring), the label beneath. A GPU (a `gpuN_temp`
-    sensor) is one ring with the load outside and the video memory in a thinner ring inside.
+/** The rings of a machine before anything is drawn, in the order of the app's gaugesOf: CPU and RAM share one ring
+    (the CPU on the left half, the RAM on the right), then the other shares (disk...), then each GPU (its load on the left half,
+    its video memory on the right). `bars` and `rest` are specs [path, label, fmt]; the temperatures in `rest` go into the ring of
+    their part. Returns [{label, a, b, temp}] and the set of the temperature specs taken. */
+function ring_plan(bars, rest) {
+  const temps = rest.filter(([, , fmt]) => fmt === "celsius");
+  const used = new Set();
+  const take = (kind) => {
+    const t = kind ? temps.find((x) => ring_kind(x[1]) === kind && !used.has(x) && !/gpu\d+_temp$/.test(x[0])) : null;
+    if (t) used.add(t);
+    return t || null;
+  };
+  const cpu = bars.find(([, l]) => ring_kind(l) === "cpu");
+  const ram = bars.find(([, l]) => ring_kind(l) !== "cpu" && /\b(ram|mem)/i.test(l));
+  const pair = !!(cpu && ram);
+  const plan = [];
+  if (pair) plan.push({ label: `${cpu[1]} · ${ram[1]}`, a: cpu, b: ram, temp: take("cpu") });
+  for (const bar of bars) {
+    if (pair && (bar === cpu || bar === ram)) continue;
+    plan.push({ label: bar[1], a: bar, b: null, temp: take(ring_kind(bar[1])) });
+  }
+  const gpu_temps = temps.filter((x) => /gpu\d+_temp$/.test(x[0]));
+  for (const t of gpu_temps) {
+    const m = /^(.*\.gpu\d+)_temp$/.exec(t[0]);
+    if (used.has(t)) continue;
+    used.add(t);
+    const name = "GPU" + (gpu_temps.length > 1 ? Number(t[0].match(/gpu(\d+)_temp/)[1]) + 1 : "");
+    plan.push({ label: `${name} · VRAM`, a: [m[1] + "_util", name, "percent"], b: [m[1] + "_mem", "VRAM", "percent"], temp: t });
+  }
+  return { plan, used };
+}
+
+/** A half ring's dash: how much of a half of a circle `len` long (164 of 360 degrees, the rest is the gap at the top and at the
+    bottom) is drawn for `share` 0..1. A half that fills from its end (the right one: bottom to top) is shifted by what is empty. */
+function half_dash(len, share, from_end) {
+  const half = len * 164 / 360, fill = half * share;
+  return [`${fill.toFixed(1)} ${len.toFixed(1)}`, from_end ? (-(half - fill)).toFixed(1) : "0"];
+}
+
+/** One half of a ring: left (the first share, bottom up by the left side) or right (the second, bottom up by the right). */
+function ring_half(svg, r, w, right) {
+  const len = 2 * Math.PI * r;
+  const mk = (cls_name) => {
+    const c = document.createElementNS(SVG_NS, "circle");
+    c.setAttribute("cx", "18"); c.setAttribute("cy", "18"); c.setAttribute("r", String(r));
+    c.setAttribute("fill", "none"); c.setAttribute("stroke-width", String(w));
+    c.setAttribute("class", cls_name);
+    c.setAttribute("transform", `rotate(${right ? -82 : 98} 18 18)`);
+    svg.appendChild(c);
+    return c;
+  };
+  const track = mk("track");
+  track.setAttribute("stroke-dasharray", `${(len * 164 / 360).toFixed(1)} ${len.toFixed(1)}`);
+  const arc = mk("arc");
+  const set = (p, sev) => {
+    const [dash, off] = half_dash(len, p == null ? 0 : Math.max(0, Math.min(100, p)) / 100, right);
+    arc.setAttribute("stroke-dasharray", dash);
+    arc.setAttribute("stroke-dashoffset", off);
+    cls(arc, "warn", sev === "warn");
+    cls(arc, "crit", sev === "crit");
+  };
+  set(null, "");
+  return set;
+}
+
+/** A machine's percentages as rings, laid out by ring_plan: the numbers in the middle (a ring with two shares has one on each
+    half), the temperature of the first part under them, the label beneath. The sizes are the app's (--ring, --ring-stroke).
     `used` holds the specs a ring took (the temperatures), so the card does not show them twice. */
 function make_rings(bars, rest) {
   const box = el("div", "rings");
-  const used = new Set(), rings_sevs = [];
-  const temps = rest.filter(([, , fmt]) => fmt === "celsius");
-  const add = (label, spec_path, fmt, temp, extra) => {
-    const cell = el("div", "ring");
+  const { plan, used } = ring_plan(bars, rest);
+  const rings_sevs = [];
+  const stroke = 2.8;   // --ring-stroke (8px) of --ring (104px) in the 36 x 36 box
+  const radius = 18 - stroke / 2;
+  for (const p of plan) {
+    const cell = el("div", "ring" + (p.b ? " dual" : ""));
     const svg = document.createElementNS(SVG_NS, "svg");
     svg.setAttribute("viewBox", "0 0 36 36");
-    const outer = ring_arc(svg, 15.5, extra ? 3 : 3.4);
-    const inner = extra ? ring_arc(svg, 10.8, 2) : null;
+    let set_a, set_b = null;
+    if (p.b) { set_a = ring_half(svg, radius, stroke, false); set_b = ring_half(svg, radius, stroke, true); }
+    else set_a = ring_arc(svg, radius, stroke);
     const mid = el("div", "mid");
-    const vl = el("span", "vl", "—");
-    const tv = temp ? el("span", "tv", "") : null;
-    mid.append(vl);
+    const nums = el("div", "nums");
+    const va = el("span", "vl", "—"), vb = p.b ? el("span", "vl", "—") : null;
+    nums.append(va);
+    if (vb) nums.append(vb);
+    mid.append(nums);
+    const tv = p.temp ? el("span", "tv", "") : null;
     if (tv) mid.append(tv);
-    cell.append(svg, mid, el("div", "lbl", label));
+    cell.append(svg, mid, el("div", "lbl", p.label));
     box.appendChild(cell);
     let sev = "";
     updaters.push(() => {
-      const v = get(spec_path);
-      const share = pct(fmt, v);
-      put(vl, share == null ? "—" : Math.round(share) + "%");
-      cell.title = format(v, fmt);
-      sev = severity(spec_path, fmt, v);
-      outer(pct(fmt, v), sev);
-      cls(cell, "warn", sev === "warn"); cls(cell, "crit", sev === "crit");
-      if (tv) { const t = get(temp[0]); put(tv, typeof t === "number" ? Math.round(t) + "°" : ""); }
-      if (inner) { const m = get(extra); inner(typeof m === "number" ? m : null, ""); }
+      const share = (spec) => pct(spec[2], get(spec[0]));
+      const sa = severity(p.a[0], p.a[2], get(p.a[0]));
+      put(va, share(p.a) == null ? "—" : Math.round(share(p.a)) + "%");
+      set_a(share(p.a), sa);
+      let sb = "";
+      if (p.b) {
+        const m = get(p.b[0]);
+        sb = typeof m === "number" ? severity(p.b[0], p.b[2], m) : "";
+        put(vb, share(p.b) == null ? "—" : Math.round(share(p.b)) + "%");
+        set_b(share(p.b), sb);
+      } else { cls(cell, "warn", sa === "warn"); cls(cell, "crit", sa === "crit"); }
+      sev = sa === "crit" || sb === "crit" ? "crit" : sa === "warn" || sb === "warn" ? "warn" : "";
+      if (tv) { const t = get(p.temp[0]); put(tv, typeof t === "number" ? Math.round(t) + "°" : ""); }
     });
     rings_sevs.push(() => sev);
-    return cell;
-  };
-  for (const [path, label, fmt] of bars) {
-    const kind = ring_kind(label);
-    const temp = kind ? temps.find((t) => ring_kind(t[1]) === kind && !used.has(t) && !/gpu\d+_temp$/.test(t[0])) : null;
-    if (temp) used.add(temp);
-    add(label, path, fmt, temp, null);
-  }
-  for (const t of temps) {
-    const m = /^(.*\.gpu\d+)_temp$/.exec(t[0]);
-    if (!m || used.has(t)) continue;
-    used.add(t);
-    const n = t[0].match(/gpu(\d+)_temp/)[1];
-    add("GPU" + (temps.filter((x) => /gpu\d+_temp$/.test(x[0])).length > 1 ? Number(n) + 1 : ""), m[1] + "_util", "percent", t, m[1] + "_mem");
   }
   return { box, used, rings_sevs };
 }
