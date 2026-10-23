@@ -110,7 +110,7 @@ class Sender(unittest.TestCase):
             lambda: mqtt.update({"nas": "down", "pve": "up"}),
             lambda: mqtt.update({"nas": "down", "pve": "up"}),  # nothing new: not sent again
             lambda: mqtt.event("NAS down", True, t=5),
-        ], until=lambda: {"labhud/card/nas", "labhud/event", "homeassistant/binary_sensor/labhud/nas/config"} <= topics())
+        ], until=lambda: {"labhud/card/nas", "labhud/card/pve", "labhud/event", "homeassistant/binary_sensor/labhud/nas/config"} <= topics())
         got = {t: (p, r) for t, p, r in broker.got}
         self.assertEqual(got["labhud/card/nas"], (b"down", True))
         self.assertEqual(got["labhud/card/pve"], (b"up", True))
