@@ -31,6 +31,7 @@ here is POST, JSON, and goes through one gate, `_gate`, in this order:
     POST /api/servers/snap-rollback {agent, id, name, confirm}   admin: the guest goes back; confirm = the guest's name
     POST /api/servers/snap-delete {agent, id, name, confirm}     admin: confirm = the snapshot's name
     POST /api/servers/host {agent}                   read: the host's system facts and its systemd units
+    POST /api/servers/update-all {agent}            act: update every ticked container that has a newer image
     POST /api/servers/host-update {agent}            act: update the host's packages
     POST /api/servers/host-power {agent, verb, confirm}   admin: reboot or shutdown; confirm = the host's name
     POST /api/servers/unit {agent, name, verb}       act: start or restart a ticked unit
@@ -71,7 +72,7 @@ NEEDS = {
     "guests": "read", "guest-config": "read", "guest-snapshots": "read", "guest-backups": "read", "guest-tasks": "read",
     "guest-act": "act", "snap-create": "act", "snap-rollback": "admin", "snap-delete": "admin",
     "jobs": "read", "job-save": "admin", "job-delete": "admin", "job-run": "admin",
-    "host": "read", "host-update": "act", "host-power": "admin", "unit": "act", "unit-stop": "admin", "activity": "admin",
+    "host": "read", "host-update": "act", "update-all": "act", "host-power": "admin", "unit": "act", "unit-stop": "admin", "activity": "admin",
     "pull": "act", "rm": "admin", "clean": "admin", "volume-access": "admin",
 }
 SESSION_IDLE = 900            # s without a call before the interactive session ends
@@ -255,7 +256,9 @@ def hosts(h, body):
             "name": a["name"], "online": bool(a["online"]), "version": _s(a["version"], 40),
             "update": bool(a.get("update")), "docker": "docker" in a["caps"] or "docker" in a["found"],
             "pve": "pve" in a["caps"],
-            "containers": {"running": sum(1 for c in cs if c.get("state") == "running"), "total": len(cs)},
+            "containers": {"running": sum(1 for c in cs if c.get("state") == "running"), "total": len(cs),
+                           "bad": sum(1 for c in cs if c.get("state") != "running" or c.get("health") == "unhealthy"),
+                           "updates": sum(1 for c in cs if c.get("update") is True)},
             "cpu": _n(sensors.get("cpu"), 0, 10000), "mem": _n(sensors.get("mem"), 0, 100),
             "seen": _n(a.get("seen"), 0, 4e9),
         })
@@ -277,7 +280,7 @@ def containers(h, body):
             "image": _s(c.get("image"), 200), "project": _s(c.get("project"), 80),
             "cpu": _n(c.get("cpu"), 0, 100000), "mem": int(_n(c.get("mem"))), "mem_pct": _n(c.get("mem_pct"), 0, 1000),
             "net_rx": int(_n(c.get("net_rx"))), "net_tx": int(_n(c.get("net_tx"))), "restarts": int(_n(c.get("restarts"), 0, 1e9)),
-            "updating": c.get("updating") is True,
+            "updating": c.get("updating") is True, "update": c.get("update") is True,
             "can": _can(a, name), "shell": _shell(a, name),
             "auto": name in agents.auto_targets(a), "hook": name in a.get("hooks", {}),
         })
@@ -1035,6 +1038,28 @@ def host(h, body):
                  "can": {"update": agents.allowed(aid, "host", "update", "host"),
                          "power": agents.allowed(aid, "host", "reboot", "host")},
                  "units": units, "failed": failed}
+
+
+@_guarded("update-all")
+def update_all(h, body):
+    """Every ticked container of the host whose registry has a newer image, one after the other (as
+    the auto update does, but not only the auto-ticked ones). The answer lists what was started."""
+    aid, a = _agent(body)
+    if not a:
+        return 404, {"ok": False, "error": "no such host"}
+    st = (agents.state_of(aid).get("containers") or {})
+    started, failed = [], []
+    for name, c in sorted(st.items()):
+        if not (isinstance(c, dict) and c.get("update") is True and not c.get("updating")
+                and NAME.fullmatch(str(name)) and agents.allowed(aid, "docker", "update", name)):
+            continue
+        ok, error = agents.command(aid, "docker", "update", name)
+        (started if ok else failed).append(name)
+        if not ok:
+            print(f"servers: update-all {a['name']}/{name}: {error}", flush=True)
+    audit.record(h, "servers/update-all", f"{a['name']}: {len(started)} started, {len(failed)} failed", not failed)
+    print(f"servers: update all {a['name']} by {h._who()}: {len(started)} started, {len(failed)} failed", flush=True)
+    return 200, {"ok": True, "started": started, "failed": failed}
 
 
 @_guarded("host-update")

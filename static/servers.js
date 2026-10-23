@@ -139,13 +139,14 @@ function show_error(text) { $("view").textContent = ""; $("view").appendChild(el
 function draw_hosts() {
   const nav = $("hosts");
   nav.textContent = "";
-  for (const h of S.hosts) {
+  for (const h of S.hosts.filter((x) => x.docker)) {
     const b = btn("", "host" + (h.name === S.host ? " on" : ""), () => { S.host = h.name; S.sheet && close_sheet(); if (S.tab === "vms" && !h.pve) S.tab = "overview"; draw_hosts(); draw_tabs(); draw_view(); });
-    b.append(el("span", "dot " + (h.online ? "ok" : "bad")), el("span", "", h.name),
+    b.append(el("span", "dot " + (!h.online ? "bad" : h.containers.bad > 0 ? "warn" : "ok")), el("span", "", h.name),
       el("span", "nums", h.online ? h.containers.running + "/" + h.containers.total : "–"));
+    if (h.online && h.containers.updates > 0) b.appendChild(el("span", "nums upd", h.containers.updates + " upd"));
     nav.appendChild(b);
   }
-  if (!S.hosts.length) nav.appendChild(el("p", "muted", "No agents yet. Add one in Settings > Hosts and agents."));
+  if (!S.hosts.some((x) => x.docker)) nav.appendChild(el("p", "muted", "No Docker host yet. Add one in Settings > Hosts and agents."));
 }
 function draw_tabs() {
   const t = $("tabs");
@@ -220,6 +221,7 @@ function draw_rows() {
       el("td", "num", c.state === "running" ? pct(c.mem_pct) : "–"));
     tr.firstChild.appendChild(el("span", "dot " + (ok ? "ok" : c.state === "running" ? "warn" : "bad")));
     const st = el("td"); st.appendChild(el("span", "chip " + (ok ? "ok" : "bad"), c.health && c.state === "running" ? c.health : c.state));
+    if (c.update) st.appendChild(el("span", "chip warn", "update"));
     tr.appendChild(st);
     tr.addEventListener("click", () => open_sheet(c));
     t.appendChild(tr);

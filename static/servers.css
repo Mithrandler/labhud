@@ -22,6 +22,7 @@ nav#hosts { border-right: 1px solid var(--line); padding: 10px; display: flex; f
 .host.on { background: var(--card); }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+.host .nums.upd { margin-left: 0; color: var(--warn); }
 .host .nums { margin-left: auto; color: var(--muted); font-size: 12px; }
 main { padding: 14px 18px; min-width: 0; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; overflow-x: auto; }

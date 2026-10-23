@@ -129,8 +129,16 @@ class Kinds(unittest.TestCase):
         cards = {c["id"]: c for p in raw["page"] for g in p.get("group", []) for c in g.get("card", [])}
         got = {cid: cardtype.kind(c, AGENTS) for cid, c in cards.items()}
         self.assertEqual(got, {"host-pve2": "proxmox", "host-pve": "proxmox", "synology": "nas", "pbs": "nas",
-                               "vm-pve2-306": "docker", "vm-PVE-200": "docker", "vm-PVE-205": "nas",
+                               "vm-pve2-306": "vm", "vm-PVE-200": "vm", "vm-PVE-205": "vm",   # a guest is never a Docker host or a NAS
                                "vm-pve2-312": "vm", "gaming": "pc", "router": "pc", "events": ""})
+
+    def test_a_report_is_no_machine_and_a_guest_is_never_a_nas_or_docker_host(self):
+        report = {"id": "backup", "name": "BACKUP", "ping": "192.0.2.9", "list": "hygiene.items"}
+        self.assertEqual(cardtype.kind(report), "")
+        self.assertEqual(cardtype.kind(dict(report, kind="nas")), "nas")   # unless it says so
+        guest = {"id": "docker-vm", "name": "Docker backup", "ping": "192.0.2.9", "proxmox": "pve/203"}
+        self.assertEqual(cardtype.kind(guest, {}), "vm")
+        self.assertEqual(cardtype.kind({"id": "nas", "name": "NAS", "ping": "192.0.2.1"}), "nas")
 
     def test_own_kind_wins_and_is_checked(self):
         self.assertEqual(cardtype.kind({"id": "x", "name": "synology", "kind": "pc"}), "pc")
@@ -252,9 +260,8 @@ class Organize(unittest.TestCase):
         v = layout.organize(raw, "general", AGENTS)
         self.assertEqual(ids(v, "general"), [
             ("Proxmox", ["host-pve2", "host-pve"]),
-            ("NAS & backup", ["synology", "pbs", "vm-PVE-205"]),
-            ("Docker hosts", ["vm-pve2-306", "vm-PVE-200"]),
-            ("VMs & LXC", ["vm-pve2-312"]),
+            ("NAS & backup", ["synology", "pbs"]),
+            ("VMs & LXC", ["vm-pve2-306", "vm-pve2-312", "vm-PVE-200", "vm-PVE-205"]),
             ("PCs & other", ["gaming"])])
         self.assertEqual(ids(v, "net"), ids(layout.view(raw), "net"))   # other pages untouched
         # what the editor sends back is a config that loads

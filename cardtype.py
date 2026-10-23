@@ -35,14 +35,16 @@ def kind(card, agents=None):
     found = set(agents.get(card.get("agent"), ())) if card.get("agent") and not card.get("agent_target") else set()
     if not (guest or card.get("ping") or card.get("tcp") or card.get("agent") or panel.startswith("host:")):
         return ""   # not a machine: the events, a list, a number; it stays where it is
+    if card.get("list") and not (card.get("agent") or panel.startswith("host:") or guest):
+        return ""   # a list that only pings (the backup report, a hygiene list): a report, not a machine
     if panel.startswith("host:") and not guest or "pve" in found and not guest:
         return "proxmox"
+    if guest:
+        return "vm"   # a guest is never a NAS or a Docker host: its Docker is seen in Servers
     if NAS.search(_text(card)):
         return "nas"
     if "docker" in found or DOCKER.search(_text(card)):
         return "docker"
-    if guest:
-        return "vm"
     return "pc"
 
 

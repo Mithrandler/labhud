@@ -6,6 +6,14 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+
+- Servers: a container's `update` (a newer image in its registry) in `/api/servers/containers`, the host's `bad` and `updates` counts in `hosts`, and `POST /api/servers/update-all` (every ticked container with a newer image, audited). The wall's Servers shows the same.
+
+### Changed
+
+- Devices kinds: a list card that only pings (a report) is no machine; a Proxmox guest is never a NAS or a Docker host.
+
 ### Fixed
 
 - Servers: a missing or expired unlock ticket now answers `403 {"error": "locked", "pin": true}` instead of "forbidden", and no longer counts toward the address block (429). Any request that carries a live ticket, reads included, keeps it alive.

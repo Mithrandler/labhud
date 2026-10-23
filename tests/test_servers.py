@@ -32,7 +32,7 @@ STATE = {"type": "state",
          "sensors": {"cpu": 12.5, "mem": 41.0},
          "containers": {
              "web": {"state": "running", "health": "healthy", "image": "nginx:1", "project": "site", "cpu": 4.2,
-                     "mem": 845000000, "mem_pct": 10.6, "net_rx": 2100, "net_tx": 480, "restarts": 1,
+                     "mem": 845000000, "mem_pct": 10.6, "net_rx": 2100, "net_tx": 480, "restarts": 1, "update": True,
                      "scan": {"critical": 2, "high": 5, "tool": "trivy", "t": 1700000000}},
              "db": {"state": "exited", "image": "postgres:16"},
              "bad name!": {"state": "running"}}}
@@ -755,7 +755,7 @@ class Listing(Base):
         self.assertEqual(status, 200)
         mine = next(h for h in r["hosts"] if h["name"] == "lister")
         self.assertTrue(mine["online"])
-        self.assertEqual(mine["containers"], {"running": 1, "total": 2})   # the name that is no container name is not counted
+        self.assertEqual(mine["containers"], {"running": 1, "total": 2, "bad": 1, "updates": 1})   # the name that is no container name is not counted
         self.assertEqual(mine["cpu"], 12.5)
         status, r, _ = self.api("containers", {"agent": "lister"})
         rows = {x["name"]: x for x in r["containers"]}
@@ -764,6 +764,7 @@ class Listing(Base):
         self.assertEqual((web["state"], web["health"], web["image"], web["restarts"]), ("running", "healthy", "nginx:1", 1))
         self.assertEqual(web["can"], list(servers.ACTIONS))
         self.assertEqual(web["cpu"], 4.2)
+        self.assertEqual((web["update"], rows["db"]["update"]), (True, False))
         self.assertEqual(self.api("containers", {"agent": "nobody"})[0], 404)
         c.close()
 
@@ -778,6 +779,18 @@ class Listing(Base):
 
 
 class Actions(Base):
+    def test_update_all_updates_the_ticked_containers_with_a_newer_image(self):
+        self.session()
+        c, session, aid, key = self.make_host("allup", docker=("web",))   # db has no tick
+        got, t = self.answer(c, key, session, aid)
+        status, r, _ = self.api("update-all", {"agent": "allup"})
+        t.join(5)
+        self.assertEqual((status, r["started"], r["failed"]), (200, ["web"], []), r)
+        self.assertEqual((got["cap"], got["verb"], got["target"]), ("docker", "update", "web"))
+        self.assertIn('"action":"servers/update-all"', audit_text(self.data))
+        self.assertEqual(self.api("update-all", {"agent": "nobody"})[0], 404)
+        c.close()
+
     def test_an_action_is_sent_and_written_to_the_audit_log(self):
         self.session()
         c, session, aid, key = self.make_host("acter")

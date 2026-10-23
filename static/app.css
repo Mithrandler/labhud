@@ -118,6 +118,8 @@
   --text-clock: 34px;
   --wall-tile-low: 84px;
   --radius-widget: 16px;
+  --col-s: 44px;
+  --col-m: 64px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
