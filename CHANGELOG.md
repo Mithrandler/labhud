@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-10-23
+
 ### Changed
 - **More of the look in tokens**: spaces (`space_half`, `space_5`…`space_8`), `touch`, `nav_*`, chart heights, logo sizes, scroll heights and the app's fallback Material schemes (`material_dark`, `material_light`, `light_status`, `on_accent`) are in design/tokens.json; the app takes them from `Tokens.kt`.
 
@@ -829,7 +831,8 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/Mithrandler/labhud/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/Mithrandler/labhud/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/Mithrandler/labhud/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/Mithrandler/labhud/compare/v0.1.14...v0.1.15
