@@ -7,6 +7,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [Unreleased]
 
 ### Changed
+- **The wall's small cards (guests) are the app's tiles**: one number (the CPU, or the RAM when processes stall on memory) and a thin bar instead of three bars, `text_tile` from `design/tokens.json`.
 - **The wall's rings are the app's**: CPU and RAM share one ring (half each), so do a GPU's load and video memory; the rings use the sizes of `design/tokens.json` (`ring`, `ring_stroke`, `text_ring`), show only their name underneath and grow with a short transition (none with `prefers-reduced-motion`). The icons `servers`, `info`, `close` and `chevron_up`, which the app had only in its generated file, are now in `tokens.json`.
 
 ### Added

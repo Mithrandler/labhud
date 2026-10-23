@@ -1,4 +1,4 @@
-// ring_plan and half_dash (static/app.js, copied out unchanged) on {bars, rest} from argv: which rings a machine gets.
+// ring_plan, half_dash and guest_headline (static/app.js, copied out unchanged) on {bars, rest} from argv: which rings a machine gets.
 // tests/test_make_rings.py compares it with the app's gaugesOf (RingsTest.kt / GaugesTest.kt say the same).
 import fs from "fs";
 
@@ -14,7 +14,8 @@ function extract(name) {
   throw new Error(`unbalanced ${name}`);
 }
 const a = JSON.parse(process.argv[2]);
-const body = `${["ring_kind", "ring_plan", "half_dash"].map(extract).join("\n")}
+const body = `${["ring_kind", "ring_plan", "half_dash", "bad_pressure", "guest_headline"].map(extract).join("\n")}
+  if (a.guests) return a.guests.map((g) => guest_headline(g));
   if (a.dash) return a.dash.map((d) => half_dash(d.len, d.share, d.from_end));
   const r = ring_plan(a.bars, a.rest);
   return r.plan.map((p) => ({ label: p.label, a: p.a[0], b: p.b ? p.b[0] : null, temp: p.temp ? p.temp[0] : null }));`;

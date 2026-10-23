@@ -55,3 +55,15 @@ class MakeRings(unittest.TestCase):
         self.assertEqual(left, ["82.0 360.0", "0"])      # half of 164
         self.assertEqual(right, ["82.0 360.0", "-82.0"])
         self.assertEqual(empty, ["0.0 360.0", "-164.0"])
+
+
+@unittest.skipUnless(shutil.which("node"), "node not found")
+class GuestHeadline(unittest.TestCase):
+    def test_the_cpu_unless_processes_stall_on_memory(self):
+        got = run({"guests": [{"cpu": 12, "mem": 97}, {"cpu": 12, "mem": 40, "pressure": 12}, {"cpu": 12, "mem": 40, "pressure_full": 2},
+                              {"cpu": 130, "mem": 1}]})
+        self.assertEqual(got, [
+            {"label": "CPU", "pct": 12, "sev": ""},
+            {"label": "RAM", "pct": 40, "sev": "crit"},
+            {"label": "RAM", "pct": 40, "sev": "crit"},
+            {"label": "CPU", "pct": 100, "sev": ""}])

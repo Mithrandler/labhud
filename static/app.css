@@ -320,6 +320,12 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 .ring .tv { font-size: var(--text-xs); color: var(--muted); }
 .ring .lbl { font-size: var(--text-sm); color: var(--muted); margin-top: 2px; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .ring .arc { transition: none; } }
+.tile-num { display: flex; align-items: baseline; gap: var(--space-1); min-width: 0; }
+.tile-num .tn-v { font-size: var(--text-tile); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tile-num .tn-l { font-size: var(--text-xs); color: var(--muted); }
+.tile-num.crit .tn-v { color: var(--red); }
+.mrow.tile-bar { grid-template-columns: 1fr; margin-top: var(--space-1); }
+.mrow.tile-bar .lbl, .mrow.tile-bar .vl { display: none; }
 .mrow.warn .bar > i { background: var(--warn); }
 .mrow.warn .vl { color: var(--warn); }
 .mrow.crit .bar > i { background: var(--red); }

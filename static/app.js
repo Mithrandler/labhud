@@ -1317,14 +1317,23 @@ function make_rings(bars, rest) {
   return { box, used, rings_sevs };
 }
 
-/** A Proxmox guest: CPU and RAM as bars, its disk as a chip. RAM is NOT coloured by percentage:
+/** The one number a small tile shows, as the app's Card.headline: the RAM when processes stall on memory (bad_pressure), else the CPU.
+    The balloon can report a little over the maximum (101%): a percentage of a whole stops at 100. */
+function guest_headline(g) {
+  return bad_pressure(g) ? { label: "RAM", pct: Math.min(100, g.mem || 0), sev: "crit" } : { label: "CPU", pct: Math.min(100, g.cpu || 0), sev: "" };
+}
+
+/** A Proxmox guest: its number and a bar. RAM is NOT coloured by percentage:
     Proxmox computes it as `total - MemFree`, page cache included, and any Linux machine that ran
     for a day reaches ~95% without any problem. The only signal that means something is PSI: how
     long processes actually stalled on memory (bad_pressure). */
 function guest_rows(c, body, chips, head) {
-  // always three bars (CPU, RAM, disk) and the uptime as a chip beside the name, so every small card is the same height
-  const cpu = bar_row("CPU"), mem = bar_row("RAM"), dsk = bar_row("Disk");
-  body.append(cpu.r, mem.r, dsk.r);
+  // one number and a thin bar (the app's tile), the uptime as a chip beside the name: every small card is the same height
+  const num = el("div", "tile-num"), nv = el("span", "tn-v", "—"), nl = el("span", "tn-l", "CPU");
+  num.append(nv, nl);
+  const bar = bar_row("");
+  bar.r.classList.add("tile-bar");
+  body.append(num, bar.r);
   const up = el("span", "uptime");
   up.hidden = true;
   if (head) head.insertBefore(up, head.querySelector(".dot"));
@@ -1334,20 +1343,15 @@ function guest_rows(c, body, chips, head) {
     const g = get(base);
     const running = !!(g && g.running);
     if (!running) {
-      for (const r of [cpu, mem, dsk]) { put(r.vl, "—"); r.fill(null, ""); }
+      put(nv, "—"); put(nl, "CPU"); bar.fill(null, ""); cls(num, "crit", false);
       up.hidden = true; sev = ""; return;
     }
-    put(cpu.vl, `${Math.round(g.cpu || 0)}%`);
-    // the balloon can report a little over the maximum (101%): a percentage of a whole stops at 100
-    const m = Math.min(100, Math.round(g.mem || 0));
-    put(mem.vl, `${m}%`);
-    sev = bad_pressure(g) ? "crit" : "";
-    cpu.fill(g.cpu || 0, "");
-    mem.fill(m, sev);
-    const d = g.disk_used != null && g.disk_total ? Math.min(100, Math.round(100 * g.disk_used / g.disk_total)) : null;
-    put(dsk.vl, d == null ? "—" : `${d}%`);
-    dsk.fill(d, "");
-    dsk.r.title = g.disk_used != null ? "Disk " + used_of(g.disk_used, g.disk_total, false) : "";
+    const h = guest_headline(g);
+    put(nv, `${Math.round(h.pct)}%`);
+    put(nl, h.label);
+    sev = h.sev;
+    bar.fill(h.pct, sev);
+    cls(num, "crit", sev === "crit");
     up.hidden = !g.uptime;
     if (g.uptime) put(up, duration(g.uptime));
   });
