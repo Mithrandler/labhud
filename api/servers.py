@@ -149,7 +149,7 @@ def _gate(h, op, needed=None):
     now = _now()
 
     def deny(code, error, **more):
-        if code == 403:   # a session that ended (401) is no failed attempt
+        if code == 403 and error != "locked":   # a session that ended (401) or a missing unlock is no failed attempt
             _refused(ip, now)
         audit.record(h, f"servers/{op}", "", False)
         return code, dict({"ok": False, "error": error}, **more)
@@ -166,6 +166,8 @@ def _gate(h, op, needed=None):
     have = {"read": lambda: h._token_may("read") or h._admin_any(), "act": h._operator,
             "admin": h._may_manage_now}[needed]()
     if not have:
+        if getattr(h, "_locked_out", False):   # an admin whose unlock ticket is missing or ran out
+            return deny(403, "locked", pin=True)
         return deny(403, "forbidden")
     if needed != "read" and not cli and not admin.servers_network_ok(ip):
         return deny(403, "this address may not act on Servers")

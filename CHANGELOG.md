@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Fixed
+
+- Servers: a missing or expired unlock ticket now answers `403 {"error": "locked", "pin": true}` instead of "forbidden", and no longer counts toward the address block (429). Any request that carries a live ticket, reads included, keeps it alive.
+
 ## [0.1.18] - 2026-10-23
 
 ### Changed

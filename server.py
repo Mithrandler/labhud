@@ -1670,6 +1670,7 @@ class Handler(BaseHTTPRequestHandler):
         return f"{self.client_address[0]} ({name})" if name else self.client_address[0]
 
     def do_GET(self):
+        self._touch_ticket()
         # The agent and its installer: public code, no data, fetched by machines that may know
         # labhud under any name (like /api/push), so before the LABHUD_HOSTS check.
         if self.path in AGENT_FILES:
@@ -1718,6 +1719,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Signed actions (LABHUD_ACTION_SECRET): checks that the request comes from labhud's own
         page, then forwards it to the agent with a signature. One answer for every refusal."""
+        self._touch_ticket()
         p = re.fullmatch(r"/api/push/([a-z0-9_]{1,64})", self.path)
         if p:
             return self._push(p.group(1))
@@ -1822,7 +1824,18 @@ class Handler(BaseHTTPRequestHandler):
     def _unlocked(self):
         """No PIN set, or the request carries a live ticket (lock.py): a display gets one with the
         PIN, the app with /api/v1/unlock. The same PIN for both, and the same 2 minutes."""
-        return LOCK.allows(self.headers.get("X-Labhud-Unlock"))
+        ok = LOCK.allows(self.headers.get("X-Labhud-Unlock"))
+        if not ok:
+            self._locked_out = True   # api/servers.py answers "locked" (ask for the PIN), not "forbidden"
+        return ok
+
+    def _touch_ticket(self):
+        """A live ticket is kept alive by any request that carries it, reads too: a phone that only
+        reads for 2 minutes still holds its unlock, as the app's own clock assumes."""
+        self._locked_out = False
+        t = self.headers.get("X-Labhud-Unlock")
+        if t and LOCK.is_on():
+            LOCK.valid(t)
 
     # --- apps (/api/v1) ---
 

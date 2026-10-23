@@ -25,6 +25,7 @@ class PinRoutes(DemoServer):
         "LABHUD_DATA": data.name,
         admin.ENV_KEY: admin.env_line(REC).split("=", 1)[1],
         lock.ENV_KEY: lock.hash_pin(PIN),
+        "LABHUD_SERVERS_HTTP": "on",
     }
 
     @classmethod
@@ -51,9 +52,12 @@ class PinRoutes(DemoServer):
         return out
 
     def sign_in(self):
+        if getattr(PinRoutes, "_ticket", None):   # a TOTP code works once per step
+            return PinRoutes._ticket
         status, r = self.request("POST", "/api/admin/login",
                                  {"user": "boss", "password": "correct horse 1", "code": code()})
         self.assertEqual(status, 200, r)
+        PinRoutes._ticket = r["ticket"]
         return r["ticket"]
 
     def test_pin_and_devices(self):
@@ -80,6 +84,28 @@ class PinRoutes(DemoServer):
 
         self.request("POST", "/api/lock/lock", ticket=ticket, unlock=unlock)
         self.assertEqual(self.request("POST", "/api/setup/status", ticket=ticket, unlock=unlock)[0], 403)   # locked again: the ticket is gone
+
+    def test_servers_locked_is_not_forbidden(self):
+        """No ticket: "locked" (ask for the PIN), a different answer from "forbidden", and it never blocks the address."""
+        ticket = self.sign_in()
+        for _ in range(12):   # more than the 8 refusals that block an address
+            status, r = self.request("POST", "/api/servers/action", {}, ticket=ticket)
+            self.assertEqual((status, r.get("error"), r.get("pin")), (403, "locked", True))
+        status, r = self.request("POST", "/api/servers/action", {})   # not signed in at all
+        self.assertEqual((status, r.get("error")), (403, "forbidden"))
+        status, r = self.request("POST", "/api/lock/unlock", {"pin": PIN}, ticket=ticket)
+        unlock = r["ticket"]
+        status, r = self.request("POST", "/api/servers/action", {}, ticket=ticket, unlock=unlock)
+        self.assertNotIn(r.get("error"), ("locked", "forbidden"))   # past the gate, not blocked (429) either
+        self.assertNotEqual(status, 429)
+
+    def test_reading_keeps_the_ticket_alive(self):
+        ticket = self.sign_in()
+        unlock = self.request("POST", "/api/lock/unlock", {"pin": PIN}, ticket=ticket)[1]["ticket"]
+        # Any request that carries the ticket renews it, reads too (server._touch_ticket); here only that it still works after.
+        for _ in range(3):
+            self.assertEqual(self.request("GET", "/api/status", ticket=ticket, unlock=unlock)[0], 200)
+        self.assertEqual(self.request("POST", "/api/setup/status", ticket=ticket, unlock=unlock)[0], 200)
 
 
 if __name__ == "__main__":
