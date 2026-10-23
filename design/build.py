@@ -153,6 +153,9 @@ def kotlin(tokens):
                        for n, (v, note) in tokens["colors"].items())
     scale = "\n".join(f"    /** {note} */\n    val {camel(n)} = {value}{'.sp' if n.startswith('text_') else '.dp'}"
                       for n, (value, note) in tokens["scale"].items())
+    def scheme(key):
+        return "\n".join(f"    val {k} = Color(0xFF{v.lstrip('#')})" for k, v in tokens[key].items())
+    light_status = "\n".join(f"    val {camel(n)} = Color(0xFF{v.lstrip('#')})" for n, (v, _) in tokens["light_status"].items())
     grey = "\n".join(f"    /** {note} */\n    val {camel(n)} = Color(0xFF{v.lstrip('#').upper()})"
                       for n, (v, note) in tokens["board_grey"].items())
     icons = "\n".join(
@@ -179,6 +182,20 @@ object Hud {{
 /** The "Dark grey" board's ground, cards and edges (the wall's settings.js says the same). */
 object HudGrey {{
 {grey}
+}}
+
+/** The fallback Material schemes (no wallpaper colours to take, before Android 12): labhud's blue on neutral greys. */
+object FallbackDark {{
+{scheme("material_dark")}
+}}
+
+object FallbackLight {{
+{scheme("material_light")}
+}}
+
+/** Status colours on the light theme (the HUD's are for a dark ground). */
+object LightStatus {{
+{light_status}
 }}
 
 /** The sizes of the wall and ⚙: gaps, corners, type, a meter's bar. */

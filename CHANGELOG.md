@@ -6,6 +6,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Changed
+- **More of the look in tokens**: spaces (`space_half`, `space_5`…`space_8`), `touch`, `nav_*`, chart heights, logo sizes, scroll heights and the app's fallback Material schemes (`material_dark`, `material_light`, `light_status`, `on_accent`) are in design/tokens.json; the app takes them from `Tokens.kt`.
+
 ## [0.1.17] - 2026-10-23
 
 ### Changed

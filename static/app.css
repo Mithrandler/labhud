@@ -58,6 +58,7 @@
   --red-bg: #3a0d1c;
   --red-text: #ffd9e2;
   --info-bg: #0e1824;
+  --on-accent: #001B3D;
   /* design:end */
   /* design:scale (design/tokens.json, written by design/build.py: edit there) */
   --space-1: 4px;
@@ -93,6 +94,30 @@
   --pager-w: 18px;
   --pager-h: 4px;
   --hairline: 1px;
+  --space-half: 2px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --touch: 48px;
+  --nav-h: 44px;
+  --nav-w: 56px;
+  --cell-w: 150px;
+  --scroll-s: 320px;
+  --scroll-m: 420px;
+  --field-min: 160px;
+  --field-min-s: 80px;
+  --chart-h: 96px;
+  --chart-h-big: 140px;
+  --skeleton-h: 88px;
+  --stroke-chart: 2px;
+  --stroke-thin: 1.5px;
+  --icon-hero: 28px;
+  --brand-s: 24px;
+  --brand-m: 40px;
+  --brand-l: 56px;
+  --text-clock: 34px;
+  --wall-tile-low: 84px;
+  --radius-widget: 16px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
