@@ -371,3 +371,12 @@ class GpuNumbers(unittest.TestCase):
     def test_no_gpu(self):
         self.assertEqual(cardstate._gpus(self.CARD, {"temp": {"pve": {"cpu_temp": 50}}}), [])
         self.assertEqual(cardstate._gpus({"id": "x"}, {}), [])
+
+
+class DataCheck(unittest.TestCase):
+    def test_up_reads_a_boolean_and_an_absent_one_is_unknown(self):
+        c = {"id": "wg", "check": ["data", "live.wireguard.up"]}
+        self.assertIs(cardstate.raw_status(c, {"live": {"wireguard": {"up": True}}}), True)
+        self.assertIs(cardstate.raw_status(c, {"live": {"wireguard": {"up": False}}}), False)
+        self.assertIsNone(cardstate.raw_status(c, {"live": {"wireguard": {"unavailable": "x"}}}))
+        self.assertIsNone(cardstate.raw_status(c, {}))

@@ -36,7 +36,7 @@ FORMATS = {
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 PAGE_ID_RE = re.compile(r"^[a-z]+$")  # pages are addressed as #<id> in the URL
 HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$")
-CHECKS = ("ping", "tcp", "proxmox")
+CHECKS = ("ping", "tcp", "proxmox", "up")
 
 PAGE_KEYS = {"id", "title", "group", "games", "icon", "columns", "density"}
 GROUP_KEYS = {"id", "title", "card", "keep_together", "guests", "guests_tag", "hidden"}
@@ -186,6 +186,10 @@ def _check(ck, where, c):
         if _host(host) and port.isdigit() and 0 < int(port) < 65536:
             return ["tcp", host, int(port)]
         ck.err(where, f"tcp must be \"host:port\", got {v!r}")
+    elif kind == "up":
+        if isinstance(v, str) and re.fullmatch(r"[a-z0-9_]+(\.[a-z0-9_]+)+", v):
+            return ["data", v]   # a true/false the sources already give: the card is up while it is true
+        ck.err(where, f"up must be a data path such as \"live.wireguard.up\", got {v!r}")
     else:
         node, _, vmid = v.partition("/") if isinstance(v, str) else ("", "", "")
         if node and vmid.isdigit():

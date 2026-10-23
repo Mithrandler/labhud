@@ -261,6 +261,9 @@ def raw_status(c, data):
         return bool(g.get("running"))
     if chk[0] == "known":
         return chk[1]
+    if chk[0] == "data":   # up = "live.wireguard.up": a true/false in the data; missing is unknown, not down
+        v = get(data, chk[1])
+        return v if isinstance(v, bool) else None
     if chk[0] == "agent":
         return agent_status(get(data, f"agents.{chk[1]}"), chk[2], chk[3])
     v = get(data, "status." + c["id"])

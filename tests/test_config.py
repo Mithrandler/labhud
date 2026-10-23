@@ -43,6 +43,11 @@ class ValidFiles(unittest.TestCase):
                 self.assertTrue(t["pages"])
                 self.assertTrue(t["cards"])
 
+    def test_up_is_a_check_that_reads_a_data_path(self):
+        t = load_text(MINIMAL.replace('ping = "nas.lan"', 'up = "live.wireguard.up"'))
+        self.assertEqual(t["cards"]["main"][0]["check"] if isinstance(t["cards"], dict) and "main" in t["cards"] else
+                         next(c for cs in t["cards"].values() for c in cs)["check"], ["data", "live.wireguard.up"])
+
     def test_minimal(self):
         t = load_text(MINIMAL)
         self.assertEqual(t["title"], config.DEFAULT_TITLE)
@@ -217,6 +222,8 @@ class InvalidFiles(unittest.TestCase):
              "page 'main' group 'hosts' card 'nas': tcp must be \"host:port\", got 'nas.lan:70000'"),
             (card.replace("{}", 'proxmox = "pve"'),
              "page 'main' group 'hosts' card 'nas': proxmox must be \"node/vmid\", e.g. \"pve/101\", got 'pve'"),
+            (card.replace("{}", 'up = "no spaces"'),
+             "page 'main' group 'hosts' card 'nas': up must be a data path such as \"live.wireguard.up\", got 'no spaces'"),
             (MINIMAL.replace('id = "nas"', 'id = "x y"'),
              "page 'main' group 'hosts' card 'x y': id 'x y' may only contain letters, digits, '-' and '_'"),
             (card.replace("{}", 'metrics = [{ key = "a.b", label = "A", format = "kelvin" }]'),

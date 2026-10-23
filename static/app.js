@@ -854,6 +854,7 @@ function raw_status(c) {
     return !!g.running;
   }
   if (c.check[0] === "known") return c.check[1];   // game servers know their own state
+  if (c.check[0] === "data") { const v = get(c.check[1]); return typeof v === "boolean" ? v : null; }   // up = "live.wireguard.up"
   if (c.check[0] === "agent") return agent_status(get("agents." + c.check[1]), c.check[2], c.check[3]);
   const v = get("status." + c.id);
   if (v === "scheduled") return "scheduled";       // off on schedule, not down

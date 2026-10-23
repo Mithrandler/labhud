@@ -6,6 +6,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+- A group tile with nothing wrong says a green "OK" (wall and app).
+- A card can take its state from a data path: `up = "live.wireguard.up"` (true is up, false is down, missing is unknown).
+
 - The card panel on the wall is one page, no tabs; uptime is one bar for 24 h and 7 d, as in the app.
 
 ### Fixed

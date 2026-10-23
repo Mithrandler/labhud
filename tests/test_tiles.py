@@ -26,6 +26,12 @@ def game(on, q=None):
     return json.loads(out)
 
 
+def group_text(count, what):
+    out = subprocess.run(["node", str(SCRIPT), json.dumps({"group": {"count": count, "what": what}})],
+                         capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
 HOST = {"id": "host-pve", "name": "PVE", "panel": "host:pve"}
 
 
@@ -92,6 +98,13 @@ class Tiles(unittest.TestCase):
         self.assertEqual([len(p) for p in r["pages"]], [11, 2])
         # portrait: three columns, two rows fit
         self.assertEqual([len(p) for p in paged([1] * 7, cols=3, rows=2)["pages"]], [6, 1])
+
+    def test_a_group_without_trouble_says_ok_and_nothing_else(self):
+        self.assertEqual(group_text(0, []), {"value": "OK", "sub": ""})
+
+    def test_a_group_in_trouble_says_how_many_and_what(self):
+        self.assertEqual(group_text(3, ["disk", "cpu", "ram"])["value"], "3")
+        self.assertIn("disk", group_text(3, ["disk", "cpu", "ram"])["sub"])
 
     def test_a_game_tile_says_players_and_slots(self):
         self.assertEqual(game(True, {"players": 3, "max": 10}), ["3", "players", False, "of 10 slots"])

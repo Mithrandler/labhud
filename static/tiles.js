@@ -175,7 +175,7 @@ function make_group_tile(g, cards) {
     const trouble = cards.map((c) => [c, tile_trouble(c)]).filter(([, t]) => t);
     const crit = trouble.filter(([, t]) => t === "crit");
     const broken = (list) => list.reduce((n, [c]) => n + (card_items(c).length || 1), 0);
-    put(nv, String(broken(crit.length ? crit : trouble)));
+    const count = trouble.length ? broken(crit.length ? crit : trouble) : 0;
     put(nl, "");
     cls(n, "crit", crit.length > 0);
     cls(n, "warn", !crit.length && trouble.length > 0);
@@ -184,10 +184,17 @@ function make_group_tile(g, cards) {
     cls(dot, "up", !trouble.length);
     // what is wrong, not who has it: the first broken things of the cards in trouble
     const what = trouble.flatMap(([c]) => { const it = card_items(c); return it.length ? it.map((i) => i[0]) : [c.name]; });
-    put(sub, trouble.length ? names_line(what, 2) : "all fine");
+    const said = group_tile_text(count, what);
+    put(nv, said.value);
+    put(sub, said.sub);
   });
   bind_touch(n, pseudo);
   return n;
+}
+
+/** What a group tile says: how many things are broken and the first of them, or a green "OK" when nothing is. */
+function group_tile_text(count, what) {
+  return count > 0 ? { value: String(count), sub: names_line(what, 2) } : { value: "OK", sub: "" };
 }
 
 /** The panel of a group tile, one level: for each card in trouble what is wrong in it, then the cards

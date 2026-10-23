@@ -15,7 +15,12 @@ function extract(name) {
 const names = ["tiles_rows", "tiles_pages", "host_node", "host_line", "tile_headline", "tile_trouble", "card_items", "names_line"];
 const body = `${names.map(extract).join("\n")}
   return { node: host_node(card), line: host_line(card), head: tile_headline(card), trouble: tile_trouble(card), items: card_items(card), line2: names_line(items, 2) };`;
-const { card, data, items, widths, cols, rows, game } = JSON.parse(process.argv[2]);
+const { card, data, items, widths, cols, rows, game, group } = JSON.parse(process.argv[2]);
+if (group) {
+  const pure = new Function(`${["names_line", "group_tile_text"].map(extract).join("\n")}\n return group_tile_text(${group.count}, ${JSON.stringify(group.what)});`);
+  process.stdout.write(JSON.stringify(pure()));
+  process.exit(0);
+}
 if (game) {
   const pure = new Function(`${extract("game_tile_text")}\n return game_tile_text(${JSON.stringify(game.on)}, ${JSON.stringify(game.q)});`);
   process.stdout.write(JSON.stringify(pure()));
