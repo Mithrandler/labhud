@@ -14,6 +14,12 @@ def run(card, data, items=None):
     return json.loads(out)
 
 
+def paged(widths, cols=4, rows=3):
+    out = subprocess.run(["node", str(SCRIPT), json.dumps({"widths": widths, "cols": cols, "rows": rows})],
+                         capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
 HOST = {"id": "host-pve", "name": "PVE", "panel": "host:pve"}
 
 
@@ -60,3 +66,23 @@ class Tiles(unittest.TestCase):
         names = ["a", "b", "c", "d"]
         self.assertEqual(run({"id": "x", "name": "X"}, {}, names)["line2"], "a, b +2")
         self.assertEqual(run({"id": "x", "name": "X"}, {}, names[:2])["line2"], "a, b")
+
+    def test_tiles_that_fit_are_one_page(self):
+        # two wide + eight single = 12 cells, three rows of four
+        r = paged([2, 2] + [1] * 8)
+        self.assertEqual(r["rows"], 3)
+        self.assertEqual(r["pages"], [list(range(10))])
+
+    def test_more_tiles_than_rows_make_pages_in_order(self):
+        r = paged([1] * 13)
+        self.assertEqual(r["pages"], [list(range(12)), [12]])
+        r = paged([2, 2] + [1] * 12)
+        self.assertEqual([len(p) for p in r["pages"]], [10, 4])
+        self.assertEqual([i for p in r["pages"] for i in p], list(range(14)))
+
+    def test_a_wide_tile_that_does_not_fit_the_rows_left_starts_the_next_page(self):
+        # 11 singles + a wide one = 13 cells: the wide one would be a fourth row, so both wide ones go on page two
+        r = paged([1] * 11 + [2, 2])
+        self.assertEqual([len(p) for p in r["pages"]], [11, 2])
+        # portrait: three columns, two rows fit
+        self.assertEqual([len(p) for p in paged([1] * 7, cols=3, rows=2)["pages"]], [6, 1])

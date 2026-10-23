@@ -958,7 +958,12 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 }
 #content:has(> .tiles) { padding: var(--wall-gap); }
 .tile { justify-content: space-between; gap: 0; padding: var(--space-2) var(--space-3); }
-.tile[hidden] { display: none; }
+.tile[hidden], .tile.off { display: none; }
+/* more tiles than fit: a swipe turns them, a dot a page (in the bottom padding) */
+.tdots { position: absolute; left: 0; right: 0; bottom: 1px; display: flex; justify-content: center; gap: 6px; pointer-events: none; }
+.tdots i { width: 18px; height: 4px; border-radius: 2px; background: var(--border); }
+.tdots i.on { background: var(--text); }
+@media (max-width: 1199px) { .tiles { touch-action: none; } }
 .tile .head { gap: var(--space-2); }
 .tile .name { font-size: var(--text-wall-name); white-space: normal; line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .tile.wide { grid-column: span 2; }

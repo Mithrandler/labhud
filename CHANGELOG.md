@@ -11,6 +11,9 @@ still change in a minor version; such changes are listed under **Changed** with 
 - **PVE and PVE2 come first** on General (then the other hosts, then what is in trouble, then the rest as configured).
 - **A group in trouble is one tile, not three**: the group tile (and not its cards as well) comes to the front, counts what is broken (each bad row of a list card such as FAILURES, else one per card) and names the first two ("pve2: fleet-update, job: backup-check +2"). A tap opens the group's panel, one level: each card in trouble with its broken rows right there, then the cards that are fine. The "problem/problems" word under the number is gone, and a card that lists what is wrong no longer repeats its unit ("4", not "4 Problems"); its bottom line names the broken rows.
 
+### Fixed
+- **More tiles than fit a screen were cut, the last row out of reach.** A page with more tiles than rows (a fourth row at 914x411) is now pages of tiles: a swipe sideways turns them, a dot under the grid says which one is shown, and the rotation shows the next page of tiles before it moves to the next screen. At a desk (1200 px and wider) the page still scrolls.
+
 ## [0.1.16] - 2026-10-23
 
 ### Changed

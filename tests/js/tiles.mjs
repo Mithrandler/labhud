@@ -12,10 +12,16 @@ function extract(name) {
   }
   throw new Error(`unbalanced ${name}`);
 }
-const names = ["host_node", "host_line", "tile_headline", "tile_trouble", "card_items", "names_line"];
+const names = ["tiles_rows", "tiles_pages", "host_node", "host_line", "tile_headline", "tile_trouble", "card_items", "names_line"];
 const body = `${names.map(extract).join("\n")}
   return { node: host_node(card), line: host_line(card), head: tile_headline(card), trouble: tile_trouble(card), items: card_items(card), line2: names_line(items, 2) };`;
-const { card, data, items } = JSON.parse(process.argv[2]);
+const { card, data, items, widths, cols, rows } = JSON.parse(process.argv[2]);
+if (widths) {
+  const pure = new Function(`${["tiles_rows", "tiles_pages"].map(extract).join("\n")}
+    return { rows: tiles_rows(${JSON.stringify(widths)}, ${cols}), pages: tiles_pages(${JSON.stringify(widths)}, ${cols}, ${rows}) };`);
+  process.stdout.write(JSON.stringify(pure()));
+  process.exit(0);
+}
 const stubs = {
   get: (path) => data[path],
   format: (v) => `${Math.round(v)}%`,

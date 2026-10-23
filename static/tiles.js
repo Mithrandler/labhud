@@ -239,7 +239,10 @@ function mount_tiles() {
   pageSections = [];
   if (layoutWatch) layoutWatch.disconnect();
   pageGrid = el("div", "tiles");
-  host.appendChild(pageGrid);
+  tileDots = el("div", "tdots");
+  host.append(pageGrid, tileDots);
+  tileSub = 0; tileSubs = 1; tileSig = "";
+  bind_swipe(pageGrid);
   tileEntries = [];
   const expanded = tiles_expanded();
   let pos = 0;
@@ -263,9 +266,21 @@ function mount_tiles() {
   layoutWatch.observe(host);
 }
 
+/** A swipe sideways over the tiles turns their pages (a tap on a tile still opens it: it moved too little). */
+function bind_swipe(node) {
+  let x0 = 0, y0 = 0;
+  node.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; });
+  node.addEventListener("pointerup", (e) => {
+    const dx = e.clientX - x0, dy = e.clientY - y0;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    touched();
+    tiles_step(dx < 0 ? 1 : -1);
+  });
+}
+
 /** Who is shown, in what order: a card in trouble first (wherever it came from), the rest as configured. */
 function order_tiles() {
-  let shown = 0;
+  const sig = [];
   for (const e of tileEntries) {
     const bad = e.group ? e.group.some((c) => tile_trouble(c) === "crit") : e.card && tile_trouble(e.card) === "crit";
     const visible = !e.inner || bad;
@@ -274,14 +289,41 @@ function order_tiles() {
     const node = e.card && host_node(e.card);
     const rank = node ? ({ pve: 0, pve2: 1 }[node.toLowerCase()] ?? 2) : 0;
     e.tile.style.order = String(node ? e.pos - 200000 + rank * 10000 : bad ? e.pos - 100000 : e.pos);
-    if (visible) shown++;
+    if (visible) sig.push(e.tile.style.order);
   }
-  if (shown !== tileShown) { tileShown = shown; setTimeout(tiles_layout, 0); }
+  const now = sig.join(",");
+  if (now !== tileSig) { tileSig = now; setTimeout(tiles_layout, 0); }
 }
-let tileShown = -1;
+
+let tileSig = "";       // the visible tiles in their order: when it changes, the pages are cut again
+let tileSub = 0, tileSubs = 1;   // the page of tiles shown, how many there are
+let tileDots = null;
+
+/** How many rows tiles of these widths (1 or 2 cells, in order) take in a grid `cols` wide. Wide tiles take
+    their cells first and singles fill the holes ("dense"). */
+function tiles_rows(widths, cols) {
+  const free = [];
+  for (const w of widths.map((x) => Math.min(cols, x)).sort((a, b) => b - a)) {
+    const r = free.findIndex((f) => f >= w);
+    if (r < 0) free.push(cols - w); else free[r] -= w;
+  }
+  return free.length;
+}
+
+/** The tiles' widths split, in order, into pages of at most `rows` rows: [[index, ...], ...]. */
+function tiles_pages(widths, cols, rows) {
+  const pages = [[]];
+  widths.forEach((w, i) => {
+    const last = pages[pages.length - 1];
+    if (last.length && tiles_rows([...last, i].map((j) => widths[j]), cols) > rows) pages.push([i]);
+    else last.push(i);
+  });
+  return pages;
+}
 
 /** The fixed grid: 4 tiles a row in landscape, 3 in portrait, the rows sharing the height (never below
-    --wall-tile-min: if they do not fit then, the page is cut and body.dataset.measure says so). */
+    --wall-tile-min). More tiles than the rows that fit: pages of them (a swipe, and the rotation, turn them);
+    at a desk the page scrolls instead. */
 function tiles_layout() {
   const host = $("#content");
   if (!pageGrid || !host.clientWidth) return;
@@ -292,16 +334,40 @@ function tiles_layout() {
   const num = (name, d) => parseFloat(root.getPropertyValue(name)) || d;
   const cols = num(W > H ? "--wall-cols-landscape" : "--wall-cols-portrait", W > H ? 4 : 3);
   const gap = num("--wall-gap", 8);
-  // wide tiles take two cells; singles fill the holes ("dense"): count the rows by placing them
-  const free = [];
-  for (const t of [...pageGrid.children].filter((x) => !x.hidden).sort((a, b) => b.classList.contains("wide") - a.classList.contains("wide"))) {
-    const w = Math.min(cols, t.classList.contains("wide") ? 2 : 1);
-    const r = free.findIndex((f) => f >= w);
-    if (r < 0) free.push(cols - w); else free[r] -= w;
-  }
-  const rows = Math.max(1, free.length);
-  const h = Math.max(num("--wall-tile-min", 92), Math.min(num("--wall-tile-max", 132), (H - gap * (rows - 1)) / rows));
+  const min = num("--wall-tile-min", 92);
+  const shown = [...pageGrid.children].filter((x) => !x.hidden).sort((a, b) => Number(a.style.order || 0) - Number(b.style.order || 0));
+  const widths = shown.map((t) => (t.classList.contains("wide") ? 2 : 1));
+  const fit = Math.max(1, Math.floor((H + gap) / (min + gap)));
+  const desk = desk_view();
+  const pages = !desk && tiles_rows(widths, cols) > fit ? tiles_pages(widths, cols, fit) : [widths.map((_, i) => i)];
+  tileSubs = pages.length;
+  tileSub = Math.min(tileSub, tileSubs - 1);
+  const mine = new Set(pages[tileSub]);
+  shown.forEach((t, i) => cls(t, "off", !mine.has(i)));
+  const rows = Math.max(1, tiles_rows(pages[tileSub].map((i) => widths[i]), cols));
+  const h = Math.max(min, Math.min(num("--wall-tile-max", 132), (H - gap * (rows - 1)) / rows));
   pageGrid.style.setProperty("--tcols", String(cols));
   pageGrid.style.setProperty("--th", h.toFixed(1) + "px");
-  cls(host, "scroll", desk_view());
+  cls(host, "scroll", desk);
+  if (tileDots) {
+    while (tileDots.children.length > (tileSubs > 1 ? tileSubs : 0)) tileDots.lastChild.remove();
+    while (tileDots.children.length < (tileSubs > 1 ? tileSubs : 0)) tileDots.appendChild(el("i"));
+    [...tileDots.children].forEach((d, i) => cls(d, "on", i === tileSub));
+  }
+}
+
+/** One page of tiles on (+1) or back (-1), round the end. */
+function tiles_step(d) {
+  if (tileSubs < 2) return;
+  tileSub = (tileSub + d + tileSubs) % tileSubs;
+  tiles_layout();
+}
+
+/** For the rotation: the next page of this page's tiles, if there is one (true), else it is time for the next screen. */
+function tiles_turn() {
+  if (tileSub >= tileSubs - 1) return false;
+  tileSub++;
+  turnedAt = Date.now();
+  tiles_layout();
+  return true;
 }

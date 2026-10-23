@@ -3521,6 +3521,7 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
     if (Date.now() < pausedUntil || overlay_open() || pad) return;
     const pages = rotation_pages();
     if (!pages.length) return;
+    if (tiles_turn()) return;   // this page has more tiles than fit: its next page of them first
     go(pages.find((i) => i > page) ?? pages[0]);
   }, 1000);
 });
