@@ -65,6 +65,48 @@ function host_line(c) {
   return `${what} · ${down ? down + " stopped" : "all fine"}`;
 }
 
+/** What a host shows: CPU, RAM, GPU and video memory, each a number and a bar. With several GPUs the busiest. */
+function host_meters(c) {
+  const node = host_node(c);
+  const t = (c.sensors && get(c.sensors)) || {};
+  let gpu = null, vram = null;
+  for (let i = 0; t[`gpu${i}_util`] != null || t[`gpu${i}_mem`] != null; i++) {
+    if (typeof t[`gpu${i}_util`] === "number") gpu = Math.max(gpu ?? 0, t[`gpu${i}_util`]);
+    if (typeof t[`gpu${i}_mem`] === "number") vram = Math.max(vram ?? 0, t[`gpu${i}_mem`]);
+  }
+  const pick = (label, path, v) => [label, typeof v === "number" ? v : null, path ? severity(path, "percent", v) : ""];
+  return [pick("CPU", `proxmox.${node}.cpu`, get(`proxmox.${node}.cpu`)), pick("RAM", `proxmox.${node}.mem`, get(`proxmox.${node}.mem`)),
+    pick("GPU", c.sensors ? c.sensors + ".gpu0_util" : "", gpu), pick("VRAM", c.sensors ? c.sensors + ".gpu0_mem" : "", vram)];
+}
+
+/** The four meters of a host tile; fill() redraws them. */
+function make_meters(c) {
+  const box = el("div", "meters");
+  const parts = ["CPU", "RAM", "GPU", "VRAM"].map((label) => {
+    const m = el("div", "meter");
+    const top = el("div", "mt");
+    const vl = el("span", "mv", "—");
+    top.append(el("span", "ml", label), vl);
+    const bar = el("div", "bar");
+    const fill = el("i");
+    bar.appendChild(fill);
+    m.append(top, bar);
+    box.appendChild(m);
+    return { m, vl, fill };
+  });
+  return {
+    box,
+    fill() {
+      host_meters(c).forEach(([, v, sev], i) => {
+        const { m, vl, fill } = parts[i];
+        put(vl, v == null ? "—" : `${Math.round(v)}%`);
+        fill.style.width = v == null ? "0%" : `${Math.max(0, Math.min(100, v))}%`;
+        cls(m, "warn", sev === "warn"); cls(m, "crit", sev === "crit");
+      });
+    },
+  };
+}
+
 /** The tile of one card. */
 function make_tile(c, guestOf) {
   const n = el("div", "card tile");
@@ -80,7 +122,10 @@ function make_tile(c, guestOf) {
   num.append(nv, nl);
   const sub = el("div", "tile-sub");
   n.append(head, num, sub);
+  const meters = host_node(c) ? make_meters(c) : null;
+  if (meters) { n.classList.add("wide"); n.insertBefore(meters.box, sub); num.hidden = true; }
   updaters.push(() => {
+    if (meters) meters.fill();
     const st = card_status(c);
     const [v, label, sev] = tile_headline(c);
     const down = st === false;
@@ -207,8 +252,14 @@ function tiles_layout() {
   const num = (name, d) => parseFloat(root.getPropertyValue(name)) || d;
   const cols = num(W > H ? "--wall-cols-landscape" : "--wall-cols-portrait", W > H ? 4 : 3);
   const gap = num("--wall-gap", 8);
-  const n = [...pageGrid.children].filter((t) => !t.hidden).length;
-  const rows = Math.max(1, Math.ceil(n / cols));
+  // wide tiles take two cells; singles fill the holes ("dense"): count the rows by placing them
+  const free = [];
+  for (const t of [...pageGrid.children].filter((x) => !x.hidden).sort((a, b) => b.classList.contains("wide") - a.classList.contains("wide"))) {
+    const w = Math.min(cols, t.classList.contains("wide") ? 2 : 1);
+    const r = free.findIndex((f) => f >= w);
+    if (r < 0) free.push(cols - w); else free[r] -= w;
+  }
+  const rows = Math.max(1, free.length);
   const h = Math.max(num("--wall-tile-min", 92), Math.min(num("--wall-tile-max", 132), (H - gap * (rows - 1)) / rows));
   pageGrid.style.setProperty("--tcols", String(cols));
   pageGrid.style.setProperty("--th", h.toFixed(1) + "px");

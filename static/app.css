@@ -83,9 +83,9 @@
   --wall-tile-max: 132px;
   --wall-cols-landscape: 4px;
   --wall-cols-portrait: 3px;
-  --text-wall-min: 14px;
-  --text-wall-name: 17px;
-  --text-wall-num: 30px;
+  --text-wall-min: 13px;
+  --text-wall-name: 15px;
+  --text-wall-num: 28px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
@@ -954,13 +954,22 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 /* A fixed grid: --tcols tiles a row, every tile --th tall, one gap between them and around them. */
 .tiles {
   display: grid; grid-template-columns: repeat(var(--tcols, 4), minmax(0, 1fr));
-  grid-auto-rows: var(--th, 100px); gap: var(--wall-gap); align-content: start;
+  grid-auto-rows: var(--th, 100px); grid-auto-flow: row dense; gap: var(--wall-gap); align-content: start;
 }
 #content:has(> .tiles) { padding: var(--wall-gap); }
 .tile { justify-content: space-between; gap: 0; padding: var(--space-2) var(--space-3); }
 .tile[hidden] { display: none; }
 .tile .head { gap: var(--space-2); }
-.tile .name { font-size: var(--text-wall-name); }
+.tile .name { font-size: var(--text-wall-name); white-space: normal; line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.tile.wide { grid-column: span 2; }
+.meters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); }
+.meter .mt { display: flex; flex-direction: column; line-height: 1.15; }
+.meter .ml { font-size: var(--text-wall-min); color: var(--sub); }
+.meter .mv { font-size: var(--text-wall-num); font-weight: 700; font-variant-numeric: tabular-nums; }
+.meter .bar { height: var(--bar); border-radius: 999px; background: var(--block); overflow: hidden; margin-top: 2px; }
+.meter .bar > i { display: block; height: 100%; background: var(--accent); }
+.meter.warn .bar > i { background: var(--warn); } .meter.warn .mv { color: var(--warn); }
+.meter.crit .bar > i { background: var(--red); } .meter.crit .mv { color: var(--red); }
 .tile .ic { width: 24px; height: 24px; }
 .tile .head .dot { width: 10px; height: 10px; }
 .tile .tile-num { margin: 0; }
@@ -974,4 +983,11 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .group-list .row { cursor: pointer; }
 .group-list .row.warn .v { color: var(--warn); }
 /* portrait: three narrow tiles, the name needs the room the icon would take */
-@media (orientation: portrait) { .tile > .head > .ic { display: none; } }
+@media (orientation: portrait) {
+  .tile > .head > .ic { display: none; }
+  .tile { padding: var(--space-2); }
+  .tile .head .dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; }
+}
+/* the wall has no bottom strip: the hosts' state is in their tiles */
+:root { --strip: 0px; }
+#strip { display: none; }
