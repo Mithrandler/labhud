@@ -12,10 +12,10 @@ function extract(name) {
   }
   throw new Error(`unbalanced ${name}`);
 }
-const names = ["host_node", "host_line", "tile_headline", "tile_trouble"];
+const names = ["host_node", "host_line", "tile_headline", "tile_trouble", "card_items", "names_line"];
 const body = `${names.map(extract).join("\n")}
-  return { node: host_node(card), line: host_line(card), head: tile_headline(card), trouble: tile_trouble(card) };`;
-const { card, data } = JSON.parse(process.argv[2]);
+  return { node: host_node(card), line: host_line(card), head: tile_headline(card), trouble: tile_trouble(card), items: card_items(card), line2: names_line(items, 2) };`;
+const { card, data, items } = JSON.parse(process.argv[2]);
 const stubs = {
   get: (path) => data[path],
   format: (v) => `${Math.round(v)}%`,
@@ -25,6 +25,7 @@ const stubs = {
   card_bad: (c) => ((c.metrics || []).some(([p]) => data[p] >= 92) ? true : false),
   card_status: () => true,
   guest_headline: () => ({}),
+  detail_row: (d) => [String(d.name ?? ""), String(d.value ?? ""), d.bad === true],
 };
-const run = new Function(...Object.keys(stubs), "card", body);
-process.stdout.write(JSON.stringify(run(...Object.values(stubs), card)));
+const run = new Function(...Object.keys(stubs), "card", "items", body);
+process.stdout.write(JSON.stringify(run(...Object.values(stubs), card, items || [])));

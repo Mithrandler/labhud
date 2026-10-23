@@ -8,8 +8,8 @@ from pathlib import Path
 SCRIPT = Path(__file__).parent / "js" / "tiles.mjs"
 
 
-def run(card, data):
-    out = subprocess.run(["node", str(SCRIPT), json.dumps({"card": card, "data": data})],
+def run(card, data, items=None):
+    out = subprocess.run(["node", str(SCRIPT), json.dumps({"card": card, "data": data, "items": items})],
                          capture_output=True, text=True, check=True).stdout
     return json.loads(out)
 
@@ -43,3 +43,20 @@ class Tiles(unittest.TestCase):
     def test_a_quiet_card_is_not_trouble(self):
         card = {"id": "x", "name": "X", "metrics": [["a", "CPU", "percent"]]}
         self.assertEqual(run(card, {"a": 20})["trouble"], "")
+
+    def test_up_and_down_are_words_not_numbers(self):
+        card = {"id": "x", "name": "X"}
+        self.assertEqual(run(card, {})["head"], ["up", "", "", True])
+        self.assertEqual(run({"id": "x", "name": "X", "metrics": [["a", "CPU", "percent"]]}, {"a": 20})["head"], ["20%", "CPU", ""])
+
+    def test_a_list_card_names_what_is_broken(self):
+        rows = [{"name": "pve2: fleet-update", "value": "failed", "bad": True}, {"name": "ok", "value": "fine", "bad": False},
+                {"name": "job: backup", "value": "no ping", "bad": True}]
+        r = run({"id": "units", "name": "FAILURES", "list": "rows"}, {"rows": rows})
+        self.assertEqual(r["items"], [["pve2: fleet-update", "failed"], ["job: backup", "no ping"]])
+        self.assertEqual(run({"id": "x", "name": "X"}, {})["items"], [])
+
+    def test_names_line_says_how_many_more(self):
+        names = ["a", "b", "c", "d"]
+        self.assertEqual(run({"id": "x", "name": "X"}, {}, names)["line2"], "a, b +2")
+        self.assertEqual(run({"id": "x", "name": "X"}, {}, names[:2])["line2"], "a, b")
