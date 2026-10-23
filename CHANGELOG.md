@@ -6,28 +6,24 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
-- A card with `menu = true` is in the app's state but on no page or group: the app's menu opens it (the notes card).
-
-- A group tile with nothing wrong says a green "OK" (wall and app).
-- A card can take its state from a data path: `up = "live.wireguard.up"` (true is up, false is down, missing is unknown).
-
-- The card panel on the wall is one page, no tabs; uptime is one bar for 24 h and 7 d, as in the app.
-
-### Fixed
-
-- A pushed source (the VPS) that pushes less often than it goes stale left single points in its history, so no chart could draw a line: its last number is now repeated for up to 10 minutes.
+## [0.1.19] - 2026-10-23
 
 ### Added
 
-- Servers: a container's `update` (a newer image in its registry) in `/api/servers/containers`, the host's `bad` and `updates` counts in `hosts`, and `POST /api/servers/update-all` (every ticked container with a newer image, audited). The wall's Servers shows the same.
+- **Servers is the Docker table.** `/api/servers/containers` carries each container's `update` (a newer image in its registry), `/api/servers/hosts` the host's `containers.bad` and `containers.updates`, and `POST /api/servers/update-all {agent}` updates every ticked container with a newer image (act level, audited). The wall's Servers lists the Docker hosts with their updates.
+- A card with `menu = true` is in the app's state but on no page or group: the app's menu opens it (the notes card).
+- A card can take its state from a data path: `up = "live.wireguard.up"` (true is up, false is down, missing is unknown).
 
 ### Changed
 
+- **A group tile with nothing wrong says a green "OK"** (wall and app) instead of "0" and "all fine".
+- The card panel on the wall is one page, no tabs; uptime is one bar for 24 h and 7 d, as in the app.
 - Devices kinds: a list card that only pings (a report) is no machine; a Proxmox guest is never a NAS or a Docker host.
 
 ### Fixed
 
-- Servers: a missing or expired unlock ticket now answers `403 {"error": "locked", "pin": true}` instead of "forbidden", and no longer counts toward the address block (429). Any request that carries a live ticket, reads included, keeps it alive.
+- **Servers answered "forbidden" after a few minutes of reading.** A missing or expired unlock ticket now answers `403 {"error": "locked", "pin": true}` (not counted toward the address block, 429), and any request that carries a live ticket, reads included, keeps it alive.
+- A pushed source (the VPS) that pushes less often than it goes stale left single points in its history, so no chart could draw a line: its last number is now repeated for up to 10 minutes.
 
 ## [0.1.18] - 2026-10-23
 
@@ -854,7 +850,8 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/Mithrandler/labhud/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/Mithrandler/labhud/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/Mithrandler/labhud/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/Mithrandler/labhud/compare/v0.1.15...v0.1.16
