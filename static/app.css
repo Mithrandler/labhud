@@ -86,6 +86,12 @@
   --text-wall-min: 11px;
   --text-wall-name: 12px;
   --text-wall-num: 20px;
+  --icon-tile: 24px;
+  --dot-tile: 10px;
+  --dot-tile-small: 8px;
+  --pager-gap: 6px;
+  --pager-w: 18px;
+  --pager-h: 4px;
   /* design:end */
   --font: "Roboto", system-ui, sans-serif;
 }
@@ -529,7 +535,7 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #calm .facts { color: var(--muted); font-size: min(2.6vw, 4vh); margin-top: .4em; }
 /* the mark, small and faint under the words: it moves with the box, so it never burns in */
 #calm .mark { display: block; margin: 1.2em auto 0; height: min(5vw, 7vh); width: auto; opacity: .35; }
-#night-shade { position: fixed; inset: 0; z-index: 100; pointer-events: none; background: #000; opacity: 0; transition: opacity 2s; }
+#night-shade { position: fixed; inset: 0; z-index: 100; pointer-events: none; background: var(--bg); opacity: 0; transition: opacity 2s; }
 body.night #night-shade { opacity: var(--shade, .7); }
 
 /* A card that has just turned red: the page came to it, and it pulses for a few minutes. */
@@ -800,8 +806,8 @@ body.density-airy .card .row { padding: 3px 8px; line-height: 1.4; }
 .w-cal-day { padding: 2px 0; border-radius: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
 .w-cal-day.today { background: var(--accent); color: var(--bg); font-weight: 700; }
 .w-frame { display: block; width: 100%; border: 0; border-radius: 6px; background: var(--bg); }
-.stream-window { position: fixed; inset: 4vh 4vw; z-index: 60; display: flex; flex-direction: column; background: #000; color: var(--text);
-  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+.stream-window { position: fixed; inset: 4vh 4vw; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: 0 10px 40px rgba(0,0,0,.6); }
 .stream-head { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .stream-title { font-weight: 700; flex: 1; }
 .stream-body { flex: 1; min-height: 0; overflow: hidden; display: flex; }
@@ -822,7 +828,7 @@ body.glance #topbar { grid-template-columns: auto auto 1fr auto; }
 body.glance #inet { display: flex; align-items: baseline; gap: 12px; white-space: nowrap; font-weight: 800; font-size: 26px; }
 body.glance #inet[hidden] { display: none; }
 body.glance #inet .k { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
-body.glance #inet.flowing { color: var(--ok, #3ecf8e); }
+body.glance #inet.flowing { color: var(--green); }
 body.glance #weather { font-size: 15px; gap: 8px; }
 body.glance #weather .ic { font-size: 28px; }
 body.glance #weather .t { font-size: 28px; }
@@ -901,9 +907,9 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .uday { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 0; border-radius: 8px; background: var(--line); }
 .uday .dn { font-size: 10px; text-transform: uppercase; opacity: .8; }
 .uday .dp { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.uday.up { background: var(--green); color: #000; }
-.uday.part { background: var(--warn); color: #000; }
-.uday.down { background: var(--red); color: #fff; }
+.uday.up { background: var(--green); color: var(--on-title); }
+.uday.part { background: var(--warn); color: var(--on-title); }
+.uday.down { background: var(--red); color: var(--text); }
 .uday.off { background: var(--block); color: var(--muted); }
 .uday.none { background: var(--block); color: var(--muted); }
 #panel-actions button, #panel-actions a.open { padding: 16px 8px; font-size: 14px; }
@@ -955,8 +961,8 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .tile { justify-content: space-between; gap: 0; padding: var(--space-2) var(--space-3); }
 .tile[hidden], .tile.off { display: none; }
 /* more tiles than fit: a swipe turns them, a dot a page (in the bottom padding) */
-.tdots { position: absolute; left: 0; right: 0; bottom: 1px; display: flex; justify-content: center; gap: 6px; pointer-events: none; }
-.tdots i { width: 18px; height: 4px; border-radius: 2px; background: var(--border); }
+.tdots { position: absolute; left: 0; right: 0; bottom: 1px; display: flex; justify-content: center; gap: var(--pager-gap); pointer-events: none; }
+.tdots i { width: var(--pager-w); height: var(--pager-h); border-radius: calc(var(--pager-h) / 2); background: var(--border); }
 .tdots i.on { background: var(--text); }
 @media (max-width: 1199px) { .tiles { touch-action: none; } }
 .tile .head { gap: var(--space-2); }
@@ -970,8 +976,8 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 .meter .bar > i { display: block; height: 100%; background: var(--accent); }
 .meter.warn .bar > i { background: var(--warn); } .meter.warn .mv { color: var(--warn); }
 .meter.crit .bar > i { background: var(--red); } .meter.crit .mv { color: var(--red); }
-.tile .ic { width: 24px; height: 24px; }
-.tile .head .dot { width: 10px; height: 10px; }
+.tile .ic { width: var(--icon-tile); height: var(--icon-tile); }
+.tile .head .dot { width: var(--dot-tile); height: var(--dot-tile); }
 .tile .tile-num { margin: 0; min-height: calc(var(--text-wall-num) * 1.25); }
 .tile .tn-v { font-size: var(--text-wall-num); }
 .tile .tn-v.txt { font-size: var(--text-wall-name); }
@@ -988,7 +994,7 @@ body.glance #panel-actions button, body.glance #panel-actions a.open { min-heigh
 @media (orientation: portrait) {
   .tile > .head > .ic { display: none; }
   .tile { padding: var(--space-2); }
-  .tile .head .dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; }
+  .tile .head .dot { position: absolute; top: var(--pager-gap); right: var(--pager-gap); width: var(--dot-tile-small); height: var(--dot-tile-small); }
 }
 /* the wall has no bottom strip: the hosts' state is in their tiles */
 :root { --strip: 0px; }

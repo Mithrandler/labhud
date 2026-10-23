@@ -7,6 +7,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [Unreleased]
 
 ### Changed
+- **Wall look from tokens only**: the tile icon, state dot and page dashes are `icon_tile`, `dot_tile`, `dot_tile_small`, `pager_*` in design/tokens.json (the app gets them in Tokens.kt); the last `#000` / `#fff` / `#3ecf8e` in app.css use the colour tokens. tests/test_theme.py fails if app.css gets a new `#hex` or more `px` values than now.
 - **One set of wall type, smaller**: `text_wall_name` 12, `text_wall_num` 20, `text_wall_min` 11, and tiles 112 px (`wall_tile_min` = `wall_tile_max`, so three rows fit the 914x411 wall without scrolling; the app uses the same). "up" / "down" on a card without numbers is a word, set at the name's size, not the number's. Names are upper case on every tile; the number row has the same height on all of them, so name, number and bottom line sit in the same places.
 - **PVE and PVE2 come first** on General (then the other hosts, then what is in trouble, then the rest as configured).
 - **Games is tiles too**: one tile per game server (name, players or "up", "stopped" / "of N slots" below, the game's icon, state dot), the same grid, type and gap as every other page; the old sectioned cards are gone.
@@ -18,6 +19,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [0.1.16] - 2026-10-23
 
 ### Changed
+- **Wall look from tokens only**: the tile icon, state dot and page dashes are `icon_tile`, `dot_tile`, `dot_tile_small`, `pager_*` in design/tokens.json (the app gets them in Tokens.kt); the last `#000` / `#fff` / `#3ecf8e` in app.css use the colour tokens. tests/test_theme.py fails if app.css gets a new `#hex` or more `px` values than now.
 - **The wall is a grid of equal tiles** (`static/tiles.js`): 4 a row in landscape, 3 in portrait, one gap (`wall_gap`) between them and around them, the text at least 14 px (`text_wall_min`, `text_wall_name`, `text_wall_num` in `design/tokens.json`). The zoom search of `layout()` is gone from the status pages. On General a host (PVE, PVE2…) is one tile with its guests inside ("6 VM · 3 LXC · 2 stopped"; the list is in its panel) and every other card is one tile with its worst number. On the other pages a group of several cards is one tile: how many of its cards are in trouble (red when any is, green when none), the list in a panel. A host tile is two cells wide with four meters (CPU, RAM, GPU, VRAM; the busiest GPU), names wrap to two lines, the text is 13–15 px, and the wall has no bottom strip any more. Measured on the real data: no page is cut at 914x411 or 384x854 (before: 10 of 12).
 - **The wall's small cards (guests) are the app's tiles**: one number (the CPU, or the RAM when processes stall on memory) and a thin bar instead of three bars, `text_tile` from `design/tokens.json`.
 - **The wall's rings are the app's**: CPU and RAM share one ring (half each), so do a GPU's load and video memory; the rings use the sizes of `design/tokens.json` (`ring`, `ring_stroke`, `text_ring`), show only their name underneath and grow with a short transition (none with `prefers-reduced-motion`). The icons `servers`, `info`, `close` and `chevron_up`, which the app had only in its generated file, are now in `tokens.json`.
@@ -31,6 +33,7 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [0.1.15] - 2026-10-22
 
 ### Changed
+- **Wall look from tokens only**: the tile icon, state dot and page dashes are `icon_tile`, `dot_tile`, `dot_tile_small`, `pager_*` in design/tokens.json (the app gets them in Tokens.kt); the last `#000` / `#fff` / `#3ecf8e` in app.css use the colour tokens. tests/test_theme.py fails if app.css gets a new `#hex` or more `px` values than now.
 - **The agent labhud installs is 0.1.11** (the `vzdump` verb and the pending-updates count; `agents/agent-release.json` pins its two builds by SHA-256).
 - **The wall's cards on one grid, like the app's tiles**: every small card (a guest) is the same height, with always three bars (CPU, RAM, disk as a share; the used and total size on hover) and its uptime as a chip beside the name instead of a row of its own; a big card (a host with its rings, a NAS: two rows high) takes its section's whole row; the page's edges have the same gap as the space between cards. A card row is 100 px (88 in the compact density).
 
@@ -58,12 +61,14 @@ still change in a minor version; such changes are listed under **Changed** with 
 ## [0.1.14] - 2026-10-22
 
 ### Changed
+- **Wall look from tokens only**: the tile icon, state dot and page dashes are `icon_tile`, `dot_tile`, `dot_tile_small`, `pager_*` in design/tokens.json (the app gets them in Tokens.kt); the last `#000` / `#fff` / `#3ecf8e` in app.css use the colour tokens. tests/test_theme.py fails if app.css gets a new `#hex` or more `px` values than now.
 
 - **A few at a time, everywhere**: the wall's panel lists (guests, storage, backup, containers, plain rows) are paged with a bar under them (grids of cards 3 rows to a page, rows 8), and when the glance tiles do not all fit at a size readable from across a room they go on pages of their own with a bar at the bottom instead of shrinking or scrolling.
 
 ## [0.1.13] - 2026-10-22
 
 ### Changed
+- **Wall look from tokens only**: the tile icon, state dot and page dashes are `icon_tile`, `dot_tile`, `dot_tile_small`, `pager_*` in design/tokens.json (the app gets them in Tokens.kt); the last `#000` / `#fff` / `#3ecf8e` in app.css use the colour tokens. tests/test_theme.py fails if app.css gets a new `#hex` or more `px` values than now.
 
 - A guest's containers in the wall's panel are small cards in a grid (2-3 to a row) with their buttons under the name, a stack's line and an opened box spanning the row.
 
@@ -176,6 +181,7 @@ Needs labhud-agent 0.1.1 for the live log, the terminal, stacks and the host's D
   own icon now.
 
 ### Changed
+- **Wall look from tokens only**: the tile icon, state dot and page dashes are `icon_tile`, `dot_tile`, `dot_tile_small`, `pager_*` in design/tokens.json (the app gets them in Tokens.kt); the last `#000` / `#fff` / `#3ecf8e` in app.css use the colour tokens. tests/test_theme.py fails if app.css gets a new `#hex` or more `px` values than now.
 
 - Inside: one `util.py` for the hash, the clean name, the free name and the pairing code that the
   phones, the agents, the API tokens and the single sign-in each had their own copy of; three
@@ -587,6 +593,7 @@ release is 0.1.0 too).
   server in demo mode.
 
 ### Changed
+- **Wall look from tokens only**: the tile icon, state dot and page dashes are `icon_tile`, `dot_tile`, `dot_tile_small`, `pager_*` in design/tokens.json (the app gets them in Tokens.kt); the last `#000` / `#fff` / `#3ecf8e` in app.css use the colour tokens. tests/test_theme.py fails if app.css gets a new `#hex` or more `px` values than now.
 
 - **The agent's release is 0.1.0** (`agents/agent-release.json`): *Update* in ⚙ takes the
   agents installed as a service to it.
