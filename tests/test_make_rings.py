@@ -31,6 +31,13 @@ class MakeRings(unittest.TestCase):
             {"label": "CPU · RAM", "a": CPU[0], "b": RAM[0], "temp": "temp.pve.cpu_temp"},
             {"label": "Disk", "a": DISK[0], "b": None, "temp": None}])
 
+    def test_a_gpu_metric_in_the_config_is_not_a_second_ring_beside_the_pair(self):
+        # the real PVE card lists GPU0/GPU1 load and temperature itself: those numbers are the pair's, not two more rings
+        bars = [CPU, RAM, ("agents.PVE.sensors.gpu0_util", "GPU0", "percent"), ("agents.PVE.sensors.gpu1_util", "GPU1", "percent")]
+        temps = [("agents.PVE.sensors.gpu0_temp", "GPU0", "celsius"), ("agents.PVE.sensors.gpu1_temp", "GPU1", "celsius")]
+        got = plan(bars, temps)
+        self.assertEqual([g["label"] for g in got], ["CPU · RAM", "GPU1 · VRAM", "GPU2 · VRAM"])
+
     def test_each_gpu_is_one_ring_of_load_and_video_memory(self):
         temps = [("temp.pve.gpu0_temp", "GPU", "celsius"), ("temp.pve.gpu1_temp", "GPU", "celsius")]
         got = plan([CPU, RAM], temps)

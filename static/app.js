@@ -1222,11 +1222,13 @@ function ring_plan(bars, rest) {
   const pair = !!(cpu && ram);
   const plan = [];
   if (pair) plan.push({ label: `${cpu[1]} · ${ram[1]}`, a: cpu, b: ram, temp: take("cpu") });
+  const gpu_temps = temps.filter((x) => /gpu\d+_temp$/.test(x[0]));
   for (const bar of bars) {
     if (pair && (bar === cpu || bar === ram)) continue;
+    // a GPU's own load/temperature specs become its dual ring below: not a second ring from the same numbers (like the app's gaugesOf)
+    if (gpu_temps.length && ring_kind(bar[1]) === "gpu") continue;
     plan.push({ label: bar[1], a: bar, b: null, temp: take(ring_kind(bar[1])) });
   }
-  const gpu_temps = temps.filter((x) => /gpu\d+_temp$/.test(x[0]));
   for (const t of gpu_temps) {
     const m = /^(.*\.gpu\d+)_temp$/.exec(t[0]);
     if (used.has(t)) continue;
