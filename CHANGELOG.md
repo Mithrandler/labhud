@@ -6,6 +6,8 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-10-23
+
 ### Changed
 - **"Dark grey" colours from the tokens**: `board_grey` in design/tokens.json makes the wall's settings.js and the app's `HudGrey`; Games tiles say what they say through one tested function (`game_tile_text`).
 - **`hairline` token** (1 px / 1 dp): the width of every border and divider, in design/tokens.json.
@@ -824,7 +826,8 @@ release is 0.1.0 too).
 - docs/agents.md: the plan for labhud's own agents.
 - docs/actions.md: moving an install from direct to signed actions, which the phone app needs.
 
-[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/Mithrandler/labhud/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/Mithrandler/labhud/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/Mithrandler/labhud/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/Mithrandler/labhud/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/Mithrandler/labhud/compare/v0.1.13...v0.1.14
