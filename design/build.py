@@ -32,6 +32,8 @@ KOTLIN = "app/src/main/java/io/github/mithrandler/labhud/ui/Tokens.kt"
 BLOCK = re.compile(r"(?P<indent>[ \t]*)/\* design:colors[^*]*\*/\n.*?/\* design:end \*/", re.S)
 GREY = re.compile(r"(?P<indent>[ \t]*)/\* design:grey[^*]*\*/\n.*?/\* design:end \*/", re.S)
 SETTINGS_JS = "static/settings.js"
+SERVERS_JS = "static/servers.js"
+BASEVARS = re.compile(r"(?P<indent>[ \t]*)/\* design:basevars[^*]*\*/\n.*?/\* design:end \*/", re.S)
 SCALE = re.compile(r"(?P<indent>[ \t]*)/\* design:scale[^*]*\*/\n.*?/\* design:end \*/", re.S)
 SHAPE = re.compile(r"<(path|circle|ellipse|rect)\b([^>]*?)/>")
 ATTR = re.compile(r'([a-z-]+)="([^"]*)"')
@@ -156,6 +158,17 @@ def grey_block(tokens, indent):
     return "\n".join(lines)
 
 
+def basevars_block(tokens, indent):
+    """Every base's variables for the Servers page, which does not load settings.js: oled (nothing), grey, then the bases of tokens.json."""
+    def vars_of(d):
+        return "{ " + ", ".join(f'"{css_var(n)}": "{v[0] if isinstance(v, list) else v}"' for n, v in d.items() if not n.startswith("_")) + " }"
+    rows = [f"{indent}  oled: {{}},", f"{indent}  grey: {vars_of(tokens['board_grey'])},"]
+    rows += [f"{indent}  {name}: {vars_of(b)}," for name, b in tokens["board_bases"].items()]
+    light = ", ".join(f'"{n}"' for n, b in tokens["board_bases"].items() if b.get("_light"))
+    return (f"{indent}/* design:basevars (design/tokens.json, written by design/build.py: edit there) */\n"
+            f"{indent}const BASE_VARS = {{\n" + "\n".join(rows) + f"\n{indent}}};\n{indent}const LIGHT_BASES = [{light}];\n{indent}/* design:end */")
+
+
 def argb(value):
     """#rrggbb or #rrggbbaa as the 0xAARRGGBB of a Kotlin Color."""
     h = value.lstrip("#").upper()
@@ -255,6 +268,9 @@ def outputs(android=None):
     sp = os.path.join(ROOT, SETTINGS_JS)
     with open(sp, encoding="utf-8") as f:
         out[sp] = GREY.sub(lambda m: grey_block(tokens, m.group("indent")), f.read())
+    vp = os.path.join(ROOT, SERVERS_JS)
+    with open(vp, encoding="utf-8") as f:
+        out[vp] = BASEVARS.sub(lambda m: basevars_block(tokens, m.group("indent")), f.read())
     if android:
         out[os.path.join(android, KOTLIN)] = kotlin(tokens)
     return out

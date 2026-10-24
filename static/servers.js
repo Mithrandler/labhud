@@ -8,6 +8,35 @@ const LOCK_KEY = "labhud-unlock";    // the PIN's ticket (this tab only)
 const LOG_LINES = 1000;
 const $ = (id) => document.getElementById(id);
 const S = { hosts: [], host: null, tab: "overview", rows: [], filter: "", sheet: null, timer: 0 };
+/* design:basevars (design/tokens.json, written by design/build.py: edit there) */
+const BASE_VARS = {
+  oled: {},
+  grey: { "--bg": "#16181d", "--card": "#1e2128", "--block": "#272b33", "--line": "#333844", "--border": "#454c59" },
+  paper: { "--bg": "#f6f3ec", "--card": "#ffffff", "--block": "#efebe2", "--line": "#e2ddd0", "--border": "#cfc8b6", "--text": "#1c1b18", "--sub": "#55524a", "--muted": "#8a8577", "--accent": "#1f4fd8", "--title": "#1a3fb0", "--on-title": "#ffffff", "--green": "#1f8a3b", "--warn": "#b25e00", "--red": "#c62828", "--red-bg": "#fde8e6", "--red-text": "#7a1612", "--info-bg": "#e9eefb", "--on-accent": "#ffffff" },
+  terminal: { "--bg": "#050805", "--card": "#0a110a", "--block": "#0f1a0f", "--line": "#16301a", "--border": "#1f4a26", "--text": "#c8f7c5", "--sub": "#7fbf7a", "--muted": "#4f7d4b", "--accent": "#33ff66", "--title": "#ffb000", "--on-title": "#000000", "--green": "#33ff66", "--warn": "#ffb000", "--red": "#ff4d4d", "--red-bg": "#2a0a0a", "--red-text": "#ffc9c9", "--info-bg": "#0a1a0e", "--on-accent": "#001a06" },
+  glass: { "--bg": "#0b1220", "--card": "#ffffff12", "--block": "#ffffff1f", "--line": "#ffffff1f", "--border": "#ffffff33", "--text": "#f2f6ff", "--sub": "#b9c4dd", "--muted": "#7f8db0", "--accent": "#7aa2ff", "--title": "#9bb8ff", "--on-title": "#07102a", "--green": "#3ddc84", "--warn": "#ffb454", "--red": "#ff6b6b", "--red-bg": "#3a1020", "--red-text": "#ffd6dd", "--info-bg": "#ffffff0f", "--on-accent": "#07102a" },
+};
+const LIGHT_BASES = ["paper"];
+/* design:end */
+// the colours servers.css names, from the design tokens' names: the Servers page keeps its own palette until a base is chosen
+const LOOK_MAP = { "--bg": "--bg", "--card": "--card", "--line": "--line", "--text": "--text", "--sub": "--sub", "--muted": "--muted",
+                   "--accent": "--accent", "--warn": "--warn", "--green": "--ok", "--red": "--bad", "--on-accent": "--on-accent" };
+
+/** The theme of the display: this screen's own base (⚙ > Look, kept in localStorage), else the board's (/api/config), as on the wall. */
+async function apply_look() {
+  let base = "";
+  try { base = (JSON.parse(localStorage.getItem("labhud-settings") || "{}") || {}).base || ""; } catch (e) { /* the default */ }
+  if (!base) {
+    try { base = ((await (await fetch("/api/config")).json()).display || {}).base || ""; } catch (e) { /* the default */ }
+  }
+  const vars = BASE_VARS[base] || {};
+  const root = document.documentElement.style;
+  for (const [from, to] of Object.entries(LOOK_MAP)) {
+    if (vars[from]) root.setProperty(to, vars[from]); else root.removeProperty(to);
+  }
+  root.colorScheme = LIGHT_BASES.includes(base) ? "light" : "dark";
+  root.fontFamily = base === "terminal" ? 'ui-monospace, "JetBrains Mono", monospace' : "";
+}
 const TABS = [["overview", "Overview", true], ["containers", "Containers", true], ["stacks", "Stacks", true],
               ["images", "Images", true], ["volumes", "Volumes", true], ["networks", "Networks", true],
               ["vms", "VMs & LXC", "pve"], ["host", "Host", true]];
@@ -140,11 +169,22 @@ function draw_hosts() {
   const nav = $("hosts");
   nav.textContent = "";
   for (const h of S.hosts.filter((x) => x.docker)) {
-    const b = btn("", "host" + (h.name === S.host ? " on" : ""), () => { S.host = h.name; S.sheet && close_sheet(); if (S.tab === "vms" && !h.pve) S.tab = "overview"; draw_hosts(); draw_tabs(); draw_view(); });
-    b.append(el("span", "dot " + (!h.online ? "bad" : h.containers.bad > 0 ? "warn" : "ok")), el("span", "", h.name),
+    const open = h.name === S.host;
+    const b = btn("", "host" + (open ? " on" : ""), () => { S.host = h.name; S.sheet && close_sheet(); if (S.tab === "vms" && !h.pve) S.tab = "overview"; draw_hosts(); draw_tabs(); draw_view(); });
+    b.setAttribute("aria-expanded", open ? "true" : "false");
+    b.append(el("span", "caret", open ? "▾" : "▸"), el("span", "dot " + (!h.online ? "bad" : h.containers.bad > 0 ? "warn" : "ok")), el("span", "", h.name),
       el("span", "nums", h.online ? h.containers.running + "/" + h.containers.total : "–"));
     if (h.online && h.containers.updates > 0) b.appendChild(el("span", "nums upd", h.containers.updates + " upd"));
     nav.appendChild(b);
+    // the host's own things as its children: a tree, as in Proxmox (the tab row above the view shows the same on a narrow screen)
+    if (open) {
+      const kids = el("div", "kids");
+      for (const [id, label, on] of TABS) {
+        if (on === "pve" ? !h.pve : !on) continue;
+        kids.appendChild(btn(label, "leaf" + (id === S.tab ? " on" : ""), () => { S.tab = id; S.sheet && close_sheet(); draw_hosts(); draw_tabs(); draw_view(); }));
+      }
+      nav.appendChild(kids);
+    }
   }
   if (!S.hosts.some((x) => x.docker)) nav.appendChild(el("p", "muted", "No Docker host yet. Add one in Settings > Hosts and agents."));
 }
@@ -152,7 +192,7 @@ function draw_tabs() {
   const t = $("tabs");
   t.textContent = "";
   for (const [id, label, on] of TABS) {
-    const b = btn(label, "tab" + (id === S.tab ? " on" : ""), () => { S.tab = id; draw_tabs(); draw_view(); });
+    const b = btn(label, "tab" + (id === S.tab ? " on" : ""), () => { S.tab = id; draw_hosts(); draw_tabs(); draw_view(); });
     b.disabled = on === "pve" ? !(host_now() || {}).pve : !on;
     b.setAttribute("role", "tab");
     t.appendChild(b);
@@ -935,6 +975,7 @@ function open_stack(x, fresh, reload) {
 // ---- start ----
 
 (async function start() {
+  apply_look();
   if (location.protocol !== "https:") {
     const w = $("warn");
     w.hidden = false;
