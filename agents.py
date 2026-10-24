@@ -46,7 +46,7 @@ EVENTS_PER_MINUTE = 10
 MAX_OUTPUT = 48 << 10      # a read verb's text (the agent sends at most this much, the newest part)
 
 VERBS = {
-    "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect",
+    "docker": ("start", "stop", "restart", "update", "logs", "prune", "inspect", "config", "reconfigure",
                "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats",
                "rm-image", "rm-network", "rm-volume", "pull", "network-inspect", "volume-ls", "volume-read"),
     "systemd": ("start", "stop", "restart"),
@@ -63,7 +63,7 @@ CAPS = ("sensors",) + tuple(VERBS) + ("scan",)
 # what an agent may say it understands beyond v1's first messages (hello.features)
 FEATURES = ("registry-auth",)
 # verbs that read instead of act: never a button or an action name, only read() (for the admin)
-READS = {"docker": ("logs", "prune", "inspect", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats",
+READS = {"docker": ("logs", "prune", "inspect", "config", "reconfigure", "inventory", "prune-dangling", "prune-networks", "prune-volumes", "follow", "stats",
                     "rm-image", "rm-network", "rm-volume", "pull", "network-inspect", "volume-ls", "volume-read"),
          "pve": VERBS["pve"][3:],    # a guest's config, snapshots, backups and tasks answer with their output; start/shutdown/reboot are the buttons
          "stacks": VERBS["stacks"], "terminal": VERBS["terminal"]}   # compose answers with its output: only ⚙ > Containers > Stacks asks
@@ -864,6 +864,34 @@ def stack(aid, verb, name, compose=None, env=None, arg=""):
     if files is not None:
         return s.ask({"type": "command", "cap": "stacks", "verb": verb, "target": name}, wait, files=files)
     return s.command("stacks", verb, name, wait, arg) if arg else s.command("stacks", verb, name, wait)
+
+
+CHANGE_LISTS = ("env_unset", "ports", "volumes")
+
+
+def reconfigure(aid, name, change):
+    """(ok, error, output): a container's environment, ports, volumes or restart policy changed. The
+    change (`env_set` {NAME: value}, `env_unset`, `ports`, `volumes`, `restart`) travels sealed, like a
+    stack's files: a value is where a password lives. The agent checks every part again and makes the
+    container again from its own settings (or, for the restart policy alone, changes it live)."""
+    if not isinstance(name, str) or not allowed(aid, "docker", "reconfigure", name):
+        return False, "not allowed", ""
+    if not isinstance(change, dict) or not change or set(change) - {"env_set", "restart", *CHANGE_LISTS}:
+        return False, "nothing to change", ""
+    env = change.get("env_set", {})
+    if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        return False, "the variables are names and text", ""
+    if any(k in change and not (isinstance(change[k], list) and all(isinstance(x, str) for x in change[k])) for k in CHANGE_LISTS):
+        return False, "ports, volumes and removed variables are lists of text", ""
+    if "restart" in change and not isinstance(change["restart"], str):
+        return False, "a restart policy is text", ""
+    files = json.dumps({"config": json.dumps(change, separators=(",", ":"))}, separators=(",", ":"))
+    if len(files.encode()) > P.MAX_SEALED_FILES:
+        return False, "the change is too long", ""
+    s = _live.get(aid)
+    if not s:
+        return False, "the agent is offline", ""
+    return s.ask({"type": "command", "cap": "docker", "verb": "reconfigure", "target": name}, 330, files=files)
 
 
 def tick_stack(aid, name):

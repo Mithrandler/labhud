@@ -13,6 +13,8 @@ here is POST, JSON, and goes through one gate, `_gate`, in this order:
     POST /api/servers/logs {agent, name}             read: the last lines
     POST /api/servers/inspect {agent, name}          read: how it is made (rebuilt field by field)
     POST /api/servers/stats {agent, name}            read: its numbers now
+    POST /api/servers/config {agent, name}           read: what can be edited (restart policy, ports, volumes, variable NAMES: never a value)
+    POST /api/servers/reconfigure {agent, name, change, confirm}   admin: environment, ports, volumes, restart policy; confirm = the container's name
     POST /api/servers/stream-open {agent, kind, name, cols, rows}   read (logs) / admin + PIN (shell)
     POST /api/servers/stream-read|stream-close {id}                  read
     POST /api/servers/stream-input|stream-resize {id, ...}           admin (the shell only)
@@ -64,7 +66,7 @@ from routes import route
 LEVELS = ("read", "act", "admin")
 NEEDS = {
     "session": "admin", "hosts": "read", "containers": "read", "action": "act", "logs": "read",
-    "inspect": "read", "stats": "read", "stream-open": "read", "stream-read": "read", "stream-close": "read",
+    "inspect": "read", "config": "read", "reconfigure": "admin", "stats": "read", "stream-open": "read", "stream-read": "read", "stream-close": "read",
     "stream-input": "admin", "stream-resize": "admin", "audit-verify": "admin",
     "images": "read", "volumes": "read", "networks": "read", "network": "read", "volume-ls": "read", "volume-read": "read",
     "stacks": "read", "stack-read": "admin", "stack-validate": "admin", "stack-save": "admin", "stack-restore": "admin",
@@ -345,6 +347,42 @@ def inspect(h, body):
         return 200, {"ok": True, "inspect": _inspect_view(text)}
     except (ValueError, TypeError):
         return 502, {"ok": False, "error": "the agent's answer was not an inspect"}
+
+
+def _config_view(text):
+    """The agent's `config`, rebuilt: lists of text with limits, and the names of the variables only."""
+    raw = json.loads(text)
+    if not isinstance(raw, dict):
+        raise ValueError
+    lst = lambda k, n, m: [_s(x, m) for x in raw[k][:n] if isinstance(x, str)] if isinstance(raw.get(k), list) else []   # noqa: E731
+    return {"managed": _s(raw.get("managed"), 80), "self": raw.get("self") is True, "restart": _s(raw.get("restart"), 40) or "no",
+            "ports": lst("ports", 60, 80), "volumes": lst("volumes", 60, 400), "env": lst("env", 150, 130),
+            "other_mounts": int(_n(raw.get("other_mounts"), 0, 1e6))}
+
+
+@_guarded("config")
+def config(h, body):
+    a, text, err = _read(body, "config")
+    if err:
+        return err
+    try:
+        return 200, {"ok": True, "settings": _config_view(text)}
+    except (ValueError, TypeError):
+        return 502, {"ok": False, "error": "the agent's answer was not a config"}
+
+
+@_guarded("reconfigure", limit=80 * 1024)
+def reconfigure(h, body):
+    aid, a = _agent(body)
+    name = _container(body)
+    if not a or not name:
+        return 400, {"ok": False, "error": "agent and name"}
+    if body.get("confirm") != name:
+        return 400, {"ok": False, "error": "type the name to confirm"}
+    ok, error, out = agents.reconfigure(aid, name, body.get("change"))
+    audit.record(h, "servers/reconfigure", f"{a['name']}/{name}", ok)   # which container, never what was set
+    print(f"servers: reconfigure {a['name']}/{name} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True, "output": _s(out, 300)}) if ok else _failed(error, "")
 
 
 @_guarded("stats")

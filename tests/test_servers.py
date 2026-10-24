@@ -11,6 +11,7 @@ import unittest
 import unittest.mock
 
 import admin
+import agentproto
 import agents
 import routes
 from api import audit, servers
@@ -842,6 +843,51 @@ class Reads(Base):
         self.assertEqual(v["labels"]["com.x.name"], "web")
         self.assertNotIn("evil", v)
         self.assertNotIn("hunter2", json.dumps(v))
+        c.close()
+
+    def test_config_is_rebuilt_and_shows_names_only(self):
+        self.session()
+        c, session, aid, key = self.make_host("configger")
+        raw = {"managed": "", "restart": "unless-stopped", "ports": ["8080:80/tcp", 5], "volumes": ["/srv:/srv:ro"],
+               "env": ["DB_PASSWORD", "TZ"], "other_mounts": 2, "evil": "<script>"}
+        got, t = self.answer(c, key, session, aid, output=json.dumps(raw))
+        status, r, _ = self.api("config", {"agent": "configger", "name": "web"})
+        t.join(5)
+        self.assertEqual(status, 200, r)
+        self.assertEqual(got["verb"], "config")
+        v = r["settings"]
+        self.assertEqual((v["restart"], v["ports"], v["volumes"], v["env"], v["other_mounts"]),
+                         ("unless-stopped", ["8080:80/tcp"], ["/srv:/srv:ro"], ["DB_PASSWORD", "TZ"], 2))
+        self.assertNotIn("evil", v)
+        c.close()
+
+    def test_reconfigure_needs_the_name_typed_and_travels_sealed(self):
+        self.session()
+        c, session, aid, key = self.make_host("changer")
+        body = {"agent": "changer", "name": "web", "change": {"env_set": {"TOKEN": "s3cret"}, "ports": ["8080:80"]}}
+        self.assertEqual(self.api("reconfigure", body)[0], 400)                                  # no confirm
+        self.assertEqual(self.api("reconfigure", dict(body, confirm="db"))[0], 400)
+        for bad in ({}, {"evil": 1}, {"env_set": {"A": 1}}, {"ports": "80:80"}, {"restart": 5}):
+            self.assertEqual(self.api("reconfigure", dict(body, change=bad, confirm="web"))[0], 502, bad)
+        got, t = self.answer(c, key, session, aid, output="web made again with the new settings")
+        status, r, _ = self.api("reconfigure", dict(body, confirm="web"))
+        t.join(5)
+        self.assertEqual(status, 200, r)
+        self.assertEqual((got["cap"], got["verb"], got["target"]), ("docker", "reconfigure", "web"))
+        self.assertNotIn("s3cret", json.dumps(got))                                             # not in the clear
+        opened = json.loads(agentproto.unseal(key, session, got["cmd"], got["files"]["nonce"], got["files"]["box"], agentproto.MAX_SEALED_FILES))
+        self.assertEqual(json.loads(opened["config"])["env_set"], {"TOKEN": "s3cret"})
+        log = audit_text(self.data)
+        self.assertIn("servers/reconfigure", log)
+        self.assertNotIn("s3cret", log)
+        c.close()
+
+    def test_reconfigure_is_for_the_admin_and_for_ticked_containers(self):
+        self.session()
+        c, session, aid, key = self.make_host("changer2")
+        body = {"agent": "changer2", "name": "web", "change": {"restart": "always"}, "confirm": "web"}
+        self.assertEqual(self.api("reconfigure", body, ticket=False)[0], 403)
+        self.assertEqual(self.api("reconfigure", dict(body, name="other", confirm="other"))[0], 502)   # not ticked
         c.close()
 
     def test_an_answer_that_is_no_inspect_is_not_shown(self):

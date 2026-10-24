@@ -305,7 +305,7 @@ function open_sheet(c) {
   const tabs = el("div", "actions");
   const body = el("div");
   const show = (fn) => { reset_body(body); fn(body, c); };
-  tabs.append(btn("Logs live", "", () => show(live_logs)), btn("Inspect", "", () => show(inspect)), btn("Stats", "", () => show(stats)));
+  tabs.append(btn("Logs live", "", () => show(live_logs)), btn("Inspect", "", () => show(inspect)), btn("Config", "", () => show(config_view)), btn("Stats", "", () => show(stats)));
   const shell = btn("Shell", "", () => show(shell_view));
   shell.disabled = !c.shell;
   shell.title = c.shell ? "a terminal in the container (needs the PIN)" : "tick Terminal for it in Hosts and agents";
@@ -400,6 +400,88 @@ async function inspect(body, c) {
   row("Environment (names only)", i.env);
   row("Labels", Object.entries(i.labels).map(([k, v]) => k + "=" + v));
   body.appendChild(dl);
+}
+
+const RESTARTS = ["no", "always", "unless-stopped", "on-failure"];
+function lines_of(text) { return text.split("\n").map((x) => x.trim()).filter(Boolean); }
+/** Config: restart policy, ports, volumes and variables. A variable's value is never read back: it is only written. */
+async function config_view(body, c) {
+  const gen = S.sheet.gen;
+  body.appendChild(el("div", "muted", "loading…"));
+  const r = await call("config", { agent: S.host, name: c.name });
+  if (S.sheet.gen !== gen) return;
+  body.textContent = "";
+  if (!r.ok) return body.appendChild(el("p", "msg bad", r.error || "failed"));
+  const v = r.settings;
+  if (v.managed || v.self) {
+    return body.appendChild(el("p", "muted", v.self ? "This is the agent's own container: change it from its host."
+      : "Made by compose (" + v.managed + "): change its file under Stacks, or the next deploy undoes the change here."));
+  }
+  const form = el("form", "config");
+  const field = (label, node) => { const w = el("div", "field"); w.append(el("label", "", label), node); form.appendChild(w); return node; };
+  const sel = el("select");
+  const cur = v.restart.split(":")[0];
+  for (const o of RESTARTS) { const op = el("option", "", o); op.value = o; sel.appendChild(op); }
+  sel.value = RESTARTS.includes(cur) ? cur : "no";
+  const retries = el("input"); retries.type = "number"; retries.min = "0"; retries.max = "999"; retries.placeholder = "max retries";
+  retries.value = v.restart.includes(":") ? v.restart.split(":")[1] : "";
+  const restart_row = el("div", "row"); restart_row.append(sel, retries);
+  field("Restart policy", restart_row);
+  const text = (items, ph) => { const t = el("textarea"); t.rows = Math.max(3, items.length + 1); t.value = items.join("\n"); t.placeholder = ph; t.spellcheck = false; return t; };
+  const ports = field("Ports (host:container[/udp], one per line)", text(v.ports, "8080:80"));
+  const vols = field("Volumes (source:target[:ro], one per line)", text(v.volumes, "/srv/data:/data"));
+  if (v.other_mounts) form.appendChild(el("p", "muted", v.other_mounts + " more mount(s) (anonymous volumes or --mount) stay as they are."));
+  const envs = el("div", "envs");
+  const rows = v.env.map((n) => {
+    const row = el("div", "row"), val = el("input"), rm = el("input");
+    val.type = "password"; val.autocomplete = "off"; val.placeholder = "unchanged (value hidden)";
+    rm.type = "checkbox"; rm.title = "remove";
+    const lab = el("label", "", "remove"); lab.prepend(rm);
+    row.append(el("code", "", n), val, lab);
+    envs.appendChild(row);
+    return { n, val, rm };
+  });
+  const add_name = el("input"), add_val = el("input");
+  add_name.placeholder = "NEW_VARIABLE"; add_val.placeholder = "value"; add_val.type = "password"; add_val.autocomplete = "off";
+  const add_row = el("div", "row"); add_row.append(add_name, add_val);
+  field("Variables (names only: a value you type replaces it)", envs);
+  field("Add a variable", add_row);
+  const msg = el("div", "msg");
+  const go = btn("Apply", "danger");
+  go.type = "submit";
+  form.append(go, msg);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const change = {};
+    const policy = sel.value === "on-failure" && retries.value !== "" ? "on-failure:" + retries.value : sel.value;
+    if (policy !== v.restart) change.restart = policy;
+    const p = lines_of(ports.value), vo = lines_of(vols.value);
+    if (JSON.stringify(p) !== JSON.stringify(v.ports.slice().sort())) change.ports = p;
+    if (JSON.stringify(vo) !== JSON.stringify(v.volumes)) change.volumes = vo;
+    const set = {}, unset = [];
+    for (const x of rows) { if (x.rm.checked) unset.push(x.n); else if (x.val.value !== "") set[x.n] = x.val.value; }
+    if (add_name.value.trim()) set[add_name.value.trim()] = add_val.value;
+    if (Object.keys(set).length) change.env_set = set;
+    if (unset.length) change.env_unset = unset;
+    if (!Object.keys(change).length) { msg.className = "msg"; msg.textContent = "nothing changed"; return; }
+    const only_restart = Object.keys(change).length === 1 && change.restart;
+    const a = await ask((only_restart ? "Change the restart policy of " : "Make again ") + c.name + (only_restart ? "?" : " with these settings?"),
+      [["Type its name to confirm", "text", "name"]], "Apply");
+    if (!a || a.values[0] !== c.name) return;
+    go.disabled = true;
+    msg.className = "msg"; msg.textContent = only_restart ? "changing…" : "making it again… (it stops while the new one starts; the old one comes back if the new does not)";
+    const res = await call("reconfigure", { agent: S.host, name: c.name, change, confirm: c.name });
+    go.disabled = false;
+    msg.className = "msg " + (res.ok ? "ok" : "bad");
+    msg.textContent = res.ok ? (res.output || "done") : (res.error || "failed");
+    if (res.ok && S.sheet && S.sheet.gen === gen) {
+      refresh_rows();
+      reset_body(body);
+      await config_view(body, c);
+      body.prepend(el("p", "msg ok", res.output || "done"));
+    }
+  });
+  body.appendChild(form);
 }
 
 async function stats(body, c) {
