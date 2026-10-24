@@ -234,6 +234,8 @@ body.page-hidden *, body.page-hidden *::before, body.page-hidden *::after { anim
 #clock .date { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
 
 /* The project's name, in the free middle of the portrait top bar. Static, like everything else. */
+/* the lock-up's "Lab" is white: on a light base (Paper) the picture is inverted, its hues turned back */
+.light-ground img[src$="lockup.svg"] { filter: invert(1) hue-rotate(180deg); }
 #brand { display: none; align-items: center; justify-content: center; }
 #brand img { display: block; height: 22px; width: auto; }
 /* The mark beside the weather (shown even while the weather is not known yet); at a desk, the

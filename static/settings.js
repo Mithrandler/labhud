@@ -11,13 +11,22 @@ const SETTINGS_KEY = "labhud-settings";
 
 /* design:grey (design/tokens.json, written by design/build.py: edit there) */
 const GREY_VARS = { "--bg": "#16181d", "--card": "#1e2128", "--block": "#272b33", "--line": "#333844", "--border": "#454c59" };
+const PAPER_BASE = { label: "Paper", light: true, vars: { "--bg": "#f6f3ec", "--card": "#ffffff", "--block": "#efebe2", "--line": "#e2ddd0", "--border": "#cfc8b6", "--text": "#1c1b18", "--sub": "#55524a", "--muted": "#8a8577", "--accent": "#1f4fd8", "--title": "#1a3fb0", "--on-title": "#ffffff", "--green": "#1f8a3b", "--warn": "#b25e00", "--red": "#c62828", "--red-bg": "#fde8e6", "--red-text": "#7a1612", "--info-bg": "#e9eefb", "--on-accent": "#ffffff" } };
+const TERMINAL_BASE = { label: "Terminal", light: false, font: "mono", vars: { "--bg": "#050805", "--card": "#0a110a", "--block": "#0f1a0f", "--line": "#16301a", "--border": "#1f4a26", "--text": "#c8f7c5", "--sub": "#7fbf7a", "--muted": "#4f7d4b", "--accent": "#33ff66", "--title": "#ffb000", "--on-title": "#000000", "--green": "#33ff66", "--warn": "#ffb000", "--red": "#ff4d4d", "--red-bg": "#2a0a0a", "--red-text": "#ffc9c9", "--info-bg": "#0a1a0e", "--on-accent": "#001a06" } };
+const GLASS_BASE = { label: "Glass", light: false, vars: { "--bg": "#0b1220", "--card": "#ffffff12", "--block": "#ffffff1f", "--line": "#ffffff1f", "--border": "#ffffff33", "--text": "#f2f6ff", "--sub": "#b9c4dd", "--muted": "#7f8db0", "--accent": "#7aa2ff", "--title": "#9bb8ff", "--on-title": "#07102a", "--green": "#3ddc84", "--warn": "#ffb454", "--red": "#ff6b6b", "--red-bg": "#3a1020", "--red-text": "#ffd6dd", "--info-bg": "#ffffff0f", "--on-accent": "#07102a" } };
 /* design:end */
 
 /** Background bases: the colours behind the cards. */
 const BASES = {
   oled: { label: "OLED black", vars: {} },   // the defaults in app.css
   grey: { label: "Dark grey", vars: GREY_VARS },
+  paper: PAPER_BASE,
+  terminal: TERMINAL_BASE,
+  glass: GLASS_BASE,
 };
+
+/** Every variable any base sets: a base that does not set one gives it back to the default in app.css. */
+const BASE_VAR_NAMES = [...new Set(Object.values(BASES).flatMap((b) => Object.keys(b.vars)))];
 
 /** Accents: [accent, titles]. Status colours (green/orange/red dots) never change with them. */
 const ACCENTS = {
@@ -100,14 +109,21 @@ function ui_scale() {
 function apply_look() {
   const root = document.documentElement.style;
   const base = BASES[look_base()] || BASES.oled;
-  for (const name of ["--bg", "--card", "--block", "--line", "--border"]) {
+  for (const name of BASE_VAR_NAMES) {
     if (base.vars[name]) root.setProperty(name, base.vars[name]); else root.removeProperty(name);
   }
-  const [accent, title] = accent_colours(look_accent());
-  if (look_accent() === "blue") { root.removeProperty("--accent"); root.removeProperty("--title"); }
-  else { root.setProperty("--accent", accent); root.setProperty("--title", title); }
+  root.colorScheme = base.light ? "light" : "dark";
+  document.documentElement.classList.toggle("light-ground", !!base.light);
+  // a base with an accent of its own (Paper, Terminal, Glass) keeps it: the presets are made for a dark ground
+  if (!base.vars["--accent"]) {
+    const [accent, title] = accent_colours(look_accent());
+    if (look_accent() === "blue") { root.removeProperty("--accent"); root.removeProperty("--title"); }
+    else { root.setProperty("--accent", accent); root.setProperty("--title", title); }
+  }
   const font = FONTS[S.font] || FONTS.roboto;
-  if (S.font === "roboto") root.removeProperty("--font"); else root.setProperty("--font", font[1]);
+  // the font chosen on this screen wins; else the base's (Terminal is monospace)
+  const own = S.font === "roboto" && base.font ? FONTS[base.font] : font;
+  if (S.font === "roboto" && !base.font) root.removeProperty("--font"); else root.setProperty("--font", own[1]);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = base.vars["--bg"] || "#000000";
   apply_density();

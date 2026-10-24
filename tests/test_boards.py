@@ -143,6 +143,13 @@ class Routes(unittest.TestCase):
         self.assertEqual(managed.read_config()["display"], {"base": "grey", "accent": "#aabbcc"})
         self.audit.assert_called_once_with(self.h, "board-theme", "grey #aabbcc")
 
+    def test_every_base_can_be_saved(self):
+        managed.take_over()
+        for base in ("oled", "grey", "paper", "terminal", "glass"):
+            code, r = boards.save_theme(self.h, {"base": base, "accent": "blue"})
+            self.assertEqual(code, 200, base)
+            self.assertEqual(managed.read_config()["display"]["base"], base)
+
     def test_theme_refuses_bad_values(self):
         managed.take_over()
         for body in ({"base": "white", "accent": "blue"}, {"base": "oled", "accent": "teal"},

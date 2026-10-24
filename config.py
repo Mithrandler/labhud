@@ -58,7 +58,7 @@ PAGE_COLUMNS = (1, 6)                    # a page's columns, from to (both inclu
 ICON_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 DISPLAY_KEYS = {"warn", "crit", "icons_online", "base", "accent"}
 # The board's theme (⚙ > Dashboard): the colours behind the cards and the accent. A screen may pick its own (⚙ > Look)
-THEME_BASES = ("oled", "grey")
+THEME_BASES = ("oled", "grey", "paper", "terminal", "glass")
 THEME_ACCENTS = ("blue", "green", "orange", "red", "violet", "cyan", "pink", "yellow")
 ACCENT_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 # What a role (an API token's scope, a paired phone) sees: [roles.<role>] pages = ["id", ...]

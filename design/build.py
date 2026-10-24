@@ -144,8 +144,22 @@ def camel(name):
 
 def grey_block(tokens, indent):
     pairs = ", ".join(f'"{css_var(n)}": "{v}"' for n, (v, _) in tokens["board_grey"].items())
-    return (f"{indent}/* design:grey (design/tokens.json, written by design/build.py: edit there) */\n"
-            f'{indent}const GREY_VARS = {{ {pairs} }};\n{indent}/* design:end */')
+    lines = [f"{indent}/* design:grey (design/tokens.json, written by design/build.py: edit there) */",
+             f"{indent}const GREY_VARS = {{ {pairs} }};"]
+    # the other bases: every colour a page uses, whether it is a light ground, and the font it asks for
+    for name, base in tokens["board_bases"].items():
+        vars_ = ", ".join(f'"{css_var(n)}": "{v[0]}"' for n, v in base.items() if not n.startswith("_"))
+        font = f', font: "{base["_font"]}"' if base.get("_font") else ""
+        light = "true" if base.get("_light") else "false"
+        lines.append(f'{indent}const {name.upper()}_BASE = {{ label: "{base["_label"]}", light: {light}{font}, vars: {{ {vars_} }} }};')
+    lines.append(f"{indent}/* design:end */")
+    return "\n".join(lines)
+
+
+def argb(value):
+    """#rrggbb or #rrggbbaa as the 0xAARRGGBB of a Kotlin Color."""
+    h = value.lstrip("#").upper()
+    return h[6:] + h[:6] if len(h) == 8 else "FF" + h
 
 
 def kotlin(tokens):
@@ -158,6 +172,11 @@ def kotlin(tokens):
     light_status = "\n".join(f"    val {camel(n)} = Color(0xFF{v.lstrip('#')})" for n, (v, _) in tokens["light_status"].items())
     grey = "\n".join(f"    /** {note} */\n    val {camel(n)} = Color(0xFF{v.lstrip('#').upper()})"
                       for n, (v, note) in tokens["board_grey"].items())
+    bases = "\n\n".join(
+        f"/** The \"{b['_label']}\" board: every colour the app asks of a base. */\nobject Hud{name.title()} {{\n"
+        + "\n".join(f"    val {camel(n)} = Color(0x{argb(v[0])})" for n, v in b.items() if not n.startswith("_"))
+        + "\n}"
+        for name, b in tokens["board_bases"].items())
     icons = "\n".join(
         f"    val {camel(n)}: ImageVector by lazy {{ icon(\"{n}\", "
         + ", ".join(f"\"{d}\" to {'true' if fill else 'false'}" for d, fill in shapes(m)) + ") }"
@@ -183,6 +202,8 @@ object Hud {{
 object HudGrey {{
 {grey}
 }}
+
+{bases}
 
 /** The fallback Material schemes (no wallpaper colours to take, before Android 12): labhud's blue on neutral greys. */
 object FallbackDark {{
