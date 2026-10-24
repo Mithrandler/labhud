@@ -38,10 +38,17 @@ def parse(tag):
     return (int(m[1]), int(m[2]), int(m[3]), 0 if m[4] else 1) if m else None
 
 
+def _in_order(v):
+    """A parsed version with its patch in release order. The series wraps instead of growing a digit (0.1.19, 0.1.2, 0.1.21, ...
+    0.1.29, 0.1.3), so a patch of one digit counts as tens, as in the app's versionCode: 0.1.2 comes after 0.1.19."""
+    major, minor, patch, final = v
+    return (major, minor, patch * 10 if 0 < patch < 10 else patch, final)
+
+
 def newer(latest, current):
     """True if `latest` is a later version than `current`. A version nobody can read is never behind."""
     a, b = parse(latest), parse(current)
-    return bool(a and b and a > b)
+    return bool(a and b and _in_order(a) > _in_order(b))
 
 
 def fetch(repo, request):

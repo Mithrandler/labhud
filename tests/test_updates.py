@@ -37,7 +37,10 @@ class Versions(unittest.TestCase):
         for latest, current, want in (("v0.1.1", "0.1.0", True), ("0.1.0", "0.1.0", False), ("0.1.0", "0.1.1", False),
                                       ("0.2.0", "0.1.9", True), ("1.0.0", "0.99.99", True), ("0.10.0", "0.9.0", True),
                                       ("0.1.1-rc1", "0.1.1", False), ("0.1.1", "0.1.1-rc1", True),
-                                      ("0.1.1", "dev", False), ("", "0.1.0", False), ("0.1.1", None, False)):
+                                      ("0.1.1", "dev", False), ("", "0.1.0", False), ("0.1.1", None, False),
+                                      # the series wraps: 0.1.19, then 0.1.2, ..., 0.1.29, then 0.1.3
+                                      ("0.1.19", "0.1.2", False), ("0.1.2", "0.1.19", True), ("0.1.21", "0.1.2", True),
+                                      ("0.1.3", "0.1.29", True), ("0.1.29", "0.1.3", False), ("0.1.2", "0.1.2", False)):
             with self.subTest(latest=latest, current=current):
                 self.assertEqual(updates.newer(latest, current), want)
 

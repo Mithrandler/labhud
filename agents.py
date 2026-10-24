@@ -1117,12 +1117,14 @@ def newer(v, own):
     def parts(x):
         m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(-.*)?", x or "")
         return (tuple(int(n) for n in m.groups()[:3]), bool(m.group(4))) if m else None
+    def order(t):   # the series wraps (0.1.19, 0.1.2, 0.1.21): a patch of one digit counts as tens, 0.1.2 is after 0.1.19
+        return (t[0], t[1], t[2] * 10 if 0 < t[2] < 10 else t[2])
     a, b = parts(v), parts(own)
     if not a or a[1]:
         return False
     if not b:
         return True
-    return a[0] > b[0] or (a[0] == b[0] and b[1])
+    return order(a[0]) > order(b[0]) or (order(a[0]) == order(b[0]) and b[1])
 
 
 def update_for(a, releases=""):

@@ -786,7 +786,9 @@ class Versions(unittest.TestCase):
     def test_newer(self):
         for v, own, want in [("0.1.1", "0.1.0", True), ("0.1.0", "0.1.0", False), ("0.1.0", "0.1.1", False),
                              ("0.1.0", "0.1.0-dev.a0e2b4d", True), ("0.1.0", "", True), ("0.1.0-rc1", "0.0.1", False),
-                             ("1.0.0", "0.9.99", True)]:
+                             ("1.0.0", "0.9.99", True),
+                             # the series wraps: 0.1.19, then 0.1.2, ..., 0.1.29, then 0.1.3
+                             ("0.1.19", "0.1.2", False), ("0.1.2", "0.1.19", True), ("0.1.3", "0.1.29", True)]:
             self.assertEqual(agents.newer(v, own), want, (v, own))
 
     def test_update_for(self):
