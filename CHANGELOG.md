@@ -6,6 +6,10 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+### Added
+
+- **Servers: a container Config tab.** Restart policy, published ports, volumes and variables of a container (routes `config`, read; `reconfigure`, admin, the container's name typed to confirm). A variable's value is only ever written, never read back or shown, and travels sealed to the agent (agent 0.1.13). The audit log names the container, never what was set. Compose containers are refused (change their file under Stacks).
+
 ## [0.1.21] - 2026-10-24
 
 ### Fixed
