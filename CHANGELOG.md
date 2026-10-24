@@ -6,6 +6,20 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-10-24
+
+### Added
+
+- **Servers: Proxmox nodes are listed.** A node whose agent has no Docker (only `pve`) is a host in Servers too, with Overview, VMs & LXC and Host (the Docker tabs are for Docker hosts).
+- **Servers: Wake.** An offline host whose agent once said its address (`host.mac` in `hello`, agent 0.1.14) shows a Wake button when another online agent has that address ticked for Wake (route `wake`, admin, no typed name). The address of every known agent is offered in Settings > Hosts and agents > Wake although the ARP table forgot it.
+- **Servers: the console of a VM or LXC** (web page). Proxmox's own text console (`termproxy`) over a stream, like the shell of a container: admin with the PIN, 15 minutes, 3 without a key, audit line `console`. A VM needs a serial port with a login on it. The app has no terminal: it says the console is on the web.
+- **Servers: move a guest to another node** (route `guest-migrate`, admin; web and app). Proxmox's remote migration to a peer set on the host (`install-agent.sh --pve-peer`), live for a running VM, with a restart for an LXC, stopped for a stopped one, optionally under another number there. It answers at once; the end comes as an event. The original stays (locked as `migrate`).
+- `install-agent.sh`: `--pve-console` (VM.Console), `--pve-migrate` (VM.Migrate), `--pve-peer SPEC`; the role of an agent installed before is changed by running it again with the options.
+
+### Changed
+
+- Servers on a narrow screen: the title no longer opens a drawer of hosts (the list is right there, and a host has its own tabs).
+
 ## [0.1.22] - 2026-10-24
 
 ### Added
