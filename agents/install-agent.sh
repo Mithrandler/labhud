@@ -20,6 +20,11 @@
 #   --pve-snapshots     on Proxmox VE, also give the token VM.Snapshot and Datastore.Audit (snapshots and the backup list in Servers)
 #   --pve-backup        on Proxmox VE, also give the token VM.Backup and Datastore.AllocateSpace (the scheduler's backup job writes
 #                       to a datastore: only for those who want it; it also needs --pve-snapshots' Datastore.Audit)
+#   --pve-console       on Proxmox VE, also give the token VM.Console (the console of a VM or LXC in Servers)
+#   --pve-migrate       on Proxmox VE, also give the token VM.Migrate (moving a guest to another node, with --pve-peer)
+#   --pve-peer SPEC     a node a guest may be moved to, "name|host[:port]|fingerprint|user@realm!token=secret|bridge|storage"
+#                       (the token is one made ON THE TARGET, with VM.Allocate, Datastore.AllocateSpace, Sys.Audit and SDN.Use
+#                       on its bridge; the fingerprint is the target's certificate, `pvenode cert info`); may be given again
 #   --ptero-url URL     a Pterodactyl panel; its client API key is asked for (not on the command line)
 #   --ptero-pin HEX     the SHA-256 of the panel's certificate, for a self-signed one
 #                       (python3 init.py fingerprint https://panel… on labhud prints it)
@@ -42,7 +47,7 @@ BIN=$BINDIR/labhud-agent
 LINK=/usr/local/bin/labhud-agent
 UNIT=/etc/systemd/system/labhud-agent.service
 
-URL="" CODE="" NAME="" BINARY="" WANT="" PVE_SNAP="" PVE_BACKUP="" PTERO_URL="" PTERO_PIN="" BASE_W="" PRICE="" UNINSTALL=""
+URL="" CODE="" NAME="" BINARY="" WANT="" PVE_SNAP="" PVE_BACKUP="" PVE_CONSOLE="" PVE_MIGRATE="" PVE_PEERS="" PTERO_URL="" PTERO_PIN="" BASE_W="" PRICE="" UNINSTALL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --url) URL="${2:-}"; shift 2 ;;
@@ -52,6 +57,9 @@ while [ $# -gt 0 ]; do
     --sha256) WANT="${2:-}"; shift 2 ;;
     --pve-snapshots) PVE_SNAP=1; shift ;;
     --pve-backup) PVE_BACKUP=1; shift ;;
+    --pve-console) PVE_CONSOLE=1; shift ;;
+    --pve-migrate) PVE_MIGRATE=1; shift ;;
+    --pve-peer) PVE_PEERS="${PVE_PEERS:+$PVE_PEERS;}${2:-}"; shift 2 ;;
     --ptero-url) PTERO_URL="${2:-}"; shift 2 ;;
     --ptero-pin) PTERO_PIN="${2:-}"; shift 2 ;;
     --base-w) BASE_W="${2:-}"; shift 2 ;;
@@ -141,24 +149,37 @@ case "$RELEASES" in
   https://*) set_conf LABHUD_AGENT_RELEASES "$RELEASES" ;;
 esac
 
-if command -v pveum >/dev/null && ! grep -q '^LABHUD_PVE_TOKEN=' "$CONF"; then
-  echo "Proxmox VE: making the user labhud@pve and its token (VM.PowerMgmt, VM.Audit, Sys.Audit)…"
+if command -v pveum >/dev/null; then
   PRIVS="VM.PowerMgmt,VM.Audit,Sys.Audit"
   if [ "$PVE_SNAP" = 1 ]; then PRIVS="$PRIVS,VM.Snapshot,Datastore.Audit"; fi
   if [ "$PVE_BACKUP" = 1 ]; then PRIVS="$PRIVS,Datastore.Audit,VM.Backup,Datastore.AllocateSpace"; fi
-  if pveum role list --output-format json | grep -q '"roleid": *"LabhudAgent"'; then
-    if [ "$PVE_SNAP" = 1 ] || [ "$PVE_BACKUP" = 1 ]; then pveum role modify LabhudAgent --privs "$PRIVS"; fi
-  else
-    pveum role add LabhudAgent --privs "$PRIVS"
+  if [ "$PVE_CONSOLE" = 1 ]; then PRIVS="$PRIVS,VM.Console"; fi
+  if [ "$PVE_MIGRATE" = 1 ]; then PRIVS="$PRIVS,VM.Migrate"; fi
+  ASKED=""
+  if [ "$PVE_SNAP" = 1 ] || [ "$PVE_BACKUP" = 1 ] || [ "$PVE_CONSOLE" = 1 ] || [ "$PVE_MIGRATE" = 1 ]; then ASKED=1; fi
+  if ! grep -q '^LABHUD_PVE_TOKEN=' "$CONF"; then
+    echo "Proxmox VE: making the user labhud@pve and its token ($PRIVS)…"
+    if pveum role list --output-format json | grep -q '"roleid": *"LabhudAgent"'; then
+      if [ -n "$ASKED" ]; then pveum role modify LabhudAgent --privs "$PRIVS"; fi
+    else
+      pveum role add LabhudAgent --privs "$PRIVS"
+    fi
+    pveum user list --output-format json | grep -q '"userid": *"labhud@pve"' ||
+      pveum user add labhud@pve --comment "labhud-agent: start, shut down, reboot guests"
+    pveum acl modify / --users labhud@pve --roles LabhudAgent
+    pveum user token remove labhud@pve agent 2>/dev/null || true
+    VALUE="$(pveum user token add labhud@pve agent --privsep 0 --comment labhud-agent --output-format json |
+      sed -n 's/.*"value"[[:space:]]*:[[:space:]]*"\([0-9a-f-]*\)".*/\1/p')"
+    [ -n "$VALUE" ] || { echo "could not make the Proxmox token" >&2; exit 1; }
+    set_conf LABHUD_PVE_TOKEN "labhud@pve!agent=$VALUE"
+  elif [ -n "$ASKED" ]; then
+    # an agent installed before: the role of its token gets exactly what the options name (the token itself stays)
+    echo "Proxmox VE: the role LabhudAgent now has $PRIVS"
+    pveum role modify LabhudAgent --privs "$PRIVS"
   fi
-  pveum user list --output-format json | grep -q '"userid": *"labhud@pve"' ||
-    pveum user add labhud@pve --comment "labhud-agent: start, shut down, reboot guests"
-  pveum acl modify / --users labhud@pve --roles LabhudAgent
-  pveum user token remove labhud@pve agent 2>/dev/null || true
-  VALUE="$(pveum user token add labhud@pve agent --privsep 0 --comment labhud-agent --output-format json |
-    sed -n 's/.*"value"[[:space:]]*:[[:space:]]*"\([0-9a-f-]*\)".*/\1/p')"
-  [ -n "$VALUE" ] || { echo "could not make the Proxmox token" >&2; exit 1; }
-  set_conf LABHUD_PVE_TOKEN "labhud@pve!agent=$VALUE"
+fi
+if [ -n "$PVE_PEERS" ]; then
+  set_conf LABHUD_PVE_PEERS "$PVE_PEERS"   # the agent checks every field and uses none if one is wrong (its log says)
 fi
 
 if [ -n "$PTERO_URL" ]; then

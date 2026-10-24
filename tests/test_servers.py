@@ -956,6 +956,14 @@ class Streams(Base):
 
 class Scopes(Base):
     def token(self, scope):
+        cache = type(self).__dict__.get("_tokens")
+        if cache is None:
+            cache = type(self)._tokens = {}     # the server of a class lives through its tests; a token name is made once
+        if scope not in cache:
+            cache[scope] = Scopes._new_token(self, scope)
+        return cache[scope]
+
+    def _new_token(self, scope):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=20)
         conn.request("POST", "/api/tokens/create", body=json.dumps({"name": f"t-{scope}", "scope": scope}),
                      headers={"Host": self.host, "Origin": f"http://{self.host}", "Content-Type": "application/json",
@@ -1009,7 +1017,7 @@ class Guests(Base):
         self.manage("caps", {"id": aid, "caps": ["pve"]})
         self.manage("targets", {"id": aid, "cap": "pve", "targets": ["101", "113", "900"]})
         c.read_signed(key, session), c.read_signed(key, session)
-        c.send_signed(key, session, aid, {"type": "state", "node": "pve2", "guests": self.GUESTS})
+        c.send_signed(key, session, aid, {"type": "state", "node": "pve2", "guests": self.GUESTS, "peers": ["pve", "bad name", 7]})
         self.assertTrue(self.wait_for(lambda: self.api("guests", {"agent": name})[1].get("guests")))
         log, stop = serve(c, key, session, aid, {"snap-list": {"output": json.dumps(self.SNAPS)}, **(answers or {})})
         self.addCleanup(stop.set)
@@ -1111,6 +1119,84 @@ class Guests(Base):
 
     token_for = Scopes.token
 
+    def test_the_console_and_the_move_are_offered_only_where_they_can_work(self):
+        self.session()
+        self.pve_host("pve-j")
+        r = self.api("guests", {"agent": "pve-j"})[1]
+        self.assertEqual(r["peers"], ["pve"])        # a peer with a bad name is not shown
+        by = {g["id"]: g for g in r["guests"]}
+        self.assertEqual((by["101"]["console"], by["101"]["moves"]), (True, True))
+        self.assertEqual(by["113"]["console"], False)       # a stopped guest has no console
+        self.assertEqual((by["104"]["console"], by["104"]["moves"]), (False, False))   # not ticked
+        self.assertEqual((by["900"]["console"], by["900"]["moves"]), (False, False))   # a template
+
+    def test_the_console_is_a_stream_for_the_admin_with_a_pin(self):
+        self.session()
+        self.pve_host("pve-k")
+        status, r, _ = self.api("stream-open", {"agent": "pve-k", "kind": "console", "name": "101"})
+        self.assertEqual(status, 403)       # no PIN is set on this server
+
+    def test_a_move_names_a_peer_of_the_host_and_runs_in_the_background(self):
+        self.session()
+        log = self.pve_host("pve-l")
+        ask = lambda **kw: self.api("guest-migrate", dict({"agent": "pve-l", "id": "101", "peer": "pve", "mode": "online"}, **kw))[0]
+        self.assertEqual(ask(peer="elsewhere"), 400)           # not one of the host's
+        self.assertEqual(ask(peer="pve,host=evil"), 400)
+        self.assertEqual(ask(mode="live"), 400)
+        self.assertEqual(ask(new_id="12;3"), 400)
+        self.assertEqual(ask(id="104"), 403)                   # not ticked
+        self.assertEqual(self.sent(log, "migrate"), [])
+        self.assertEqual(ask(), 200)
+        self.assertTrue(self.wait_for(lambda: self.sent(log, "migrate")))
+        self.assertEqual(self.sent(log, "migrate"), [("101", "pve:online")])
+        text = audit_text(self.data)
+        self.assertIn("servers/guest-migrate", text)
+
+    def test_a_move_is_for_the_admin_only(self):
+        self.session()
+        log = self.pve_host("pve-m")
+        r = self.api("guest-migrate", {"agent": "pve-m", "id": "101", "peer": "pve", "mode": "online"},
+                     ticket=False, origin=False, token=self.token_for("act"))
+        self.assertEqual(r[0], 403)      # (refusals count against a limit of eight a minute: one per level is enough)
+        self.assertEqual(self.sent(log, "migrate"), [])
+
+    def test_a_host_that_is_off_is_woken_by_another_agent_that_has_its_address_ticked(self):
+        self.session()
+        mac = "02:00:00:00:00:7b"
+        c, session, aid, key = self.pair(name="sleeper")
+        c.close()
+        hello = dict(test_agents.HELLO, name="sleeper", host={"hostname": "sleeper", "mac": mac})
+        for bad in ("02:00:00:00:00:7B", "02:00:00", "x" * 17):    # only a lowercase MAC is kept
+            c3 = test_agents.WSClient(self.port)
+            s3 = c3.recv_json()["session"]
+            c3.send_signed(key, s3, aid, dict(hello, host={"hostname": "sleeper", "mac": bad}))
+            self.assertTrue(self.wait_for(lambda: self.manage("list")[1] and any(x["id"] == aid and x["online"] for x in self.manage("list")[1]["agents"])))
+            c3.close()
+        self.assertEqual(next(x for x in self.manage("list")[1]["agents"] if x["id"] == aid)["host"].get("mac", ""), "")
+        c4 = test_agents.WSClient(self.port)
+        s4 = c4.recv_json()["session"]
+        c4.send_signed(key, s4, aid, hello)
+        self.assertTrue(self.wait_for(lambda: next(x for x in self.manage("list")[1]["agents"] if x["id"] == aid)["host"].get("mac") == mac))
+        c4.close()
+        self.assertTrue(self.wait_for(lambda: not next(x for x in self.manage("list")[1]["agents"] if x["id"] == aid)["online"]))
+        sleeper = lambda: next(x for x in self.api("hosts")[1]["hosts"] if x["name"] == "sleeper")
+        self.assertEqual((sleeper()["mac"], sleeper()["wake"]), (mac, False))    # nobody can wake it yet
+        self.assertEqual(self.api("wake", {"agent": "sleeper"})[0], 409)
+        # another agent, online, with Wake and that address ticked
+        c5, session5, aid5, key5 = self.pair(name="waker")
+        self.manage("caps", {"id": aid5, "caps": ["wol"]})
+        self.manage("targets", {"id": aid5, "cap": "wol", "targets": [mac]})
+        c5.read_signed(key5, session5), c5.read_signed(key5, session5)
+        log, stop = serve(c5, key5, session5, aid5, {"wake": {}})
+        self.addCleanup(stop.set)
+        self.addCleanup(c5.close)
+        self.assertTrue(self.wait_for(lambda: sleeper()["wake"]))
+        self.assertEqual(self.api("wake", {"agent": "sleeper"}, ticket=False, origin=False, token=self.token_for("act"))[0], 403)
+        self.assertEqual(self.api("wake", {"agent": "sleeper"})[0], 200)
+        self.assertEqual([(m["verb"], m["target"]) for m in log if m.get("type") == "command"], [("wake", mac)])
+        self.assertIn("servers/wake", audit_text(self.data))
+        self.assertEqual(self.api("wake", {"agent": "nobody"})[0], 404)
+
 
 class FakeHandler:
     """What _gate reads of a request."""
@@ -1156,12 +1242,13 @@ class ArgumentRules(unittest.TestCase):
     def test_arguments(self):
         ok = [("rm-image", "nginx:1.27"), ("rm-image", "0a1b2c3d4e5f"), ("pull", "ghcr.io/org/app@sha256:abc"), ("rm-volume", "pgdata"),
               ("rm-network", "media_default"), ("network-inspect", "proxy"), ("volume-ls", ""), ("volume-ls", "/a/b"), ("volume-read", "/f.txt"),
-              ("restart", ""), ("logs", "")]
+              ("restart", ""), ("logs", ""), ("migrate", "pve:online"), ("migrate", "pve2:offline"), ("migrate", "pve:online:991"), ("console", "")]
         for verb, arg in ok:
             self.assertTrue(agents.arg_ok(verb, arg), (verb, arg))
         bad = [("rm-image", ""), ("rm-image", "-f"), ("rm-image", "a b"), ("rm-volume", "../x"), ("rm-network", "a/b"), ("pull", "x;y"),
                ("volume-ls", "/../x"), ("volume-read", ""), ("volume-read", "/"), ("volume-read", "/a/../../b"), ("restart", "x"),
-               ("stats", "--all"), ("inventory", "x"), ("volume-ls", "/a\x00b"), ("volume-ls", None), ("rm-image", 5)]
+               ("stats", "--all"), ("inventory", "x"), ("volume-ls", "/a\x00b"), ("volume-ls", None), ("rm-image", 5),
+               ("migrate", ""), ("migrate", "pve"), ("migrate", "pve:live"), ("migrate", "PVE:online"), ("migrate", "a,host=x:online"), ("migrate", "pve:online:99"), ("migrate", "pve:online:1;2"), ("console", "x")]
         for verb, arg in bad:
             self.assertFalse(agents.arg_ok(verb, arg), (verb, arg))
 

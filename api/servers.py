@@ -30,6 +30,8 @@ here is POST, JSON, and goes through one gate, `_gate`, in this order:
     POST /api/servers/guest-config|guest-snapshots|guest-backups|guest-tasks {agent, id}   read: (keys that look like secrets masked)
     POST /api/servers/guest-act {agent, id, verb}    act: start | shutdown | reboot
     POST /api/servers/snap-create {agent, id, name}  act: a snapshot (no RAM state)
+    POST /api/servers/guest-migrate {agent, id, peer, mode, new_id?}  admin: moves the guest to a peer node (remote migration, the original stays); mode = online | offline; answers at once, the end is an event
+    POST /api/servers/wake {agent}                   admin: wakes an offline host with a magic packet, from another agent that has its address ticked
     POST /api/servers/snap-rollback {agent, id, name, confirm}   admin: the guest goes back; confirm = the guest's name
     POST /api/servers/snap-delete {agent, id, name, confirm}     admin: confirm = the snapshot's name
     POST /api/servers/host {agent}                   read: the host's system facts and its systemd units
@@ -72,7 +74,7 @@ NEEDS = {
     "stacks": "read", "stack-read": "admin", "stack-validate": "admin", "stack-save": "admin", "stack-restore": "admin",
     "stack-act": "act", "stack-down": "admin", "stack-source": "admin", "stack-hook": "admin", "stack-sync": "admin",
     "guests": "read", "guest-config": "read", "guest-snapshots": "read", "guest-backups": "read", "guest-tasks": "read",
-    "guest-act": "act", "snap-create": "act", "snap-rollback": "admin", "snap-delete": "admin",
+    "guest-act": "act", "guest-migrate": "admin", "wake": "admin", "snap-create": "act", "snap-rollback": "admin", "snap-delete": "admin",
     "jobs": "read", "job-save": "admin", "job-delete": "admin", "job-run": "admin",
     "host": "read", "host-update": "act", "update-all": "act", "host-power": "admin", "unit": "act", "unit-stop": "admin", "activity": "admin",
     "pull": "act", "rm": "admin", "clean": "admin", "volume-access": "admin",
@@ -246,6 +248,18 @@ def session(h, body):
     return 200, {"ok": True, "idle": SESSION_IDLE}
 
 
+def _waker(aid):
+    """(agent id, mac) of the other agent that is online and has this host's address ticked for Wake, else None."""
+    me = agents.get(aid) or {}
+    mac = (me.get("host") or {}).get("mac", "")
+    if not agents.MAC_RE.fullmatch(mac) or aid in agents._live:
+        return None
+    for other in agents.listing():
+        if other["id"] != aid and other["online"] and agents.allowed(other["id"], "wol", "wake", mac):
+            return other["id"], mac
+    return None
+
+
 @_guarded("hosts")
 def hosts(h, body):
     out = []
@@ -258,6 +272,8 @@ def hosts(h, body):
             "name": a["name"], "online": bool(a["online"]), "version": _s(a["version"], 40),
             "update": bool(a.get("update")), "docker": "docker" in a["caps"] or "docker" in a["found"],
             "pve": "pve" in a["caps"],
+            "mac": a["host"].get("mac", "") if isinstance(a.get("host"), dict) else "",
+            "wake": not a["online"] and _waker(a["id"]) is not None,
             "containers": {"running": sum(1 for c in cs if c.get("state") == "running"), "total": len(cs),
                            "bad": sum(1 for c in cs if c.get("state") != "running" or c.get("health") == "unhealthy"),
                            "updates": sum(1 for c in cs if c.get("update") is True)},
@@ -403,11 +419,11 @@ def stats(h, body):
 def _stream(op):
     def run(h, body):
         needed = NEEDS[op]
-        if op == "stream-open" and body.get("kind") == "shell":
+        if op == "stream-open" and body.get("kind") in agents.INTERACTIVE:
             needed = "admin"
         elif op in ("stream-read", "stream-close"):
             st = agents.stream_get(str(body.get("id") or ""))
-            if st and st.kind == "shell":
+            if st and st.kind in agents.INTERACTIVE:
                 needed = "admin"
         refused = _gate(h, op, needed)
         if refused:
@@ -862,6 +878,10 @@ GUEST_ACTIONS = ("start", "shutdown", "reboot")
 SNAP_WAIT = 330       # s: a snapshot may take its time (the agent gives it five minutes)
 PVE_SECRET = re.compile(r"pass|secret|token|cicustom|sshkeys|(^|_)keys?$", re.I)
 GUEST_TYPES = ("qemu", "lxc")
+PEER = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+_moving = set()       # (agent id, guest) with a migration going on
+_moving_lock = threading.Lock()
+MIGRATE_WAIT = 6 * 3600 + 120   # s: the agent gives a migration six hours
 
 
 def _ticked_guests(a):
@@ -913,6 +933,7 @@ def guests(h, body):
         return 200, {"ok": True, "enabled": False, "guests": []}
     st = agents.state_of(aid)
     ticked = _ticked_guests(a)
+    peers = [n for n in (st.get("peers") or [])[:8] if isinstance(n, str) and PEER.fullmatch(n)] if isinstance(st.get("peers"), list) else []
     rows = []
     for vmid, g in sorted((st.get("guests") or {}).items(), key=lambda kv: int(kv[0]) if str(kv[0]).isdigit() else 0)[:300]:
         if not isinstance(g, dict) or not GUEST.fullmatch(str(vmid)):
@@ -925,8 +946,13 @@ def guests(h, body):
             "uptime": int(_n(g.get("uptime"), 0, 4e9)),
             "tags": [_s(t, 30) for t in (g.get("tags") or [])[:8] if isinstance(t, str)],
             "ticked": str(vmid) in ticked, "can": list(GUEST_ACTIONS) if str(vmid) in ticked and not g.get("template") else [],
+            "console": str(vmid) in ticked and g.get("running") is True and not g.get("template")
+                       and agents.allowed(aid, "pve", "console", str(vmid)),
+            "moves": str(vmid) in ticked and not g.get("template") and bool(peers)
+                     and agents.allowed(aid, "pve", "migrate", str(vmid)),
         })
-    return 200, {"ok": True, "enabled": True, "online": aid in agents._live, "node": _s(st.get("node"), 60), "guests": rows}
+    return 200, {"ok": True, "enabled": True, "online": aid in agents._live, "node": _s(st.get("node"), 60),
+                 "peers": peers, "guests": rows}
 
 
 @_guarded("guest-config")
@@ -985,6 +1011,63 @@ def guest_act(h, body):
     ok, error = agents.command(aid, "pve", verb, vmid)
     audit.record(h, f"servers/guest-{verb}", f"{a['name']}/{vmid}", ok)
     print(f"servers: guest {verb} {a['name']}/{vmid} by {h._who()}: {'ok' if ok else error}", flush=True)
+    return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
+
+
+@_guarded("guest-migrate")
+def guest_migrate(h, body):
+    aid, a, vmid, err = _guest(body)
+    if err:
+        return err
+    peer, mode = str(body.get("peer") or ""), str(body.get("mode") or "")
+    new_id = body.get("new_id")
+    if new_id not in (None, "", 0):
+        new_id = str(new_id)
+        if not GUEST.fullmatch(new_id):
+            return 400, {"ok": False, "error": "the number on the other node: 100 or more"}
+    else:
+        new_id = ""
+    peers = agents.state_of(aid).get("peers")
+    if not PEER.fullmatch(peer) or mode not in ("online", "offline") or not isinstance(peers, list) or peer not in peers:
+        return 400, {"ok": False, "error": "a peer of this host and a mode of online or offline"}
+    if not agents.allowed(aid, "pve", "migrate", vmid):
+        return 403, {"ok": False, "error": "not allowed"}
+    key = (aid, vmid)
+    with _moving_lock:
+        if key in _moving:
+            return 409, {"ok": False, "error": "this guest is already being moved"}
+        _moving.add(key)
+    guest_name = _s(((agents.state_of(aid).get("guests") or {}).get(vmid) or {}).get("name"), 80) or vmid
+    who = h._who()
+    audit.record(h, "servers/guest-migrate", f"{a['name']}/{vmid} to {peer} ({mode})", True)
+    print(f"servers: migrate {a['name']}/{vmid} to {peer} ({mode}) by {who}", flush=True)
+
+    def run():
+        try:
+            ok, error = agents.command(aid, "pve", "migrate", vmid, wait=MIGRATE_WAIT, arg=f"{peer}:{mode}" + (f":{new_id}" if new_id else ""))
+        finally:
+            with _moving_lock:
+                _moving.discard(key)
+        text = f"{a['name']}: {guest_name} moved to {peer}" if ok else \
+            f"{a['name']}: moving {guest_name} to {peer} failed: {_s(error, 200) or 'failed'}"
+        print(f"servers: migrate {a['name']}/{vmid}: {'ok' if ok else error}", flush=True)
+        agents.on_event(text, not ok)
+    threading.Thread(target=run, daemon=True, name=f"migrate-{vmid}").start()
+    return 200, {"ok": True, "started": True}
+
+
+@_guarded("wake")
+def wake(h, body):
+    aid, a = _agent(body)
+    if not a:
+        return 404, {"ok": False, "error": "no such host"}
+    hit = _waker(aid)
+    if not hit:
+        return 409, {"ok": False, "error": "no online agent has this host's address ticked for Wake (Settings > Hosts and agents)"}
+    wid, mac = hit
+    ok, error = agents.command(wid, "wol", "wake", mac)
+    audit.record(h, "servers/wake", a["name"], ok)
+    print(f"servers: wake {a['name']} by {h._who()}: {'ok' if ok else error}", flush=True)
     return (200, {"ok": True}) if ok else (502, {"ok": False, "error": _s(error, 200) or "failed"})
 
 

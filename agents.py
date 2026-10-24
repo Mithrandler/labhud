@@ -53,7 +53,7 @@ VERBS = {
     "host": ("reboot", "shutdown", "update"),
     "wol": ("wake",),
     "pve": ("start", "shutdown", "reboot", "config", "snap-list", "backup-list", "task-list",
-            "snap-create", "snap-rollback", "snap-delete", "vzdump"),
+            "snap-create", "snap-rollback", "snap-delete", "vzdump", "console", "migrate"),
     "ptero": ("start", "stop", "restart"),
     "stacks": ("deploy", "redeploy", "restart", "down", "show", "read", "validate", "save", "version", "restore"),
     "terminal": ("shell",),
@@ -76,6 +76,8 @@ HOST_VERBS = ("inventory", "prune", "prune-dangling", "prune-networks", "prune-v
 VOLUME_PREFIX = "volume:"
 VOLUME_VERBS = ("volume-ls", "volume-read")
 VZDUMP_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,39}:(snapshot|suspend|stop)")   # storage:mode
+MIGRATE_ARG = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}:(online|offline)(:[1-9][0-9]{2,8})?")   # peer:mode[:number on the other node]
+MAC_RE = re.compile(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}")
 SNAP_ARG = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,39}")     # Proxmox's own rule for a snapshot name
 VERSION_ARG = re.compile(r"[0-9]{1,12}")
 IMAGE_ARG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,199}")
@@ -112,6 +114,8 @@ def arg_ok(verb, arg):
         return bool(SNAP_ARG.fullmatch(arg))
     if verb == "vzdump":
         return bool(VZDUMP_ARG.fullmatch(arg))
+    if verb == "migrate":
+        return bool(MIGRATE_ARG.fullmatch(arg))
     if verb in ("version", "restore"):
         return bool(VERSION_ARG.fullmatch(arg))
     if verb == "volume-ls":
@@ -564,18 +568,22 @@ def _containers(a, names):
 def listing():
     """For ⚙ > Devices > Agents: everything but the keys, with what each agent last reported."""
     out = []
-    for aid, a in _load().items():
+    everyone = _load()
+    # the machines labhud knows by their agent (on or off): a Wake can name them although the ARP table forgot them
+    known = {(x.get("host") or {}).get("mac"): x["name"] for x in everyone.values() if MAC_RE.fullmatch((x.get("host") or {}).get("mac", ""))}
+    for aid, a in everyone.items():
         st = _state.get(aid) or {}
+        own = (a.get("host") or {}).get("mac")
         found = {"docker": _containers(a, sorted(st.get("containers") or {})) + [PRUNE_TARGET],
                  "systemd": sorted(st.get("units") or {}),
                  "pve": sorted(st.get("guests") or {}, key=lambda v: int(v) if v.isdigit() else 0),
-                 "ptero": sorted(st.get("servers") or {}), "wol": sorted(st.get("neighbours") or {}),
+                 "ptero": sorted(st.get("servers") or {}), "wol": sorted(set(st.get("neighbours") or {}) | (set(known) - {own})),
                  "host": ["host"] if "host" in a.get("found", []) else [], "stacks": sorted(stacks_of(aid)),
                  "terminal": _containers(a, sorted(st.get("containers") or {}))}
         labels = {"docker": {PRUNE_TARGET: "Unused images"},
                   "pve": {k: (v or {}).get("name") for k, v in (st.get("guests") or {}).items()},
                   "ptero": {k: (v or {}).get("name") for k, v in (st.get("servers") or {}).items()},
-                  "wol": {k: (v or {}).get("ip") for k, v in (st.get("neighbours") or {}).items()}}
+                  "wol": dict({k: (v or {}).get("ip") for k, v in (st.get("neighbours") or {}).items()}, **known)}
         out.append({"id": aid, "name": a["name"], "online": aid in _live, "version": a.get("version", ""),
                     "install": a.get("install", ""), "update": update_for(a), "features": a.get("features", []),
                     "addr": getattr(_live.get(aid), "peer", "") or "",
@@ -964,7 +972,9 @@ def sync_stack(aid, name, token=None):
 # these are labhud's, for an agent that does not keep them or a page that went away.
 # ---------------------------------------------------------------------------------------------
 
-STREAM_KINDS = {"logs": ("docker", "follow", 600), "shell": ("terminal", "shell", 900)}   # kind -> cap, verb, life (s)
+STREAM_KINDS = {"logs": ("docker", "follow", 600), "shell": ("terminal", "shell", 900),
+                "console": ("pve", "console", 900)}   # kind -> cap, verb, life (s)
+INTERACTIVE = ("shell", "console")   # streams that take input: a shell in a container, a guest's console
 STREAMS_PER_AGENT = 2
 STREAM_BUFFER = 256 << 10
 STREAM_IDLE_POLL = 60        # s: nobody fetching, the page is gone
@@ -1040,7 +1050,7 @@ def stream_open(aid, kind, target, cols=80, rows=24, who=""):
         st = _streams[sid] = Stream(sid, aid, kind, target, s, who)
     s.streams[sid] = st
     msg = {"type": "open", "cmd": sid, "cap": cap, "verb": verb, "target": target}
-    if kind == "shell":
+    if kind in INTERACTIVE:
         msg.update(cols=min(max(int(cols or 80), 20), 500), rows=min(max(int(rows or 24), 5), 200))
     try:
         s.send(msg)
@@ -1098,7 +1108,7 @@ def reap_streams():
             if now - st.last_poll > STREAM_IDLE_POLL:
                 _forget_stream(st)
         elif now - st.opened > life or now - st.last_poll > STREAM_IDLE_POLL or \
-                (st.kind == "shell" and now - st.last_input > STREAM_IDLE_INPUT + STREAM_GRACE):
+                (st.kind in INTERACTIVE and now - st.last_input > STREAM_IDLE_INPUT + STREAM_GRACE):
             stream_close(st)
 
 
@@ -1347,6 +1357,8 @@ class Session:
         found = [c for c in hello.get("caps", []) if c in CAPS] if isinstance(hello.get("caps"), list) else []
         host = hello.get("host") if isinstance(hello.get("host"), dict) else {}
         host = {k: str(host.get(k, ""))[:80] for k in ("hostname", "os", "kernel", "arch") if host.get(k)}
+        if isinstance(hello.get("host"), dict) and MAC_RE.fullmatch(str(hello["host"].get("mac", ""))):
+            host["mac"] = hello["host"]["mac"]
         version = str(hello.get("version", ""))[:32]
         install = hello.get("install") if hello.get("install") in ("service", "container") else ""
         features = sorted({f for f in hello.get("features") or [] if f in FEATURES}) if isinstance(hello.get("features"), list) else []

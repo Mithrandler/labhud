@@ -37,9 +37,13 @@ async function apply_look() {
   root.colorScheme = LIGHT_BASES.includes(base) ? "light" : "dark";
   root.fontFamily = base === "terminal" ? 'ui-monospace, "JetBrains Mono", monospace' : "";
 }
-const TABS = [["overview", "Overview", true], ["containers", "Containers", true], ["stacks", "Stacks", true],
-              ["images", "Images", true], ["volumes", "Volumes", true], ["networks", "Networks", true],
-              ["vms", "VMs & LXC", "pve"], ["host", "Host", true]];
+// the third: who has the tab ("any" host, a host with "docker", a Proxmox node with "pve")
+const TABS = [["overview", "Overview", "any"], ["containers", "Containers", "docker"], ["stacks", "Stacks", "docker"],
+              ["images", "Images", "docker"], ["volumes", "Volumes", "docker"], ["networks", "Networks", "docker"],
+              ["vms", "VMs & LXC", "pve"], ["host", "Host", "any"]];
+const tab_on = (h, on) => !!h && (on === "any" || !!h[on]);
+/** The hosts Servers lists: Docker hosts and Proxmox nodes (a node that has no Docker has only its guests and its host). */
+const listed = (h) => h.docker || h.pve;
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -116,9 +120,16 @@ function ask(title, fields, okText) {
     m.textContent = "";
     const box = el("form", "box");
     box.appendChild(el("h2", "", title));
-    const inputs = fields.map(([label, type, name]) => {
-      const i = el("input"); i.type = type; i.name = name; i.autocomplete = type === "password" ? "current-password" : "off";
-      i.required = true;
+    const inputs = fields.map(([label, type, name, choices]) => {
+      let i;
+      if (choices) {   // a list to choose from
+        i = el("select"); i.name = name;
+        for (const [value, text] of choices) { const o = el("option", "", text); o.value = value; i.appendChild(o); }
+      } else {
+        i = el("input"); i.type = type; i.name = name; i.autocomplete = type === "password" ? "current-password" : "off";
+        i.required = type !== "optional";
+        if (type === "optional") i.type = "text";
+      }
       box.append(el("label", "", label), i);
       return i;
     });
@@ -158,7 +169,7 @@ async function load_hosts() {
   const r = await call("hosts");
   if (!r.ok) return show_error(r.error || "could not load");
   S.hosts = r.hosts;
-  if (!S.host || !S.hosts.some((h) => h.name === S.host)) S.host = (S.hosts.find((h) => h.docker) || S.hosts[0] || {}).name || null;
+  if (!S.host || !S.hosts.some((h) => h.name === S.host)) S.host = (S.hosts.find(listed) || {}).name || null;
   draw_hosts();
   draw_tabs();
   draw_view();
@@ -168,32 +179,32 @@ function show_error(text) { $("view").textContent = ""; $("view").appendChild(el
 function draw_hosts() {
   const nav = $("hosts");
   nav.textContent = "";
-  for (const h of S.hosts.filter((x) => x.docker)) {
+  for (const h of S.hosts.filter(listed)) {
     const open = h.name === S.host;
-    const b = btn("", "host" + (open ? " on" : ""), () => { S.host = h.name; S.sheet && close_sheet(); if (S.tab === "vms" && !h.pve) S.tab = "overview"; draw_hosts(); draw_tabs(); draw_view(); });
+    const b = btn("", "host" + (open ? " on" : ""), () => { S.host = h.name; S.sheet && close_sheet(); if (!tab_on(h, (TABS.find((t) => t[0] === S.tab) || [])[2])) S.tab = "overview"; draw_hosts(); draw_tabs(); draw_view(); });
     b.setAttribute("aria-expanded", open ? "true" : "false");
     b.append(el("span", "caret", open ? "▾" : "▸"), el("span", "dot " + (!h.online ? "bad" : h.containers.bad > 0 ? "warn" : "ok")), el("span", "", h.name),
-      el("span", "nums", h.online ? h.containers.running + "/" + h.containers.total : "–"));
+      el("span", "nums", !h.online ? "–" : h.docker ? h.containers.running + "/" + h.containers.total : "node"));
     if (h.online && h.containers.updates > 0) b.appendChild(el("span", "nums upd", h.containers.updates + " upd"));
     nav.appendChild(b);
     // the host's own things as its children: a tree, as in Proxmox (the tab row above the view shows the same on a narrow screen)
     if (open) {
       const kids = el("div", "kids");
       for (const [id, label, on] of TABS) {
-        if (on === "pve" ? !h.pve : !on) continue;
+        if (!tab_on(h, on)) continue;
         kids.appendChild(btn(label, "leaf" + (id === S.tab ? " on" : ""), () => { S.tab = id; S.sheet && close_sheet(); draw_hosts(); draw_tabs(); draw_view(); }));
       }
       nav.appendChild(kids);
     }
   }
-  if (!S.hosts.some((x) => x.docker)) nav.appendChild(el("p", "muted", "No Docker host yet. Add one in Settings > Hosts and agents."));
+  if (!S.hosts.some(listed)) nav.appendChild(el("p", "muted", "No Docker host or Proxmox node yet. Add one in Settings > Hosts and agents."));
 }
 function draw_tabs() {
   const t = $("tabs");
   t.textContent = "";
   for (const [id, label, on] of TABS) {
     const b = btn(label, "tab" + (id === S.tab ? " on" : ""), () => { S.tab = id; draw_hosts(); draw_tabs(); draw_view(); });
-    b.disabled = on === "pve" ? !(host_now() || {}).pve : !on;
+    b.disabled = !tab_on(host_now(), on);
     b.setAttribute("role", "tab");
     t.appendChild(b);
   }
@@ -220,11 +231,22 @@ function overview(v, h) {
   const cards = el("div", "cards");
   const add = (label, big, sub) => { const c = el("div", "card"); c.append(el("div", "muted", label), el("div", "big", big), el("div", "muted", sub || "")); cards.appendChild(c); };
   add("Status", h.online ? "Online" : "Offline", h.version ? "agent " + h.version : "");
-  add("Containers", h.containers.running + " / " + h.containers.total, "running / all");
-  add("CPU", pct(h.cpu), "");
-  add("Memory", pct(h.mem), "");
+  if (h.docker) add("Containers", h.containers.running + " / " + h.containers.total, "running / all");
+  add("CPU", h.online ? pct(h.cpu) : "–", "");     // an agent that does not answer measured nothing
+  add("Memory", h.online ? pct(h.mem) : "–", "");
   if (h.update) add("Agent", "Update", "a newer agent is out");
   v.appendChild(cards);
+  if (h.wake) {
+    const said = el("div", "msg");
+    const bar = el("div", "bar");
+    bar.appendChild(btn("Wake", "primary", async () => {
+      said.className = "msg"; said.textContent = "Sending the magic packet…";
+      const r = await call("wake", { agent: h.name });
+      said.className = "msg" + (r.ok ? "" : " bad");
+      said.textContent = r.ok ? "Sent. The host needs a minute to start and its agent to connect." : "Wake: " + (r.error || "failed");
+    }));
+    v.append(el("p", "muted", h.name + " is off. Another agent on its network can wake it."), bar, said);
+  }
 }
 
 // ---- containers ----
@@ -519,7 +541,10 @@ function load_xterm() {
   return XTERM;
 }
 
-async function shell_view(body, c) {
+async function shell_view(body, c) { return term_view(body, "shell", c.name, "open · closes after 3 minutes without a key"); }
+
+/** A terminal (xterm.js) on a stream: a shell in a container (kind "shell") or a guest's console (kind "console"). */
+async function term_view(body, kind, name, note) {
   const s = S.sheet, gen = s.gen;
   const status = el("div", "muted", "opening…");
   const host = el("div", "term");
@@ -530,11 +555,11 @@ async function shell_view(body, c) {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit); term.open(host); fit.fit();
   s.term = term;
-  const r = await call("stream-open", { agent: S.host, kind: "shell", name: c.name, cols: term.cols, rows: term.rows });
+  const r = await call("stream-open", { agent: S.host, kind, name, cols: term.cols, rows: term.rows });
   if (s.gen !== gen) { if (r.ok) call("stream-close", { id: r.id }); return; }
   if (!r.ok) { status.textContent = "✕ " + (r.error || "failed"); return; }
   s.stream = r.id;
-  status.textContent = "open · closes after 3 minutes without a key";
+  status.textContent = note;
   let pending = [], timer = 0;
   const send = () => { timer = 0; const all = pending.join(""); pending = []; if (all) post("/api/servers/stream-input", { id: r.id, data: bytes_b64(new TextEncoder().encode(all)) }); };
   term.onData((d) => { pending.push(d); if (!timer) timer = setTimeout(send, 15); });
@@ -745,6 +770,7 @@ const uptime = (s) => (s >= 86400 ? Math.floor(s / 86400) + " d" : s >= 3600 ? M
 
 async function guests(v) {
   const bar = el("div", "bar"), said = el("div", "msg bad"), table = el("table");
+  let peers = [];
   bar.append(btn("Refresh", "", () => load()));
   v.append(bar, said, table);
   async function load() {
@@ -753,6 +779,7 @@ async function guests(v) {
     table.textContent = "";
     if (!r.ok) return;
     if (!r.enabled) return table.appendChild(el("p", "muted", "Proxmox is not ticked for this host: tick it in Settings > Hosts and agents."));
+    peers = r.peers || [];
     head_row(table, ["", "Guest", "Kind", "CPU", "Memory", "Up", "Tags"]);
     for (const g of r.guests) {
       const tr = el("tr", "row" + (g.ticked ? "" : " dim"));
@@ -761,7 +788,7 @@ async function guests(v) {
       tr.append(first, el("td", "", g.id + " · " + g.name), el("td", "muted", g.template ? "template" : g.type === "lxc" ? "LXC" : "VM"),
         el("td", "muted", g.running ? g.cpu + "%" : "–"), el("td", "muted", g.running && g.mem != null ? pct(g.mem) : "–"),
         el("td", "muted", g.running ? uptime(g.uptime) : "stopped"), el("td", "muted", g.tags.join(", ")));
-      if (g.ticked) tr.addEventListener("click", () => open_guest(g, load));
+      if (g.ticked) tr.addEventListener("click", () => open_guest(g, load, peers));
       table.appendChild(tr);
     }
     if (!r.guests.length) table.appendChild(el("p", "muted", "No guest on this node yet."));
@@ -769,7 +796,7 @@ async function guests(v) {
   await load();
 }
 
-function open_guest(g, reload) {
+function open_guest(g, reload, peers) {
   close_sheet();
   S.sheet = { alive: true, stream: null, term: null };
   const sh = show_sheet();
@@ -788,14 +815,29 @@ function open_guest(g, reload) {
     b.disabled = !g.can.includes(verb) || (verb === "start" && g.running) || (verb !== "start" && !g.running);
     acts.appendChild(b);
   }
+  if (g.moves) {
+    acts.appendChild(btn("Move to…", "", async () => {
+      const a = await ask("Move " + g.name + " to another node", [
+        ["Node", "text", "peer", peers.map((p) => [p, p])],
+        ["How", "text", "mode", g.running ? [["online", g.type === "lxc" ? "Restart it there (a running container)" : "Live (it keeps running)"], ["offline", "Stopped (it must be shut down first)"]] : [["offline", "Stopped"]]],
+        ["Number on that node (empty: the same, " + g.id + ")", "optional", "id"]], "Move");
+      if (!a) return;
+      const id = a.values[2].trim();
+      if (id && !/^[1-9][0-9]{2,8}$/.test(id)) return notice("A guest's number is 100 or more.");
+      say("Moving…");
+      const r = await call("guest-migrate", { agent: S.host, id: g.id, peer: a.values[0], mode: a.values[1], new_id: id ? Number(id) : undefined });
+      say(r.ok ? "The move started. It runs on the host and can take a long time; Tasks shows it, and labhud says when it ends. The original stays here (locked as “migrate”): remove it after you have checked the copy." : "Move: " + (r.error || "failed"), !r.ok);
+    }));
+  }
   const tabs = el("div", "actions"), body = el("div");
   sh.append(acts, tabs, body, said);
   const views = { Config: guest_config, Snapshots: guest_snapshots, Backups: guest_backups, Tasks: guest_tasks };
+  if (g.console) views.Console = (b) => term_view(b, "console", g.id, "open · needs the PIN · closes after 3 minutes without a key");
   let tab = "Config";
   const draw = () => {
     tabs.textContent = "";
     for (const name of Object.keys(views)) tabs.appendChild(btn(name, name === tab ? "primary" : "", () => { tab = name; draw(); }));
-    body.textContent = "";
+    reset_body(body);
     views[tab](body, g, say);
   };
   draw();

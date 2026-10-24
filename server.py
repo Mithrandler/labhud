@@ -2258,8 +2258,8 @@ class Handler(BaseHTTPRequestHandler):
         who, where, how long and how many bytes."""
         if op == "stream-open":
             kind, target = str(body.get("kind") or ""), str(body.get("target") or "")
-            if kind == "shell" and not self._may_terminal():
-                audit.record(self, "terminal", f"refused {body.get('agent')}/{target}", False)
+            if kind in agents.INTERACTIVE and not self._may_terminal():
+                audit.record(self, "terminal" if kind == "shell" else "console", f"refused {body.get('agent')}/{target}", False)
                 return self._json({"ok": False, "error": "the terminal needs the admin signed in on a page or phone, with a PIN"}, 403)
             if DEMO and str(body.get("agent")) == "docker":
                 return self._json({"ok": False, "error": "no live streams in the demo"}, 502)
@@ -2267,13 +2267,13 @@ class Handler(BaseHTTPRequestHandler):
             if not a:
                 return self._json({"ok": False, "error": "no such agent"}, 404)
             ok, error, sid = agents.stream_open(aid, kind, target, body.get("cols"), body.get("rows"), who)
-            audit.record(self, "terminal" if kind == "shell" else "live-log", f"open {a['name']}/{target}", ok)
+            audit.record(self, {"shell": "terminal", "console": "console"}.get(kind, "live-log"), f"open {a['name']}/{target}", ok)
             print(f"setup: {kind} on {a['name']}/{target} opened by {who}: {'ok' if ok else error}", flush=True)
             return self._json({"ok": True, "id": sid} if ok else {"ok": False, "error": error}, 200 if ok else 502)
         st = agents.stream_get(str(body.get("id") or ""))
         if not st:
             return self._json({"ok": False, "error": "no such stream"}, 404)
-        if st.kind == "shell" and not self._may_terminal():
+        if st.kind in agents.INTERACTIVE and not self._may_terminal():
             return self._json({"ok": False, "error": "the PIN is needed again"}, 403)
         if op == "stream-read":
             after = body.get("after") if isinstance(body.get("after"), int) and body["after"] >= 0 else 0
@@ -2284,19 +2284,19 @@ class Handler(BaseHTTPRequestHandler):
                 raw = base64.b64decode(str(body.get("data") or ""), validate=True)
             except ValueError:
                 return self._json({"ok": False, "error": "data is base64"}, 400)
-            if st.kind != "shell" or not agents.stream_input(st, raw):
+            if st.kind not in agents.INTERACTIVE or not agents.stream_input(st, raw):
                 return self._json({"ok": False, "error": "not taken"}, 409)
             return self._json({"ok": True})
         if op == "stream-resize":
             cols, rows = body.get("cols"), body.get("rows")
-            if st.kind != "shell" or not all(isinstance(v, int) and not isinstance(v, bool) for v in (cols, rows)) \
+            if st.kind not in agents.INTERACTIVE or not all(isinstance(v, int) and not isinstance(v, bool) for v in (cols, rows)) \
                     or not (1 <= cols <= 500 and 1 <= rows <= 200):
                 return self._json({"ok": False, "error": "cols and rows"}, 400)
             agents.stream_send(st, {"type": "resize", "cols": cols, "rows": rows})
             return self._json({"ok": True})
         sent, secs = agents.stream_close(st)   # stream-close
         a = agents.get(st.aid) or {}
-        audit.record(self, "terminal" if st.kind == "shell" else "live-log", f"close {a.get('name', '?')}/{st.target} {secs}s {sent}B", True)
+        audit.record(self, {"shell": "terminal", "console": "console"}.get(st.kind, "live-log"), f"close {a.get('name', '?')}/{st.target} {secs}s {sent}B", True)
         return self._json({"ok": True})
 
     def _setup(self, op):
