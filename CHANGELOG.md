@@ -6,6 +6,17 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-10-24
+
+### Fixed
+
+- **Versions are compared in release order.** The series wraps instead of growing a digit (0.1.19, then 0.1.2, ..., 0.1.29, then 0.1.3), so a patch of one digit counts as tens, as in the app's versionCode. 0.1.19 was reported as newer than 0.1.2 ("LabHUD 0.1.19 is out (this one is 0.1.2)"), for the server and for agents.
+- The glance wall shrinks a number that is too long for its tile ("1,253,046") instead of cutting it.
+
+### Changed
+
+- `design/tokens.json` has a `list_w` size (the widest a settings list gets in the Android app); it is also a CSS variable.
+
 ## [0.1.2] - 2026-10-24
 
 ### Changed
