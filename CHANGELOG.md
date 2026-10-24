@@ -6,6 +6,13 @@ still change in a minor version; such changes are listed under **Changed** with 
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-10-24
+
+### Added
+
+- **Themes: Paper, Terminal and Glass.** Three more bases next to Board (design/tokens.json `board_bases`, generated into the settings page, the Servers page and the app). A base with its own accent ignores the preset accent; the logo lockup flips on a light base.
+- **Servers: the hosts are a tree.** A host with its tabs under it, and the Servers page takes the display's theme.
+
 ### Added
 
 - **Servers: a container Config tab.** Restart policy, published ports, volumes and variables of a container (routes `config`, read; `reconfigure`, admin, the container's name typed to confirm). A variable's value is only ever written, never read back or shown, and travels sealed to the agent (agent 0.1.13). The audit log names the container, never what was set. Compose containers are refused (change their file under Stacks).
