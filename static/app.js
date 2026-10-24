@@ -1656,6 +1656,21 @@ function glance_fallback(c) {
   return by[c.type] || (is_guest(c) ? "vm" : "app");
 }
 
+/** A number too long for its tile ("1,253,046") is shrunk to fit instead of being cut: one pass, a frame after the numbers change. */
+let glanceFitQueued = false;
+function queue_glance_fit() {
+  if (glanceFitQueued) return;
+  glanceFitQueued = true;
+  requestAnimationFrame(() => { glanceFitQueued = false; glance_fit_values(); });
+}
+function glance_fit_values() {
+  for (const v of document.querySelectorAll(".gtile .gval:not([hidden])")) {
+    v.style.fontSize = "";
+    const need = v.scrollWidth, have = v.clientWidth;
+    if (have > 0 && need > have) v.style.fontSize = `calc(var(--t) * .38 * ${(have / need * 0.96).toFixed(3)})`;
+  }
+}
+
 function glance_tile(c) {
   const t = el("div", "gtile");
   t.dataset.id = c.id;
@@ -1674,7 +1689,7 @@ function glance_tile(c) {
     cls(t, "multi", many);
     val.hidden = many;
     gauges.hidden = !many;
-    if (!many) { put(val, glance_value(c)); shown = ""; return; }
+    if (!many) { put(val, glance_value(c)); shown = ""; queue_glance_fit(); return; }
     const sign = gs.map((g) => g.kind + g.text + g.sev).join("|");
     if (sign === shown) return;
     shown = sign;
@@ -1780,6 +1795,7 @@ function fit_glance() {
   }
   layoutSign = sign;
   cls(host, "scroll", false);
+  glance_fit_values();   // the tiles have a new size
 }
 
 // ---------------------------------------------------------------------------------------------
